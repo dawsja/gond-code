@@ -61,8 +61,8 @@ pub fn path() -> Option<OsString> {
         .or_else(|| std::env::var_os("PATH"))
 }
 
-/// The PATH for a new terminal or agent: the registry's as it is now (what a new Windows
-/// Terminal tab gets), then anything else Gond's own PATH has. Gond's own is whatever launched
+/// The PATH for a new terminal or agent: the registry's as it is now (what a program started
+/// from Explorer gets), then anything else Gond's own PATH has. Gond's own is whatever launched
 /// it handed down, kept across restarts into updates, so it can be days out of date.
 pub fn fresh_path() -> Option<OsString> {
     match crate::pathenv::registry_path() {

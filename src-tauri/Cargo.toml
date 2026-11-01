@@ -1,6 +1,6 @@
 [package]
 name = "gond-code"
-version = "0.1.1"
+version = "0.2.0"
 description = "Gond Code: run AI coding agents side by side in git worktrees."
 edition = "2021"
 rust-version = "1.85"
