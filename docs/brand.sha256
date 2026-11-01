@@ -1,9 +1,9 @@
 # The brand files: the official logos, byte-identical to the team's canonical copies.
-# Gond Code's own mark (white circle, black triangle) is the app's
-# icon and in-app mark; Gond's cog (gond.svg / gond-1024.png) stays for Gond itself only.
+# Gond Code's own mark (a black rounded square on white, the Gond bot's eyes as a white
+# > and |) is the app's icon and in-app mark; Gond's cog (gond.svg / gond-1024.png) stays for Gond itself only.
 # CI (scripts/check-brand.sh) fails if either file changes without this pin changing too.
 # Change these only together with an approved new logo.
 633eb6bc3c61cf54502466a6d817a91ed9856f62e622118bf1ae53edd3d7485d  docs/gond-1024.png
 81081bd4bec1fe492644cdd5cff1c4e70555f8a232cc4759c222990722cd7977  docs/gond.svg
-116e87df02cacc3ca50ae47bb93dac6effce40e2ec4bb0834698aa7c08cc6ebb  docs/gond-code-1024.png
-790763b588065a787dd70c6ead8da4bb39be30e1cee1fc6ac2375a9a89667098  docs/gond-code.svg
+4505e38d5b19d4b57ec5e0f838e3a9ffabadf504e4eaf7c167447f41d2d8ddeb  docs/gond-code-1024.png
+dab3fabb25f8fdfaf9e4af7769287d2f903ba120f478aec20ff70202503eeb68  docs/gond-code.svg

@@ -10,8 +10,8 @@ carries `dark`, and the tint is `data-tint` on it (`src/lib/theme.ts`).
 **Window chrome:** Windows' own dark title bar, dark before the window
 shows so it never flashes white.
 
-**Logo:** Gond Code's mark, a white circle with a black triangle (`docs/gond-code.svg` for the
-UI, `docs/gond-code-1024.png` for Windows icons; pinned in `docs/brand.sha256`). Gond's cog
+**Logo:** Gond Code's mark, a black rounded square on white with the Gond bot's eyes as a white `>`
+and `|` (`docs/gond-code.svg` for the UI, `docs/gond-code-1024.png` for Windows icons; pinned in `docs/brand.sha256`). Gond's cog
 (`docs/gond.svg`) means Gond itself.
 
 ## Fonts and shape
