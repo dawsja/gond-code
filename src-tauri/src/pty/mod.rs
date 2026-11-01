@@ -158,8 +158,8 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(default_shell());
         cmd.cwd(cwd);
         cmd.env("TERM", "xterm-256color");
-        // The live PATH, so tools installed since startup work in new terminals.
-        if let Some(path) = crate::process::path() {
+        // The registry's PATH as it is now, so tools installed since startup work in new terminals.
+        if let Some(path) = crate::process::fresh_path() {
             cmd.env("PATH", path);
         }
         self.open_inner(thread_id, cmd, cols, rows, cursor)

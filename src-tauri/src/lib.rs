@@ -108,6 +108,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Detection and every spawn start from the registry's PATH, not the one handed down
+            // by whatever launched Gond (or the Gond it restarted from for an update).
+            if let Some(path) = process::fresh_path() {
+                process::set_path(path);
+            }
             let path = store::default_db_path().ok_or("no app data directory")?;
             let store = store::Store::open(&path)?;
             // One vault shared by account.* (writes) and the runner (resolves at spawn).

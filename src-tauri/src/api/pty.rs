@@ -143,7 +143,7 @@ fn cause(call: &Call<Services>, command: &str) -> Cause {
 }
 
 fn session_command(it: crate::runner::Interactive) -> AppResult<portable_pty::CommandBuilder> {
-    let path = crate::process::path();
+    let path = crate::process::fresh_path();
     let program = crate::agents::detect::find(&it.program, path.clone()).ok_or_else(|| {
         AppError::AgentNotFound(format!("{} isn't installed or isn't on PATH", it.program))
     })?;
@@ -337,7 +337,7 @@ pub fn register(r: &mut Registry<Services>) {
                 cmd.args(&sh.args);
                 cmd.cwd(&cwd);
                 cmd.env("TERM", "xterm-256color");
-                if let Some(path) = crate::process::path() {
+                if let Some(path) = crate::process::fresh_path() {
                     cmd.env("PATH", path);
                 }
                 s.ptys.open_command(&owner, cmd, cols, rows)?

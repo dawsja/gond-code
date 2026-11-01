@@ -10,6 +10,7 @@ import { callOrRun, isRegistered, liveBackend, runCommand } from "@/lib/appState
 import { on, openExternal } from "@/lib/ipc";
 import { onBeforeRestart } from "@/lib/restart";
 import { errorText } from "@/lib/types";
+import { imagePasteKey } from "./imagePaste";
 import { setPaneFolder } from "./paneFolder";
 import { promptFolder } from "./prompt";
 import { asks, setStatus, type Status } from "./status";
@@ -80,18 +81,20 @@ type Props = {
   open: (size: { cols: number; rows: number; cwd?: string }) => Promise<{ ptyId: string }>;
   /** An agent's pane watches its screen for Working / Needs you / Done; a shell's doesn't. */
   watch: boolean;
+  /** The pane's agent (none for a shell): an image paste goes to it on its own key. */
+  agentId?: string;
   active: boolean;
   onFocus: () => void;
   onShortcut: (s: Shortcut) => void;
 };
 
 /** One terminal, drawn on the GPU (WebGL), on a pty the Rust side runs; it lives until unmounted. */
-export function Terminal({ paneId, open, watch, active, onFocus, onShortcut }: Props) {
+export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShortcut }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm>(null);
-  const live = useRef({ open, onShortcut, onFocus, active, watch });
+  const live = useRef({ open, onShortcut, onFocus, active, watch, agentId });
   useEffect(() => {
-    live.current = { open, onShortcut, onFocus, active, watch };
+    live.current = { open, onShortcut, onFocus, active, watch, agentId };
   });
 
   useEffect(() => {
@@ -123,6 +126,18 @@ export function Terminal({ paneId, open, watch, active, onFocus, onShortcut }: P
     t.loadAddon(new WebLinksAddon((_, uri) => void openExternal(uri)));
     term.current = t;
 
+    // Text is pasted (bracketed, when the program asks); a clipboard with no text holds an image
+    // (or nothing), which the agent reads off the clipboard itself on its image-paste key.
+    const paste = () =>
+      void (navigator.clipboard?.readText() ?? Promise.resolve("")).then(
+        (text) => {
+          if (text) return t.paste(text);
+          const key = imagePasteKey(live.current.agentId);
+          if (key) t.input(key);
+        },
+        () => undefined,
+      );
+
     // Gond's keys leave the terminal; Ctrl+C copies when there's a selection, else it's the
     // program's (stop, cancel). Everything else is the agent's.
     t.attachCustomKeyEventHandler((e) => {
@@ -134,10 +149,7 @@ export function Terminal({ paneId, open, watch, active, onFocus, onShortcut }: P
           if (e.key.toLowerCase() === "c") {
             if (t.hasSelection()) void navigator.clipboard?.writeText(t.getSelection());
           } else {
-            void navigator.clipboard?.readText().then(
-              (text) => text && t.paste(text),
-              () => undefined,
-            );
+            paste();
           }
         }
         return false;
@@ -160,11 +172,7 @@ export function Terminal({ paneId, open, watch, active, onFocus, onShortcut }: P
 
     handles.set(paneId, {
       copy: () => void navigator.clipboard?.writeText(t.getSelection()),
-      paste: () =>
-        void navigator.clipboard?.readText().then(
-          (text) => text && t.paste(text),
-          () => undefined,
-        ),
+      paste,
       selectAll: () => t.selectAll(),
       hasSelection: () => t.hasSelection(),
       focus: () => t.focus(),

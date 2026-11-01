@@ -173,6 +173,8 @@ export function Workspace({
               role="separator"
               aria-orientation={d.dir === "right" ? "vertical" : "horizontal"}
               onPointerDown={drag(d)}
+              // A double-click puts it back where a new split starts: half and half.
+              onDoubleClick={() => actions.resize(d.splitId, 0.5)}
               className={cn(
                 "absolute z-20 rounded-full hover:bg-tint/40",
                 d.dir === "right"
@@ -293,6 +295,7 @@ function PaneView({
             paneId={pane.id}
             open={open}
             watch={!!pane.agentId}
+            agentId={pane.agentId}
             active={focused && visible}
             onFocus={() => actions.focus(pane.id)}
             onShortcut={(s) => actions.shortcut(pane.id, s)}

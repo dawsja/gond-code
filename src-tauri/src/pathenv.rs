@@ -77,8 +77,8 @@ pub fn without_entry(path: &str, dir: &str) -> Option<String> {
 mod reg {
     use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
     use windows_sys::Win32::System::Registry::{
-        RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_EXPAND_SZ, REG_SZ, RRF_NOEXPAND,
-        RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
+        RegGetValueW, RegSetKeyValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ,
+        REG_SZ, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
@@ -90,12 +90,25 @@ mod reg {
 
     /// HKCU\Environment\Path as stored (unexpanded) and its type; empty if unset.
     pub fn read() -> Result<(String, u32), String> {
-        let (key, name) = (wide("Environment"), wide("Path"));
+        read_from(HKEY_CURRENT_USER, "Environment")
+    }
+
+    /// The machine's PATH as stored (unexpanded); empty if unset.
+    pub fn read_machine() -> Result<String, String> {
+        read_from(
+            HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        )
+        .map(|(p, _)| p)
+    }
+
+    fn read_from(root: HKEY, subkey: &str) -> Result<(String, u32), String> {
+        let (key, name) = (wide(subkey), wide("Path"));
         let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND;
         let (mut kind, mut bytes) = (0u32, 0u32);
         let rc = unsafe {
             RegGetValueW(
-                HKEY_CURRENT_USER,
+                root,
                 key.as_ptr(),
                 name.as_ptr(),
                 flags,
@@ -108,12 +121,12 @@ mod reg {
             return Ok((String::new(), REG_EXPAND_SZ));
         }
         if rc != ERROR_SUCCESS {
-            return Err(format!("reading the user PATH failed ({rc})"));
+            return Err(format!("reading PATH from the registry failed ({rc})"));
         }
         let mut buf = vec![0u16; (bytes as usize).div_ceil(2) + 1];
         let rc = unsafe {
             RegGetValueW(
-                HKEY_CURRENT_USER,
+                root,
                 key.as_ptr(),
                 name.as_ptr(),
                 flags,
@@ -123,7 +136,7 @@ mod reg {
             )
         };
         if rc != ERROR_SUCCESS {
-            return Err(format!("reading the user PATH failed ({rc})"));
+            return Err(format!("reading PATH from the registry failed ({rc})"));
         }
         let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
         Ok((
@@ -173,7 +186,8 @@ mod reg {
 /// Adds `dir` to the user's PATH (HKCU) if it isn't there, and tells new shells.
 /// Used after an installer that puts its program in a folder it doesn't add.
 pub fn add_user_dir(dir: &str) -> Result<(), String> {
-    #[cfg(windows)]
+    // Tests install into temp folders: they must never leave them on the real user's PATH.
+    #[cfg(all(windows, not(test)))]
     {
         let (path, kind) = reg::read()?;
         match with_entry(&path, dir) {
@@ -181,7 +195,7 @@ pub fn add_user_dir(dir: &str) -> Result<(), String> {
             None => Ok(()),
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(any(not(windows), test))]
     {
         let _ = dir;
         Ok(())
@@ -190,7 +204,8 @@ pub fn add_user_dir(dir: &str) -> Result<(), String> {
 
 /// Takes `dir` off the user's PATH (HKCU) if it's there, and tells new shells.
 pub fn remove_user_dir(dir: &str) -> Result<(), String> {
-    #[cfg(windows)]
+    // Tests install into temp folders: they must never leave them on the real user's PATH.
+    #[cfg(all(windows, not(test)))]
     {
         let (path, kind) = reg::read()?;
         match without_entry(&path, dir) {
@@ -198,10 +213,32 @@ pub fn remove_user_dir(dir: &str) -> Result<(), String> {
             None => Ok(()),
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(any(not(windows), test))]
     {
         let _ = dir;
         Ok(())
+    }
+}
+
+/// The PATH Windows gives a program started now: the machine's entries, then the user's,
+/// read from the registry with their `%VAR%`s expanded. `None` off Windows or when neither
+/// can be read.
+pub fn registry_path() -> Option<String> {
+    #[cfg(windows)]
+    {
+        let machine = reg::read_machine().unwrap_or_default();
+        let user = reg::read().map(|(p, _)| p).unwrap_or_default();
+        let entries: Vec<String> = machine
+            .split(';')
+            .chain(user.split(';'))
+            .filter(|e| !e.trim().is_empty())
+            .map(expand)
+            .collect();
+        (!entries.is_empty()).then(|| entries.join(";"))
+    }
+    #[cfg(not(windows))]
+    {
+        None
     }
 }
 
@@ -278,6 +315,17 @@ mod tests {
     use super::*;
 
     const BIN: &str = r"C:\Users\d\AppData\Local\Gond Code\bin";
+
+    /// A new terminal's PATH comes from the registry, machine first, with `%SystemRoot%` and
+    /// the like expanded, as Windows itself would give it.
+    #[cfg(windows)]
+    #[test]
+    fn the_registry_path_is_the_machines_then_expanded() {
+        let path = registry_path().unwrap();
+        assert!(!path.contains('%'), "{path}");
+        let system32 = std::env::var("SystemRoot").unwrap() + r"\system32";
+        assert!(path.split(';').any(|e| same_dir(e, &system32)), "{path}");
+    }
 
     #[test]
     fn adds_once_and_keeps_everything_else() {

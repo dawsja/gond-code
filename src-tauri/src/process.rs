@@ -61,6 +61,16 @@ pub fn path() -> Option<OsString> {
         .or_else(|| std::env::var_os("PATH"))
 }
 
+/// The PATH for a new terminal or agent: the registry's as it is now (what a new Windows
+/// Terminal tab gets), then anything else Gond's own PATH has. Gond's own is whatever launched
+/// it handed down, kept across restarts into updates, so it can be days out of date.
+pub fn fresh_path() -> Option<OsString> {
+    match crate::pathenv::registry_path() {
+        Some(fresh) => Some(merge_paths(OsStr::new(&fresh), path().as_deref())),
+        None => path(),
+    }
+}
+
 pub fn set_path(path: OsString) {
     *PATH.write().unwrap_or_else(|e| e.into_inner()) = Some(path);
 }
