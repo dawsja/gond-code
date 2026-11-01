@@ -1,14 +1,14 @@
 # Gond Code
 
-A Windows app that hosts your coding agents in a terminal workspace. Each pane is a terminal
-running an agent's own interactive CLI (Claude Code, Codex, Antigravity, Grok Build, opencode,
-Pi, GitHub Copilot or Cursor) or a plain shell. Panes are grouped into named **Sessions**, and the sidebar lists every
-agent by what it's doing: needs you, working, done or idle.
+A Windows app that hosts your coding agents in a terminal workspace. Each pane is a terminal in
+your default shell; type an agent there (Claude Code, Codex, Antigravity, Grok Build, opencode,
+Pi, GitHub Copilot or Cursor) and Gond Code sees it running. Panes are grouped into named
+**Sessions**, and the sidebar lists every agent by what it's doing: needs you, working, done or
+idle.
 
 Gond Code doesn't sit between you and the agent. Each one runs as it would in your own terminal,
-with its own permissions, tools and sign-in. Gond Code installs and updates the agents, signs
-them in, starts them with the model and thinking level you picked, lays out their panes, and
-brings each conversation back after a restart.
+with its own permissions, tools and sign-in. Gond Code installs and updates the agents, lays out
+their panes, and shows each agent's plan usage.
 
 ## Install
 
@@ -72,7 +72,7 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
 
 - [docs/PRODUCT.md](docs/PRODUCT.md): what the app does and what it doesn't
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it's built
-- [docs/HARNESSES.md](docs/HARNESSES.md): each agent's install, sign-in, models and resume
+- [docs/HARNESSES.md](docs/HARNESSES.md): each agent's install, detection and plan usage
 - [docs/AGENT-API.md](docs/AGENT-API.md): the command registry
 - [docs/DESIGN.md](docs/DESIGN.md) and [docs/THEME.md](docs/THEME.md): design and theme
 - [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md): how to work on it

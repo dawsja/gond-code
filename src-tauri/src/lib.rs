@@ -1,4 +1,3 @@
-pub mod accounts;
 pub mod agents;
 pub mod api;
 #[cfg(windows)]
@@ -6,13 +5,14 @@ pub mod app_id;
 pub mod appdata;
 pub mod clipboard;
 pub mod commands;
-pub mod endpoint_test;
+pub mod credentials;
 pub mod error;
 pub mod fallback;
 pub mod git;
 pub mod github;
 pub mod grok_usage;
 pub mod harness;
+pub mod http;
 pub mod install;
 #[cfg(all(test, windows))]
 mod no_console_e2e;
@@ -24,16 +24,13 @@ pub mod projects;
 pub mod pty;
 pub mod purge;
 pub mod releases;
-pub mod runner;
 pub mod settings;
 pub mod shells;
 pub mod speech;
 pub mod store;
-pub mod threads;
 pub mod tray;
 pub mod uninstall;
 pub mod updater;
-pub mod vault;
 pub mod window;
 
 use tauri::Manager;
@@ -116,9 +113,6 @@ pub fn run() {
             }
             let path = store::default_db_path().ok_or("no app data directory")?;
             let store = store::Store::open(&path)?;
-            // One vault shared by account.* (writes) and the runner (resolves at spawn).
-            let vault = std::sync::Arc::new(vault::SystemVault::default());
-            let runner = runner::AgentRunner::new(store.clone()).with_secrets(vault.clone());
             app.state::<std::sync::Arc<window::InfoCell>>()
                 .set(window::setup(app.handle()));
             // A missing tray (some Linux desktops) isn't fatal.
@@ -129,23 +123,12 @@ pub fn run() {
             let ptys = pty::PtyManager::new(std::sync::Arc::new(sink));
             let api = commands::api::Api {
                 registry: api::registry(),
-                services: api::Services::new(
-                    store.clone(),
-                    vault,
-                    accounts::default_root().ok_or("no local app data directory")?,
-                )?
-                .with_runtime(runner.clone(), ptys.clone()),
+                services: api::Services::new(store.clone())?.with_runtime(ptys.clone()),
             };
             // Looks for a newer Gond Code on start and every few hours.
             updater::start(app.handle(), std::sync::Arc::new(api.services.clone()));
-            // Accounts made before identities: who they are, then duplicates merged.
-            let tidy = api.services.clone();
-            std::thread::spawn(move || {
-                let _ = api::accounts::tidy(&tidy);
-            });
             commands::api::emit_patches(app.handle(), &api);
             app.manage(api);
-            app.manage(runner);
             app.manage(store);
             app.manage(ptys);
             Ok(())

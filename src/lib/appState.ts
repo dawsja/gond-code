@@ -31,7 +31,7 @@ function subscribe(cb: () => void) {
 
 /**
  * A subtree of the state tree, re-rendering only when it changes. Select a subtree, not a derived
- * value: patches keep untouched subtrees' identity, so `v => v.threads` is stable between patches.
+ * value: patches keep untouched subtrees' identity, so `v => v.projects` is stable between patches.
  */
 export function useAppState<T>(select: (tree: Record<string, unknown>) => T): T {
   return useSyncExternalStore(subscribe, () => select(store.get().value));

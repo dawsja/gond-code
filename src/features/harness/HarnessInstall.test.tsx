@@ -37,7 +37,6 @@ const codex: Harness = {
   label: "Codex",
   brand: "codex",
   installed: false,
-  providers: [],
 };
 
 async function show(onDone = vi.fn(), harness: Harness = codex) {
@@ -113,7 +112,6 @@ it("Uninstall asks with the plan, then follows harness.uninstall's job back to N
           pathEntries: [],
           keepData: input.keepData ?? true,
           running: 0,
-          accounts: 0,
         }
       : { jobId: "job_u1" },
   );

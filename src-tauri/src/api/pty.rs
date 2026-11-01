@@ -1,6 +1,5 @@
-//! `pty.*` behind the registry: terminals in a thread's worktree or at a
-//! project's root, and `pty.read` so an agent can run a command
-//! and read its result. Raw output still streams to the UI as `pty:data`; the
+//! `pty.*` behind the registry: terminals at a project's root (or your home folder), and
+//! `pty.read` so a caller can run a command and read its result. Raw output still streams to the UI as `pty:data`; the
 //! tree keeps one entry per open terminal at `/terminals/{ptyId}`.
 
 use std::time::Duration;
@@ -12,18 +11,13 @@ use serde_json::json;
 use super::registry::{Call, Def, Registry, Risk};
 use super::state::Cause;
 use super::Services;
-use crate::agents::sessions;
 use crate::error::{AppError, AppResult};
 use crate::pty::PtyRead;
-use crate::threads;
-use std::path::Path;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenInput {
-    /// Open in this thread's folder...
-    pub thread_id: Option<String>,
-    /// ...or this project's folder; with neither, your home folder.
+    /// Open in this project's folder; without one, your home folder.
     pub project_id: Option<String>,
     /// A shell.list id (`pwsh`, `cmd`, `wsl:Ubuntu`…), so a pane keeps the shell it had; none
     /// (or one no longer on this PC) = the one picked in Settings → General.
@@ -38,57 +32,8 @@ pub struct OpenInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SessionInput {
-    pub thread_id: String,
-    /// Default 120.
-    pub cols: Option<u16>,
-    /// Default 32.
-    pub rows: Option<u16>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FolderInput {
     pub project_id: String,
-}
-
-/// Claude Code's folder for a working folder's sessions: every character that isn't a letter
-/// or a digit becomes `-` (`C:\code\cura` → `C--code-cura`).
-fn claude_folder(cwd: &std::path::Path) -> String {
-    cwd.to_string_lossy()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
-}
-
-/// Where an agent keeps its sessions: the home an account's sign-in gives it (`var` in its
-/// env), else the CLI's own `~/<default>`.
-fn env_dir(
-    it: &crate::runner::Interactive,
-    var: &str,
-    default: &str,
-) -> Option<std::path::PathBuf> {
-    it.env
-        .iter()
-        .find(|(k, _)| k == var)
-        .map(|(_, v)| std::path::PathBuf::from(v))
-        .or_else(|| std::env::var_os(var).map(std::path::PathBuf::from))
-        .or_else(|| dirs::home_dir().map(|h| h.join(default)))
-}
-
-/// A random UUID (v4 layout) for a new session (`--session-id` wants one).
-fn session_uuid() -> String {
-    let n = ulid::Ulid::generate().0 ^ (std::process::id() as u128).rotate_left(64);
-    let n = (n & !(0xf << 76) | (0x4 << 76)) & !(0x3 << 62) | (0x2 << 62);
-    let h = format!("{n:032x}");
-    format!(
-        "{}-{}-{}-{}-{}",
-        &h[..8],
-        &h[8..12],
-        &h[12..16],
-        &h[16..20],
-        &h[20..]
-    )
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -142,143 +87,30 @@ fn cause(call: &Call<Services>, command: &str) -> Cause {
     }
 }
 
-fn session_command(it: crate::runner::Interactive) -> AppResult<portable_pty::CommandBuilder> {
-    let path = crate::process::fresh_path();
-    let program = crate::agents::detect::find(&it.program, path.clone()).ok_or_else(|| {
-        AppError::AgentNotFound(format!("{} isn't installed or isn't on PATH", it.program))
-    })?;
-    let shim = program
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
-    let mut cmd = if shim {
-        let mut c = portable_pty::CommandBuilder::new("cmd.exe");
-        c.args(["/d", "/c"]);
-        c.arg(&program);
-        c
-    } else {
-        portable_pty::CommandBuilder::new(&program)
-    };
-    cmd.args(&it.args);
-    cmd.cwd(&it.cwd);
-    cmd.env("TERM", "xterm-256color");
-    if let Some(p) = &path {
-        cmd.env("PATH", p);
+/// The owner key for a project's terminals: removing the project closes them.
+pub fn project_owner(project_id: &str) -> String {
+    format!("project:{project_id}")
+}
+
+/// Where a terminal opens and who owns it: a project's folder (owner `project:<id>`), else
+/// your home folder (owner `home`), a new session's shell before you've added any folder.
+fn terminal_target(
+    store: &crate::store::Store,
+    project_id: Option<&str>,
+) -> AppResult<(String, std::path::PathBuf)> {
+    match project_id {
+        Some(p) => Ok((
+            project_owner(p),
+            std::path::PathBuf::from(crate::projects::get(store, p)?.path),
+        )),
+        None => Ok((
+            "home".into(),
+            dirs::home_dir().ok_or_else(|| AppError::Invalid("no home folder".into()))?,
+        )),
     }
-    for var in &it.remove {
-        cmd.env_remove(var);
-    }
-    for (k, v) in &it.env {
-        cmd.env(k, v);
-    }
-    Ok(cmd)
 }
 
 pub fn register(r: &mut Registry<Services>) {
-    r.add(
-        Def::new(
-            "pane.start",
-            "Start a pane's agent: its own interactive CLI on the thread's session (account, model, mode), in a terminal that runs until the pane closes",
-            Risk::WriteLocal,
-        )
-        .human_only(),
-        |call, i: SessionInput| -> AppResult<Opened> {
-            let s = call.ctx;
-            let mut thread = threads::get(&s.store, &i.thread_id)?;
-            // A pane opening again (after a restart or an update), not for the first time.
-            let again = time::OffsetDateTime::parse(
-                &thread.created_at,
-                &time::format_description::well_known::Rfc3339,
-            )
-            .is_ok_and(|t| time::OffsetDateTime::now_utc() - t > time::Duration::seconds(15));
-            // Claude Code takes a session id up front, so the pane can resume it after a
-            // restart; one it never wrote (closed before the first message) starts fresh again.
-            let mut fresh = false;
-            if thread.agent_id == "claude" {
-                let written = thread.agent_session_id.as_ref().is_some_and(|id| {
-                    s.runner.claude_config(&thread).is_some_and(|dir| {
-                        dir.join("projects")
-                            .join(claude_folder(std::path::Path::new(
-                                &thread.worktree_path,
-                            )))
-                            .join(format!("{id}.jsonl"))
-                            .is_file()
-                    })
-                });
-                if !written {
-                    let id = session_uuid();
-                    s.store
-                        .with(|c| crate::store::threads::set_session(c, &thread.id, &id))?;
-                    thread.agent_session_id = Some(id);
-                    fresh = true;
-                }
-            }
-            if thread.agent_session_id.is_none() {
-                let found = match thread.agent_id.as_str() {
-                    // Pi, Grok Build and Copilot take an id Gond chooses too.
-                    "pi" | "grok" | "copilot" => Some(session_uuid()),
-                    // Codex and Antigravity name their own: find the one this pane started.
-                    "codex" if again => {
-                        let it = s.runner.interactive(&thread)?;
-                        let home = env_dir(&it, "CODEX_HOME", ".codex");
-                        let since = time::OffsetDateTime::parse(
-                            &thread.created_at,
-                            &time::format_description::well_known::Rfc3339,
-                        )
-                        .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
-                        let taken: Vec<String> = s
-                            .store
-                            .with(crate::store::threads::list_unarchived)?
-                            .into_iter()
-                            .filter(|t| t.agent_id == "codex" && t.id != thread.id)
-                            .filter_map(|t| t.agent_session_id)
-                            .collect();
-                        home.and_then(|h| {
-                            sessions::codex(&h, Path::new(&thread.worktree_path), since, &taken)
-                        })
-                    }
-                    "agy" if again => dirs::home_dir().and_then(|h| {
-                        sessions::agy(&h.join(".gemini"), Path::new(&thread.worktree_path))
-                    }),
-                    // Cursor makes the chat's id: ask for an empty one up front.
-                    "cursor" => crate::runner::cursor_new_chat(&s.runner.interactive(&thread)?),
-                    _ => None,
-                };
-                if let Some(id) = found {
-                    s.store
-                        .with(|c| crate::store::threads::set_session(c, &thread.id, &id))?;
-                    thread.agent_session_id = Some(id);
-                }
-            }
-            let mut it = s.runner.interactive(&thread)?;
-            if fresh {
-                if let Some(a) = it.args.iter_mut().find(|a| *a == "--resume") {
-                    *a = "--session-id".into();
-                }
-            }
-            // Grok resumes a session it has saved (-r) and creates one with that id (-s).
-            if let (Some(id), Some(home)) = (
-                thread.agent_session_id.clone(),
-                env_dir(&it, "GROK_HOME", ".grok").filter(|_| thread.agent_id == "grok"),
-            ) {
-                if !sessions::grok_saved(&home, Path::new(&thread.worktree_path), &id) {
-                    if let Some(a) = it.args.iter_mut().find(|a| *a == "-r") {
-                        *a = "-s".into();
-                    }
-                }
-            }
-            // opencode can't take an id: opening again, it continues the folder's latest.
-            if thread.agent_id == "opencode" && again {
-                it.args.push("--continue".into());
-            }
-            let cmd = session_command(it)?;
-            let (cols, rows) = (i.cols.unwrap_or(120), i.rows.unwrap_or(32));
-            let pty_id = s.ptys.open_command(&thread.id, cmd, cols, rows)?;
-            Ok(Opened {
-                pty_id,
-                shell: None,
-            })
-        },
-    );
     r.add(
         Def::new(
             "shell.list",
@@ -305,16 +137,12 @@ pub fn register(r: &mut Registry<Services>) {
     r.add(
         Def::new(
             "pty.open",
-            "Open a terminal in a thread's worktree or at a project's root",
+            "Open a terminal at a project's root, or in your home folder",
             Risk::WriteLocal,
         ),
         |call, i: OpenInput| -> AppResult<Opened> {
             let s = call.ctx;
-            let (owner, cwd) = threads::terminal_target(
-                &s.store,
-                i.thread_id.as_deref(),
-                i.project_id.as_deref(),
-            )?;
+            let (owner, cwd) = terminal_target(&s.store, i.project_id.as_deref())?;
             let cwd = match i.cwd.map(std::path::PathBuf::from) {
                 Some(dir) if dir.is_dir() => dir,
                 _ => cwd,
@@ -350,11 +178,9 @@ pub fn register(r: &mut Registry<Services>) {
                 "id": pty_id, "owner": owner, "cols": cols, "rows": rows,
                 "status": "open", "openedBy": call.actor,
             });
-            // a thread's terminal names its thread; a project's, its project.
-            match owner.strip_prefix("project:") {
-                Some(p) => entry["projectId"] = json!(p),
-                None if owner == "home" => {}
-                None => entry["threadId"] = json!(owner),
+            // A project's terminal names its project.
+            if let Some(p) = owner.strip_prefix("project:") {
+                entry["projectId"] = json!(p);
             }
             let id = pty_id.clone();
             s.state.commit(cause(call, "pty.open"), move |d| {
@@ -497,7 +323,7 @@ mod tests {
         r.run(&s, &h, "pty.close", json!({ "ptyId": id })).unwrap();
         assert!(s.state.get(&format!("/terminals/{id}")).is_none());
 
-        // With neither a thread nor a project, it opens in your home folder (an empty session's
+        // Without a project, it opens in your home folder (an empty session's
         // terminal).
         let home = r.run(&s, &h, "pty.open", json!({})).unwrap();
         let home = home["ptyId"].as_str().unwrap().to_string();
@@ -514,49 +340,22 @@ mod tests {
 }
 
 #[cfg(test)]
-mod session_id {
-    /// Claude Code refuses a `--session-id` that isn't a UUID: each pane's is a v4 one, and new.
-    #[test]
-    fn a_pane_session_id_is_a_fresh_uuid() {
-        let (a, b) = (super::session_uuid(), super::session_uuid());
-        assert_ne!(a, b);
-        let parts: Vec<&str> = a.split('-').collect();
-        assert_eq!(
-            parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
-            [8, 4, 4, 4, 12]
-        );
-        assert!(a.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
-        assert!(parts[2].starts_with('4'), "version 4: {a}");
-        assert!("89ab".contains(&parts[3][..1]), "RFC 4122 variant: {a}");
-    }
-}
-
-#[cfg(test)]
 mod terminal {
     use crate::api::{registry, Actor, Services};
     use crate::git::tests::temp_repo;
     use serde_json::json;
 
-    /// A thread's terminal runs a shell in its folder: what you type there runs, and its
+    /// A project's terminal runs a shell in its folder: what you type there runs, and its
     /// output reads back.
     #[test]
-    fn a_threads_terminal_shows_output() {
+    fn a_projects_terminal_shows_output() {
         let (r, s, h) = (registry(), Services::default(), Actor::human());
         let repo = temp_repo();
         let p = r
             .run(&s, &h, "project.add", json!({ "path": repo.path() }))
             .unwrap();
-        let t = r
-            .run(
-                &s,
-                &h,
-                "thread.create",
-                json!({ "projectId": p["id"], "agentId": "claude", "title": "Pty" }),
-            )
-            .unwrap();
-        let tid = t["id"].as_str().unwrap().to_string();
         let o = r
-            .run(&s, &h, "pty.open", json!({ "threadId": tid }))
+            .run(&s, &h, "pty.open", json!({ "projectId": p["id"] }))
             .unwrap();
         let id = o["ptyId"].as_str().unwrap().to_string();
         // ConPTY asks where the cursor is and waits; the app's terminal answers, so do we.

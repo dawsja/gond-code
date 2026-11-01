@@ -21,7 +21,7 @@ The design language and the screens as they are now. Palette, fonts and tokens:
   transparent background (`docs/gond-code.svg` for the UI, `docs/gond-code-1024.png` for Windows icons). Never recoloured, tinted, outlined or inverted. Gond's cog (`docs/gond.svg`)
   means Gond itself, not this app. The mark is in the tray, the installer, the app icon and
   Windows' title bar.
-- **Brand icons:** every agent and model shows its real mark (`@lobehub/icons`, MIT; Pi's own
+- **Brand icons:** every agent shows its real mark (`@lobehub/icons`, MIT; Pi's own
   `pi.svg`), colour variants where they exist, mono marks in `--foreground`. A custom agent
   without one gets a neutral glyph. Never hand-drawn logos.
 - **Voice:** plain words. Buttons are named for the act ("Split right", "Restart session"),
@@ -101,10 +101,10 @@ A section nav (General, Usage, Agents, Plugins, Updates) and the section; below 
 row of tabs.
 - **General:** Colour (tint swatches), Default shell, Transcription (speech to text: download with progress, or
   why this CPU can't), Closing the window (keep running in the tray).
-- **Usage:** each account's plan windows as bars that fill as the plan is used (green, then
+- **Usage:** a card per installed agent: its plan windows as bars that fill as the plan is used (green, then
   amber, then red), with what's left and when it resets. No costs.
-- **Agents:** a card per agent: version → latest, install source, Install / Update / Check, the
-  sign-in actions (Use an API key, Sign in where supported) and a muted Uninstall that asks
+- **Agents:** a card per agent: version → latest, install source, Install / Update / Check, and
+  a muted Uninstall that asks
   first: **Keep my settings and sign-ins** or **Remove everything**, listing what goes.
 - **Plugins:** one card per plugin. GitHub: the `gh` accounts (Active badge, scopes, Switch to, Disconnect) and Add account:
   Sign in with browser (a large one-time code, Copy, Open GitHub, completes by itself) or Use a
@@ -115,13 +115,13 @@ row of tabs.
 
 ## 7. Background work
 
-Installs, updates, sign-ins and the speech download run as calm background jobs: no terminals,
+Installs, updates and the speech download run as calm background jobs: no terminals,
 no console windows, no raw output unless the person asks for details.
 - The card that started a job shows a thin meter, the step in plain words ("Installing Git · 2 of
   3") and the time left; an agent install also shows Cancel. Moving on leaves a progress toast bottom-right with Hide; hiding never
   cancels.
 - An error is one plain sentence with **Retry** and a quiet **Show details** (the captured log,
-  read-only). A sign-in completes by itself when the agent or `gh` reports it signed in.
+  read-only). A `gh` sign-in completes by itself when `gh` reports it signed in.
 
 ## 8. Windows citizen
 

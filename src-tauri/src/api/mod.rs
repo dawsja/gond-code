@@ -2,20 +2,16 @@
 //! `crate::commands::api`, and the state tree it watches. Tauri-free so it is unit-tested
 //! on Linux.
 
-pub mod accounts;
 pub mod builtin;
 pub mod git;
 pub mod github;
 pub mod harness;
 pub mod layout;
-pub mod models;
 pub mod projects;
 pub mod pty;
 pub mod registry;
-pub mod signin;
 pub mod speech;
 pub mod state;
-pub mod threads;
 pub mod usage;
 
 pub use registry::{Actor, ActorKind, CommandInfo, Def, Registry, Risk};
@@ -27,11 +23,6 @@ pub use state::StateTree;
 pub struct Services {
     pub state: StateTree,
     pub store: crate::store::Store,
-    /// Account secrets: Credential Manager in the app.
-    pub vault: std::sync::Arc<dyn crate::vault::Vault>,
-    /// Where sign-in homes live (`accounts::default_root`).
-    pub accounts_root: std::path::PathBuf,
-    pub runner: crate::runner::AgentRunner,
     pub ptys: crate::pty::PtyManager,
     /// The GitHub CLI and the browser sign-in in flight.
     pub github: crate::github::Github,
@@ -47,46 +38,27 @@ impl crate::pty::PtySink for NullSink {
 }
 
 impl Services {
-    /// Services over `store` and `vault`, with the tree loaded from the store.
-    /// The runtime starts on null sinks; `with_runtime` attaches the app's own.
-    pub fn new(
-        store: crate::store::Store,
-        vault: std::sync::Arc<dyn crate::vault::Vault>,
-        accounts_root: std::path::PathBuf,
-    ) -> crate::error::AppResult<Self> {
+    /// Services over `store`, with the tree loaded from it. The terminals start on a null
+    /// sink; `with_runtime` attaches the app's own.
+    pub fn new(store: crate::store::Store) -> crate::error::AppResult<Self> {
         let state = StateTree::new(initial_state());
         let s = Services {
             state,
-            runner: crate::runner::AgentRunner::new(store.clone()),
             ptys: crate::pty::PtyManager::new(std::sync::Arc::new(NullSink)),
             github: crate::github::Github::default(),
             git_global: None,
             store,
-            vault,
-            accounts_root,
         };
         projects::load(&s)?;
         usage::sync(&s);
         speech::sync(&s);
-        accounts::sync_accounts(
-            &s,
-            state::Cause::Runtime {
-                runtime: "startup".into(),
-            },
-        )?;
         Ok(s)
     }
 }
 
 impl Services {
-    /// Uses the app's real runner and managers (the ones Tauri manages), so
-    /// commands and the old IPC path share one runtime.
-    pub fn with_runtime(
-        mut self,
-        runner: crate::runner::AgentRunner,
-        ptys: crate::pty::PtyManager,
-    ) -> Self {
-        self.runner = runner;
+    /// Uses the app's real terminals (the ones Tauri manages).
+    pub fn with_runtime(mut self, ptys: crate::pty::PtyManager) -> Self {
         self.ptys = ptys;
         self
     }
@@ -95,16 +67,8 @@ impl Services {
 impl Default for Services {
     /// An in-memory store, for tests.
     fn default() -> Self {
-        Services::new(
-            crate::store::Store::open_in_memory().expect("in-memory store"),
-            std::sync::Arc::new(crate::vault::MemoryVault::default()),
-            std::env::temp_dir().join(format!(
-                "gond-code-test-accounts-{}",
-                ulid::Ulid::generate()
-            )),
-        )
-        .map(|s| Services { ..s })
-        .expect("load services")
+        Services::new(crate::store::Store::open_in_memory().expect("in-memory store"))
+            .expect("load services")
     }
 }
 
@@ -119,12 +83,9 @@ pub fn initial_state() -> serde_json::Value {
         "settings": {},
         "agents": {},
         "projects": {},
-        "accounts": {},
         "github": { "ghInstalled": false, "accounts": [] },
         "installs": {},
-        "threads": {},
         "terminals": {},
-        "signins": {},
         "usage": {},
         "speech": { "state": "off" },
         "layout": { "focus": { "panel": "chat" } },
@@ -136,12 +97,9 @@ pub fn registry() -> Registry<Services> {
     let mut r = Registry::new();
     builtin::register(&mut r);
     projects::register(&mut r);
-    accounts::register(&mut r);
     github::register(&mut r);
     git::register(&mut r);
     harness::register(&mut r);
-    models::register(&mut r);
-    threads::register(&mut r);
     pty::register(&mut r);
     speech::register(&mut r);
     usage::register(&mut r);

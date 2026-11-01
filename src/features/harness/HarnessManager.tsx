@@ -2,12 +2,10 @@ import { InstallControl } from "./InstallControl";
 import { UninstallButton, UninstallDialog } from "./UninstallDialog";
 import type { useHarnessInstalls } from "./useHarnessInstalls";
 import { useEffect, useState } from "react";
-import { useAgentAccountActions, type AccountFlows } from "@/features/accounts/AgentAccountButtons";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isRegistered } from "@/lib/appState";
@@ -27,9 +25,6 @@ import type { RunCommand } from "@/features/deck/model";
 import { statusOf, type Harness, type HarnessStatus } from "@/lib/harnesses";
 import { Hint } from "@/components/hint";
 
-// Without account flows (demo, tests) the card simply has no account actions.
-const EMPTY_FLOWS: AccountFlows = { harnesses: [], kindsOf: () => undefined, onCommand: () => {} };
-
 const STATUS: Record<HarnessStatus, { label: string; tone: "ok" | "info" | "neutral" | "bad" }> = {
   "up-to-date": { label: "Up to date", tone: "ok" },
   update: { label: "Update available", tone: "info" },
@@ -47,7 +42,6 @@ export function HarnessManager({
   running = {},
   onCommand,
   jobs = [],
-  accountFlows,
   installs,
   checkUpdates,
 }: {
@@ -57,8 +51,6 @@ export function HarnessManager({
   onCommand: RunCommand;
   /** /installs: a finished update's plain line shows under its harness. */
   jobs?: JobState[];
-  /** "Use an API key" and "Sign in" on each installed harness. */
-  accountFlows?: AccountFlows;
   /** Live installs, updates and uninstalls: the same job path as first run. */
   installs?: Pick<
     ReturnType<typeof useHarnessInstalls>,
@@ -89,7 +81,7 @@ export function HarnessManager({
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Harnesses</h2>
             <p className="max-w-[72ch] text-sm text-muted-foreground">
-              The agent programs Gond Code runs. Install, update and sign in to them here.
+              The agent programs you run in your terminals. Install and update them here.
             </p>
           </div>
           <Button variant="outline" data-command="harness.check" onClick={check}>
@@ -109,7 +101,6 @@ export function HarnessManager({
                 asking={h.id === asking}
                 jobs={jobs}
                 installs={installs}
-                accountFlows={accountFlows}
                 busy={busy(h.id)}
                 onInstall={() => install(h.id)}
                 onUpdate={() => update(h.id)}
@@ -151,10 +142,10 @@ export function HarnessManager({
 }
 
 /**
- * One harness in Settings: who it is, version → latest, source and who runs it,
- * then every action in one footer row pinned to the bottom so the grid's rows line up. Left: the
- * primary action (Install, Update or Check). Right: Use an API key, Sign in, then a muted
- * Uninstall; on a narrow card those fold into a ⋯ menu, Uninstall last.
+ * One harness in Settings: who it is, version → latest, source and the panes running it, then
+ * its actions in one footer row pinned to the bottom so the grid's rows line up: the primary
+ * action (Install, Update or Check) on the left, a muted Uninstall on the right (in a ⋯ menu on a
+ * narrow card).
  */
 /**
  * A finished job's line for this agent ("Pi is ready.", "Pi is uninstalled."), while it's fresh:
@@ -182,7 +173,6 @@ function HarnessCard({
   asking,
   jobs,
   installs,
-  accountFlows,
   busy,
   onInstall,
   onUpdate,
@@ -196,7 +186,6 @@ function HarnessCard({
   asking: boolean;
   jobs: JobState[];
   installs?: Pick<ReturnType<typeof useHarnessInstalls>, "uninstall" | "state">;
-  accountFlows?: AccountFlows;
   busy: boolean;
   onInstall: () => void;
   onUpdate: () => void;
@@ -204,8 +193,6 @@ function HarnessCard({
   onCheck: () => void;
   onUninstall: () => void;
 }) {
-  const account = useAgentAccountActions(h, accountFlows ?? EMPTY_FLOWS);
-  const hasAccount = !!accountFlows && account.any;
   const state = installs?.state(h.id);
   const note = useFreshNote(jobs, h.label);
   const canUninstall = h.installed && status !== "self";
@@ -305,7 +292,6 @@ function HarnessCard({
         <span className="flex-1" />
         {/* Wide card: the quiet actions in a row. */}
         <span className="flex items-center gap-1 @max-[26rem]:hidden">
-          {hasAccount && account.buttons}
           {canUninstall && (
             <UninstallButton
               harness={h}
@@ -315,8 +301,8 @@ function HarnessCard({
             />
           )}
         </span>
-        {/* Narrow card: they fold into ⋯, Uninstall last. */}
-        {(hasAccount || canUninstall) && (
+        {/* Narrow card: it folds into ⋯. */}
+        {canUninstall && (
           <span className="@min-[26rem]:hidden">
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -328,28 +314,23 @@ function HarnessCard({
                 <MoreHorizontalIcon className="size-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {hasAccount && account.items}
-                {hasAccount && canUninstall && <DropdownMenuSeparator />}
-                {canUninstall && (
-                  // A grid, so the item spans the menu (and its highlight) like the others.
-                  <Hint text={uninstallWhy} wrapClassName="grid">
-                    <DropdownMenuItem
-                      data-command="harness.uninstall"
-                      data-arg={h.id}
-                      className="text-muted-foreground"
-                      disabled={uninstallOff}
-                      onSelect={onUninstall}
-                    >
-                      <Trash2Icon /> Uninstall
-                    </DropdownMenuItem>
-                  </Hint>
-                )}
+                {/* A grid, so the item spans the menu (and its highlight). */}
+                <Hint text={uninstallWhy} wrapClassName="grid">
+                  <DropdownMenuItem
+                    data-command="harness.uninstall"
+                    data-arg={h.id}
+                    className="text-muted-foreground"
+                    disabled={uninstallOff}
+                    onSelect={onUninstall}
+                  >
+                    <Trash2Icon /> Uninstall
+                  </DropdownMenuItem>
+                </Hint>
               </DropdownMenuContent>
             </DropdownMenu>
           </span>
         )}
       </footer>
-      {account.dialogs}
     </li>
   );
 }

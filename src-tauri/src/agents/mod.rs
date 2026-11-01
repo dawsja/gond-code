@@ -1,21 +1,8 @@
-//! Agent CLIs: how to find them, and adapters that turn one turn into a
-//! process spec and its stdout into `AgentEvent`s. Adapters are pure; the
-//! runner owns the processes.
+//! Agent CLIs: the built-in ones and your custom ones, how to find them (`detect`), and
+//! which one runs in a terminal (`running`).
 
-pub mod agy;
-pub mod claude;
-pub mod codex;
-pub mod copilot;
-pub mod cursor;
-pub mod custom;
 pub mod detect;
-pub mod driver;
-pub mod grok;
-pub mod models;
-pub mod opencode;
-pub mod pi;
 pub mod running;
-pub mod sessions;
 
 use serde::{Deserialize, Serialize};
 
@@ -142,8 +129,6 @@ impl UsageWindow {
         }
     }
 }
-
-pub use driver::Driver;
 
 use crate::error::{AppError, AppResult};
 use crate::store::{custom_agents, Store};

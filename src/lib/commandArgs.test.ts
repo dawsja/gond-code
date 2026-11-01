@@ -173,7 +173,8 @@ function calls() {
 }
 
 it("reads the UI's command calls (the check isn't vacuous)", () => {
-  expect(calls().length).toBeGreaterThan(40);
+  // 40 once the account and model UI went; a floor so a broken scan can't pass by finding none.
+  expect(calls().length).toBeGreaterThan(30);
 });
 
 it("every command call's input fits that command's real input schema", () => {

@@ -14,52 +14,29 @@ If the code and this file disagree, the code wins; fix this file.
 ┌───────────────────────────────▼──────────────────────────────────────────┐
 │ Rust core (src-tauri)                                                    │
 │  api/       the command registry and the state tree                      │
-│  runner     builds each pane's agent CLI (program, args, env, folder)    │
 │  pty        portable-pty sessions (ConPTY on Windows), output to the UI  │
-│  agents     one driver per agent: detect, models, sign-in, sessions      │
+│  agents     finds agent CLIs, and the one running in a pane's shell      │
 │  harness    install / update / uninstall plans; install runs the jobs    │
 │  updater    checks latest.json, downloads and verifies the installer     │
-│  store      SQLite; vault: Windows Credential Manager                    │
+│  store      SQLite                                                       │
 └──────────────────────────────────────────────────────────────────────────┘
    spawns: the agents' CLIs, shells, git, gh, winget, bun — with the user's PATH
 ```
 
-Local-first: no server. Every pane runs the agent's own interactive CLI; Gond runs nothing in
-the background on an agent's behalf.
+Local-first: no server. Every pane is a shell; you start an agent by typing it there, and Gond
+runs nothing on an agent's behalf.
 
 ## 2. How a pane runs
 1. The UI's layout (`src/features/workspace/layout.ts`) is a tree of right/down splits whose
    leaves are panes. Sessions (`useSessions.ts`) are saved with `sessions.set` to
    `sessions.json` beside the database.
-2. An agent pane has a **thread** (`threads.rs`, `thread.create`): the agent, its account, model,
-   thinking level, folder and the agent's own session id.
-3. `pane.start` (`api/pty.rs`) settles the session id, then asks `AgentRunner::interactive`
-   (`runner.rs`) for the command: the agent's CLI with its model, thinking and resume flags, and
-   the account's env (its config home or API key, resolved from the vault into the child's env
-   only). Gond passes no permission flags.
-4. `pty/` runs it in a ConPTY and streams output as `pty:data`; `Terminal.tsx` draws it and
-   reads Working / Needs you / Done from the screen (`status.ts`).
-5. A plain shell pane uses `pty.open`: the pane's own shell, else the one picked in Settings
+2. Every pane opens with `pty.open`: the pane's own shell, else the one picked in Settings
    (`shells.rs`), in the pane's folder or the home folder. The pane keeps the shell id it ran,
    so it reopens the same shell.
-
-### Resume
-Each agent resumes its conversation when its pane opens again (`api/pty.rs`,
-`agents/sessions.rs`, `runner.rs`):
-
-| Agent | First start | Opening again |
-|---|---|---|
-| Claude Code | `--session-id <new uuid>` | `--resume <id>` once its `.jsonl` exists, else a new id |
-| Pi | `--session-id <new uuid>` (create or open) | the same |
-| GitHub Copilot | `--session-id <new uuid>` (create or open) | the same |
-| Cursor | `cursor-agent create-chat`, then `--resume <id>` | `--resume <id>` |
-| Grok Build | `-s <new uuid>` | `-r <id>` once Grok has saved it |
-| Codex | nothing | finds the rollout file under `~/.codex/sessions` (or the account's `CODEX_HOME`) that this pane started in its folder, then `codex resume <id>` |
-| Antigravity | nothing | the folder's entry in `last_conversations.json`, then `--conversation <id>` |
-| opencode | nothing | `--continue` (the folder's latest session) |
-
-For Codex, Antigravity and opencode, a pane counts as opening again when its thread is more than
-15 seconds old. Custom agents start fresh.
+3. `pty/` runs it in a ConPTY and streams output as `pty:data`; `Terminal.tsx` draws it.
+4. Every 2 s the pane asks `pty.agent` which agent runs under its shell (`agents/running.rs`,
+   by program name in the shell's process tree). While one does, the pane shows it, reads
+   Working / Needs you / Done from the screen (`status.ts`), and the sidebar lists it.
 
 ### Restart to update
 `src/lib/restart.ts` lets each part register a save; Restart to update waits for all of them
@@ -78,11 +55,9 @@ src/                       React app
   components/brand/        agent and shell brand icons (@lobehub/icons, plus Pi's)
   features/deck/           Deck.tsx: the app shell (sidebar, workspace, settings)
   features/workspace/      sessions, panes, layout, agent detection, status, dictation, KeyHelp
-  features/terminal/       the sign-in fallback terminal
   features/settings/       Settings space, General, Updates
   features/usage/          Settings → Usage
   features/harness/        Settings → Agents (install, update, uninstall)
-  features/accounts/       sign-in and API-key flows
   features/connections/    Settings → Plugins (GitHub)
   features/setup/          Git and GitHub CLI installs and the progress toast
   features/speech/         speech to text setting and recording
@@ -92,22 +67,18 @@ src/                       React app
   lib/commands.generated.json  the registry with schemas (checked by a test)
 src-tauri/src/             Rust
   main.rs lib.rs           builder, plugins, `gond-code path|purge-data` subcommands
-  api/                     registry.rs, state.rs and one file per area (accounts, harness,
-                           layout, models, projects, pty, signin, speech, threads, usage, git,
-                           github, builtin)
+  api/                     registry.rs, state.rs and one file per area (harness, layout,
+                           projects, pty, speech, usage, git, github, builtin)
   commands/                thin #[tauri::command] wrappers (command_run, state_get, window)
-  agents/                  driver.rs (trait), claude, codex, agy, grok, opencode, pi, copilot,
-                           cursor, custom,
-                           detect.rs, models.rs, sessions.rs (finding an agent's session)
-  runner.rs                a pane's agent command
+  agents/                  detect.rs (finding agent CLIs), running.rs (the agent in a pane)
   pty/                     PtyManager, scrollback
-  threads.rs projects.rs   pane threads; folders
-  accounts.rs vault/       accounts; secrets in Credential Manager
+  projects.rs              folders
+  clipboard.rs             the clipboard for a paste into a pane
   harness.rs install.rs    install/update plans; the background install engine
   fallback.rs releases.rs  installs without winget; latest versions
   uninstall.rs             removing an agent (keep or delete its data)
   plan_usage.rs grok_usage.rs  plan limits for Settings → Usage
-  endpoint_test.rs         "Test connection" for API-key accounts
+  http.rs credentials.rs   curl for the usage sources; reading agents' own credentials
   github.rs git/           GitHub through `gh`; git CLI and identity
   shells.rs speech.rs      plain shells; speech to text (transcribe.cpp)
   settings.rs store/       typed settings; SQLite and migrations
@@ -123,12 +94,12 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
 ## 4. The command registry and state tree
 - Every action is a registered command (`api/registry.rs`) with a dotted name, JSON schemas, a
   risk (`read`, `write-local`, `outward`, `destructive`) and a handler. Some are human only:
-  only the window may call them. The UI calls them through `command_run`. There are 55; the
+  only the window may call them. The UI calls them through `command_run`. There are 47; the
   list is [AGENT-API.md](AGENT-API.md). `agent_api_tables_match_the_registry` and
   `commands_json_is_current` keep it and `src/lib/commands.generated.json` in step
   (`UPDATE_COMMANDS=1 cargo test --lib commands_json` regenerates the JSON).
-- Live state is one versioned JSON tree (`api/state.rs`: projects, threads, accounts, installs,
-  sign-ins, usage, speech, github, update, layout, settings). The UI reads it once with
+- Live state is one versioned JSON tree (`api/state.rs`: projects, installs, terminals, usage,
+  speech, github, update, layout, settings). The UI reads it once with
   `state_get` and follows RFC 6902 patches in `state:patch` events. SQLite and the settings
   store are the source of truth; the tree is rebuilt from them at startup.
 - Terminal output is a raw stream (`pty:data`, `pty:exit`), not part of the tree.
@@ -138,7 +109,7 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
 - IDs: ULID strings. Times: RFC 3339 UTC strings.
 - JSON over IPC is camelCase (`#[serde(rename_all = "camelCase")]`).
 - Every command returns `Result<T, AppError>`; the UI gets `{ code, message }` (`error.rs`).
-- Long work (installs, sign-ins, the speech download, an update download) never blocks a
+- Long work (installs, the speech download, an update download) never blocks a
   command: it reports progress into the tree. `install.cancel` stops a running install.
 - Child processes never open a console window (`CREATE_NO_WINDOW`) and run in a job object the
   app owns (`proctree.rs`), so nothing is orphaned.
@@ -146,9 +117,10 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
 ## 6. Where data lives
 - `%APPDATA%\GondCode` (`appdata::roaming()`): `gond-code.db` (SQLite, WAL), `sessions.json`,
   and `screens\` (shell screens saved for an update, removed once read).
-- `%LOCALAPPDATA%\GondCode` (`appdata::local()`): sign-in homes for accounts, the speech model.
-- Secrets: Windows Credential Manager under `GondCode/` (`vault/`), never in SQLite, argv, logs
-  or the tree.
+- `%LOCALAPPDATA%\GondCode` (`appdata::local()`): the speech model (and sign-in homes left by
+  older versions).
+- Gond keeps no secrets. Older versions kept account keys in Credential Manager under
+  `GondCode/`; `purge-data` still removes them.
 - New data gets a folder under one of these roots, never a root of its own.
   `gond-code purge-data` (the uninstaller's "Delete the application data") deletes exactly
   these roots and credentials; it never touches a project folder or an agent's own config.

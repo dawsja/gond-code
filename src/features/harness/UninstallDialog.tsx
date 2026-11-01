@@ -23,7 +23,6 @@ export type UninstallPlan = {
   pathEntries: string[];
   keepData: boolean;
   running: number;
-  accounts: number;
 };
 
 type Load = (harnessId: string, removeEverything: boolean) => Promise<UninstallPlan>;
@@ -40,7 +39,7 @@ const CHOICES = [
   {
     id: "all",
     title: "Remove everything",
-    body: "Also deletes its settings, its sign-ins and the accounts Gond keeps for it.",
+    body: "Also deletes its settings and its sign-ins.",
   },
 ] as const;
 
@@ -145,12 +144,6 @@ export function UninstallDialog({
             <div className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-lg border border-edge bg-raised/40 p-3">
               <Paths title="Deletes" paths={plan.deletes} empty="No files" />
               <Paths title="Takes off your PATH" paths={plan.pathEntries} empty="No PATH entries" />
-              {all && plan.accounts > 0 && (
-                <p className="text-sm">
-                  Signs out and removes{" "}
-                  {plan.accounts === 1 ? "1 account" : `${plan.accounts} accounts`}
-                </p>
-              )}
             </div>
           )}
           {running > 0 && (

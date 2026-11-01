@@ -68,8 +68,6 @@ enum Cursor {
     Terminal,
     /// Gond answers the startup query only; an agent's terminal.
     Startup,
-    /// Gond answers every one; nobody ever looks (background sign-in).
-    Always,
 }
 
 /// How many of `queries` new cursor queries Gond answers, `answered` having been so far.
@@ -77,7 +75,6 @@ fn replies(cursor: Cursor, answered: usize, queries: usize) -> usize {
     match cursor {
         Cursor::Terminal => 0,
         Cursor::Startup => queries.min(1usize.saturating_sub(answered)),
-        Cursor::Always => queries,
     }
 }
 
@@ -175,19 +172,6 @@ impl PtyManager {
         rows: u16,
     ) -> AppResult<String> {
         self.open_inner(thread_id, cmd, cols, rows, Cursor::Terminal)
-    }
-
-    /// A terminal nobody is looking at (a background sign-in): Gond answers the
-    /// console's cursor queries itself, as xterm.js would, or ConPTY never lets the
-    /// child's output through.
-    pub fn open_background(
-        &self,
-        thread_id: &str,
-        cmd: CommandBuilder,
-        cols: u16,
-        rows: u16,
-    ) -> AppResult<String> {
-        self.open_inner(thread_id, cmd, cols, rows, Cursor::Always)
     }
 
     fn open_inner(
@@ -306,6 +290,11 @@ impl PtyManager {
             .ok_or_else(|| not_found(pty_id))?;
         let timeout = timeout.unwrap_or(READ_TIMEOUT).min(READ_TIMEOUT_MAX);
         Ok(scroll.read(since, re.as_ref(), timeout))
+    }
+
+    /// Every running terminal's program's process id.
+    pub fn pids(&self) -> Vec<u32> {
+        self.lock().values().filter_map(|s| s.pid).collect()
     }
 
     /// The terminal's program's process id, while it runs.
@@ -572,22 +561,6 @@ mod tests {
         assert_eq!(cursor_queries(&mut tail, "n"), 1);
     }
 
-    /// a background terminal answers the console's cursor query itself, so a
-    /// program that waits for the answer (as ConPTY does on Windows) carries on.
-    #[cfg(unix)]
-    #[test]
-    fn a_background_terminal_answers_cursor_queries() {
-        let mgr = PtyManager::new(Arc::new(Recorder::default()));
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        cmd.args(["-c", "stty raw -echo; printf '\\033[6n'; dd bs=1 count=6 2>/dev/null | od -c | head -1; echo; echo done"]);
-        let id = mgr.open_background("t1", cmd, 80, 24).unwrap();
-        let out = mgr
-            .read(&id, None, Some("done"), Some(Duration::from_secs(10)))
-            .unwrap();
-        assert_eq!(out.matched, Some(true), "{}", out.text);
-        assert!(out.text.contains("1   ;   1   R"), "{}", out.text);
-    }
-
     /// an agent's terminal gets the startup query answered (or ConPTY would hold
     /// every byte back), and only that one, so a human taking over later isn't
     /// double-answered.
@@ -597,7 +570,6 @@ mod tests {
         assert_eq!(replies(Cursor::Startup, 0, 2), 1, "two in one chunk");
         assert_eq!(replies(Cursor::Startup, 1, 1), 0, "later ones");
         assert_eq!(replies(Cursor::Terminal, 0, 1), 0, "xterm.js answers");
-        assert_eq!(replies(Cursor::Always, 3, 2), 2);
     }
 
     #[cfg(unix)]

@@ -1,11 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AccountFlows } from "@/features/accounts/AgentAccountButtons";
 import { useHarnessInstalls } from "@/features/harness/useHarnessInstalls";
 import { useSetup } from "@/features/setup/useSetup";
 import { callOrRun, isRegistered, liveBackend, runCommand, useAppState } from "@/lib/appState";
-import type { TestResult } from "@/lib/accounts";
 import type { DeviceCode, GithubStatus } from "@/lib/github";
-import { accountModels, useAccounts, useKinds, useModels } from "@/features/harness/useModels";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { UpdateSettings } from "@/features/settings/UpdateSettings";
@@ -18,13 +15,7 @@ import { MOCK_PROJECTS } from "@/lib/projects";
 import { UsageSettings } from "@/features/usage/UsageSettings";
 import { DEMO } from "./live";
 import type { SpawnData } from "./model";
-import {
-  MOCK_ACCOUNTS,
-  MOCK_HARNESSES,
-  MOCK_KINDS,
-  mockAccountTest,
-  MOCK_MODELS,
-} from "@/features/harness/mock";
+import { MOCK_HARNESSES } from "@/features/harness/mock";
 import { ConnectionsSettings } from "@/features/connections/ConnectionsSettings";
 import { MOCK_GITHUB, mockDeviceCode } from "@/features/connections/mock";
 import { SetupToast } from "@/features/setup/SetupToast";
@@ -68,16 +59,6 @@ function useSettings() {
  * shell, split right or down; you start an agent by typing it there. The sidebar lists your
  * sessions and the agents running in their panes.
  */
-/** The account providers each built-in agent signs in with. */
-const PROVIDERS: Record<string, string[]> = {
-  claude: ["anthropic"],
-  codex: ["openai"],
-  agy: ["google"],
-  grok: ["xai"],
-  copilot: ["github"],
-  cursor: ["cursor"],
-};
-
 export function Deck() {
   const { layout, onCommand, agents, refreshAgents, ws } = useDeck();
   // Installing an agent: follow its job, then re-detect the agents.
@@ -92,79 +73,35 @@ export function Deck() {
   const panel = layout.focus.panel;
   const section = ((panel === "settings" ? layout.focus.entityId : undefined) ??
     "general") as SettingsSection;
-  const installedIds = agents.filter((a) => a.installed).map((a) => a.id);
   const installs = useAppState((t) => t.installs as Record<string, JobState> | undefined);
   const liveJobs = useMemo(() => Object.values(installs ?? {}), [installs]);
   // GitHub through gh (Settings → Plugins): signed-in accounts live at /github.
   const github = useAppState((t) => t.github as GithubStatus | undefined);
   const ghLive = !DEMO && liveBackend();
-  const liveModels = useModels(installedIds);
-  const liveAccounts = useAccounts();
-  const liveKinds = useKinds(installedIds);
   // Newer agent versions, looked for on their own; you install them from Settings → Harnesses.
   const updates = useHarnessChecks(!DEMO && liveBackend() && isRegistered("harness.check"));
   const spawnData: SpawnData = {
-    ...(DEMO
-      ? { harnesses: MOCK_HARNESSES, models: MOCK_MODELS, accounts: MOCK_ACCOUNTS }
-      : {
-          // Live: the detected agents as harnesses, their models from model.list, and the
-          // accounts in the tree (an endpoint account's own models come from model.list too).
-          harnesses: agents.map((a) => ({
-            id: a.id,
-            label: a.name,
-            brand: a.provider ?? a.id,
-            installed: a.installed,
-            version: a.version,
-            latest: updates.checks[a.id]?.updateAvailable ? updates.checks[a.id].latest : a.version,
-            notesUrl: updates.checks[a.id]?.changelog || undefined,
-            // Whose accounts it signs in with (Accounts' "Works in …").
-            providers: PROVIDERS[a.id] ?? [],
-          })),
-          models: liveModels,
-          accounts: liveAccounts,
-          accountModels,
-        }),
+    harnesses: DEMO
+      ? MOCK_HARNESSES
+      : // Live: the detected agents, with what harness.check found newer.
+        agents.map((a) => ({
+          id: a.id,
+          label: a.name,
+          brand: a.provider ?? a.id,
+          installed: a.installed,
+          version: a.version,
+          latest: updates.checks[a.id]?.updateAvailable ? updates.checks[a.id].latest : a.version,
+          notesUrl: updates.checks[a.id]?.changelog || undefined,
+        })),
   };
-  // Adding an account (Settings → Agents).
-  const signInLive = !DEMO && liveBackend() && isRegistered("account.signIn");
-  const testLive = !DEMO && liveBackend() && isRegistered("account.test");
-  const accountFlows: AccountFlows = {
-    harnesses: spawnData.harnesses,
-    kindsOf: (h) => (DEMO ? MOCK_KINDS[h] : liveKinds[h]),
-    onCommand,
-    testDraft: DEMO
-      ? mockAccountTest
-      : testLive
-        ? (input) => runCommand<TestResult>("account.test", input)
-        : undefined,
-    startSignIn: signInLive
-      ? (accountId, size) =>
-          runCommand<{ ptyId: string; jobId?: string }>("account.signIn", { accountId, ...size })
-      : undefined,
-    addSignIn: signInLive
-      ? (draft) => runCommand<{ id: string }>("account.add", draft).then((a) => a.id)
-      : undefined,
-  };
-  // The agents' own sign-ins, looked for again (not only at startup): when Accounts opens, and
-  // when you come back to the window, at most every two minutes.
-  const discoverLive = !DEMO && liveBackend() && isRegistered("account.discover");
-  const lastDiscover = useRef(0);
-  const discover = useCallback(() => {
-    if (!discoverLive || Date.now() - lastDiscover.current < 120_000) return;
-    lastDiscover.current = Date.now();
-    runCommand("account.discover", {}).catch(() => undefined);
-  }, [discoverLive]);
-  useEffect(() => {
-    if (panel === "settings" && section === "harnesses") discover();
-  }, [panel, section, discover]);
   // Settings → Plugins reads gh again when it opens (a sign-in made in a terminal shows up).
   useEffect(() => {
     if (!ghLive || panel !== "settings" || section !== "connections") return;
     if (!isRegistered("github.status")) return;
     runCommand("github.status", {}).catch(() => undefined);
   }, [ghLive, panel, section]);
-  // Plan limits (% used, when they reset) read from each agent's own usage source when
-  // Accounts or Usage opens, at most once a minute (usage.refresh).
+  // Plan limits (% used, when they reset) read from each agent's own sign-in when Usage opens,
+  // at most once a minute (usage.refresh).
   const lastLimits = useRef(0);
   useEffect(() => {
     const live = !DEMO && liveBackend() && isRegistered("usage.refresh");
@@ -173,10 +110,6 @@ export function Deck() {
     lastLimits.current = Date.now();
     runCommand("usage.refresh", {}).catch(() => undefined);
   }, [panel, section]);
-  useEffect(() => {
-    window.addEventListener("focus", discover);
-    return () => window.removeEventListener("focus", discover);
-  }, [discover]);
   const statuses = useStatuses();
   const sp = useSessions({ projects: DEMO ? MOCK_PROJECTS : liveProjects });
   // The panes each agent is running in: Settings → Agents won't uninstall it under them.
@@ -286,13 +219,12 @@ export function Deck() {
               ) : section === "updates" ? (
                 <UpdateSettings version={version} />
               ) : section === "usage" ? (
-                <UsageSettings accounts={spawnData.accounts} harnesses={spawnData.harnesses} />
+                <UsageSettings harnesses={spawnData.harnesses} />
               ) : section === "harnesses" ? (
                 <HarnessManager
                   running={openPanes}
                   harnesses={spawnData.harnesses}
                   jobs={liveJobs}
-                  accountFlows={accountFlows}
                   installs={!DEMO && liveBackend() ? harnessInstalls : undefined}
                   checkUpdates={updates.check}
                   onCommand={onCommand}

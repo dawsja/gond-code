@@ -337,8 +337,7 @@ pub fn register(r: &mut Registry<Services>) {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UninstallInput {
     pub harness_id: String,
-    /// Keep its settings and sign-ins, and Gond's accounts for it (default true). `false`
-    /// is "Remove everything".
+    /// Keep its settings and sign-ins (default true). `false` is "Remove everything".
     #[serde(default = "keep")]
     pub keep_data: bool,
 }
@@ -353,18 +352,22 @@ fn keep() -> bool {
 pub struct UninstallPreview {
     #[serde(flatten)]
     pub plan: crate::uninstall::UninstallPlan,
-    /// Agents of this harness running now; uninstall refuses until they stop.
+    /// Terminals running this agent now (you started it in their shell); uninstall refuses
+    /// until they stop, as the running CLI holds its files open.
     pub running: usize,
-    /// Gond accounts for this harness ("Remove everything" deletes them).
-    pub accounts: usize,
 }
 
-/// Whether a thread has a terminal open: its agent's CLI is running in a pane.
-fn has_terminal(s: &Services, thread_id: &str) -> bool {
-    s.state.get("/terminals").is_some_and(|(_, t)| {
-        t.as_object()
-            .is_some_and(|m| m.values().any(|x| x["owner"] == thread_id))
-    })
+/// How many open terminals have agent `id` (command `command`) running under their shell.
+fn running_in_terminals(s: &Services, id: &str, command: &str) -> usize {
+    let pids = s.ptys.pids();
+    if pids.is_empty() {
+        return 0;
+    }
+    let procs = crate::agents::running::snapshot();
+    let agent = [(id.to_string(), command.to_string())];
+    pids.into_iter()
+        .filter(|&pid| crate::agents::running::agent_under(pid, &procs, &agent).is_some())
+        .count()
 }
 
 #[cfg(test)]
@@ -398,32 +401,9 @@ fn uninstall_roots() -> AppResult<crate::uninstall::Roots> {
 pub fn preview_uninstall(s: &Services, id: &str, everything: bool) -> AppResult<UninstallPreview> {
     let h = find(id)?;
     let roots = uninstall_roots()?;
-    let accounts = crate::accounts::list(&s.store, Some(id), None)?;
-    let homes: Vec<std::path::PathBuf> = if everything {
-        accounts
-            .iter()
-            .filter_map(|a| a.config_dir.as_ref().map(std::path::PathBuf::from))
-            .collect()
-    } else {
-        vec![]
-    };
-    let running = s
-        .store
-        .with(crate::store::threads::list_unarchived)?
-        .iter()
-        // An open pane runs the agent's CLI, which holds its files open.
-        .filter(|t| t.agent_id == id && has_terminal(s, &t.id))
-        .count();
     Ok(UninstallPreview {
-        plan: crate::uninstall::plan(
-            h,
-            &roots,
-            &crate::pathenv::user_entries(),
-            everything,
-            &homes,
-        ),
-        running,
-        accounts: accounts.len(),
+        plan: crate::uninstall::plan(h, &roots, &crate::pathenv::user_entries(), everything),
+        running: running_in_terminals(s, id, h.command),
     })
 }
 
@@ -457,7 +437,6 @@ pub fn start_uninstall(s: &Services, id: &str, everything: bool) -> AppResult<St
     let job_id = ulid::Ulid::generate().to_string();
     let steps = p.plan.steps.clone();
     let (svc, jid, name, command) = (s.clone(), job_id.clone(), h.name, h.command);
-    let harness_id = id.to_string();
     std::thread::spawn(move || {
         let _busy = busy;
         let progress = TreeProgress(svc.state.clone());
@@ -480,24 +459,6 @@ pub fn start_uninstall(s: &Services, id: &str, everything: bool) -> AppResult<St
                 bin.display()
             ));
         } else {
-            if everything {
-                if let Ok(accounts) = crate::accounts::list(&svc.store, Some(&harness_id), None) {
-                    for a in accounts {
-                        let _ = crate::accounts::remove(
-                            &svc.store,
-                            &*svc.vault,
-                            &svc.accounts_root,
-                            &a.id,
-                        );
-                    }
-                }
-                let _ = super::accounts::sync_accounts(
-                    &svc,
-                    Cause::Runtime {
-                        runtime: "install".into(),
-                    },
-                );
-            }
             if let Some(last) = job.steps.last_mut() {
                 last.note = Some(format!("{name} is uninstalled."));
             }

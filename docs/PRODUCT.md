@@ -39,10 +39,10 @@ every agent by what it's doing.
 - **Settings.**
   - **General:** colour, default shell (PowerShell, Command Prompt, Git Bash, WSL; whichever are
     on the PC), speech to text, close to tray.
-  - **Usage:** each account's plan limits as its agent reports them (session, weekly, monthly
-    windows). Gond does not count spend.
-  - **Agents:** install, update and uninstall each agent CLI; sign-ins and API keys. A running
-    install can be cancelled.
+  - **Usage:** each installed agent's plan limits, as the agent reports them for its own sign-in
+    (session, weekly, monthly windows). Gond does not count spend.
+  - **Agents:** install, update and uninstall each agent CLI. A running install can be
+    cancelled. Each agent signs in inside its own CLI.
   - **Plugins:** what Gond Code connects to, one card each. GitHub: Git and the GitHub CLI
     install from here if missing; sign in through `gh`.
   - **Updates:** this version, Check for updates, download progress and Restart to update.

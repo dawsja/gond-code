@@ -167,13 +167,11 @@ fn show(p: &Path) -> String {
 }
 
 /// The plan for `h`, from what's on disk under `r` and the user PATH `user_path`.
-/// `account_homes`: Gond's sign-in homes for this harness (removed with everything).
 pub fn plan(
     h: &Harness,
     r: &Roots,
     user_path: &[String],
     remove_everything: bool,
-    account_homes: &[PathBuf],
 ) -> UninstallPlan {
     let mut methods = vec![];
     let mut steps = vec![];
@@ -246,7 +244,6 @@ pub fn plan(
     }
     if remove_everything {
         deletes.extend(f.config.iter().cloned());
-        deletes.extend(account_homes.iter().cloned());
     }
     // Only what's there, once, and nothing inside something already going.
     deletes.retain(|p| exists(p));
@@ -346,7 +343,7 @@ mod tests {
         let h = crate::harness::get("claude").unwrap();
         let path = vec![show(&bin)];
 
-        let p = plan(h, &r, &path, false, &[]);
+        let p = plan(h, &r, &path, false);
         assert_eq!(p.methods, ["vendor"]);
         assert_eq!(
             p.deletes,
@@ -363,16 +360,10 @@ mod tests {
 
         // Another tool in ~/.local/bin keeps the PATH entry.
         touch(&bin.join("uv.exe"));
-        assert!(plan(h, &r, &path, false, &[]).path_entries.is_empty());
+        assert!(plan(h, &r, &path, false).path_entries.is_empty());
 
-        let homes = [r.local.join(j("GondCode/accounts/claude/A1"))];
-        std::fs::create_dir_all(&homes[0]).unwrap();
-        let all = plan(h, &r, &path, true, &homes);
-        for want in [
-            r.home.join(".claude"),
-            r.home.join(".claude.json"),
-            homes[0].clone(),
-        ] {
+        let all = plan(h, &r, &path, true);
+        for want in [r.home.join(".claude"), r.home.join(".claude.json")] {
             assert!(
                 all.deletes.contains(&show(&want)),
                 "{want:?} in {:?}",
@@ -401,7 +392,7 @@ mod tests {
         let h = crate::harness::get("cursor").unwrap();
         let entry = show(&r.local.join("cursor-agent"));
 
-        let p = plan(h, &r, std::slice::from_ref(&entry), false, &[]);
+        let p = plan(h, &r, std::slice::from_ref(&entry), false);
         assert_eq!(p.methods, ["vendor"]);
         assert_eq!(
             p.deletes,
@@ -412,7 +403,7 @@ mod tests {
         );
         assert_eq!(p.path_entries, std::slice::from_ref(&entry));
 
-        let all = plan(h, &r, &[entry], true, &[]);
+        let all = plan(h, &r, &[entry], true);
         for want in [".cursor/cli-config.json", ".cursor/chats"] {
             assert!(all.deletes.contains(&show(&r.home.join(j(want)))), "{want}");
         }
@@ -442,7 +433,7 @@ mod tests {
         )));
         touch(&r.home.join(j(".copilot/config.json")));
         let h = crate::harness::get("copilot").unwrap();
-        let p = plan(h, &r, &[], false, &[]);
+        let p = plan(h, &r, &[], false);
         assert_eq!(p.methods, ["winget"]);
         assert!(p.deletes.is_empty());
         assert!(p.steps[0]
@@ -450,7 +441,7 @@ mod tests {
             .args
             .join(" ")
             .contains("uninstall --id GitHub.Copilot"));
-        let all = plan(h, &r, &[], true, &[]);
+        let all = plan(h, &r, &[], true);
         assert_eq!(all.deletes, [show(&r.home.join(".copilot"))]);
     }
 
@@ -463,7 +454,7 @@ mod tests {
         touch(&r.home.join(j(".gemini/other-tool.json")));
         let h = crate::harness::get("agy").unwrap();
         let entry = show(&r.local.join(j("agy/bin")));
-        let p = plan(h, &r, std::slice::from_ref(&entry), true, &[]);
+        let p = plan(h, &r, std::slice::from_ref(&entry), true);
         assert_eq!(
             p.deletes,
             [
@@ -489,13 +480,13 @@ mod tests {
         )));
         let h = crate::harness::get("pi").unwrap();
         let path = vec![show(&bin)];
-        let p = plan(h, &r, &path, false, &[]);
+        let p = plan(h, &r, &path, false);
         assert_eq!(p.methods, ["bun"]);
         assert!(p.deletes.contains(&show(&bin.join("pi.exe"))));
         assert_eq!(p.path_entries, [show(&bin)]);
 
         touch(&bin.join("opencode.exe"));
-        assert!(plan(h, &r, &path, false, &[]).path_entries.is_empty());
+        assert!(plan(h, &r, &path, false).path_entries.is_empty());
     }
 
     #[test]
@@ -514,7 +505,7 @@ mod tests {
                 .join(j("npm/node_modules/@openai/codex/package.json")),
         );
         let h = crate::harness::get("codex").unwrap();
-        let p = plan(h, &r, &[], false, &[]);
+        let p = plan(h, &r, &[], false);
         assert_eq!(p.methods, ["winget", "npm"]);
         assert_eq!(
             p.steps[0].plan.args[..3],
@@ -537,7 +528,6 @@ mod tests {
             &roots(t.path()),
             &[],
             false,
-            &[],
         );
         assert!(p.steps.is_empty() && p.deletes.is_empty() && p.methods.is_empty());
     }
@@ -547,7 +537,7 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let r = roots(t.path());
         touch(&r.home.join(j(".codex/tmp/arg0/x")));
-        let p = plan(crate::harness::get("codex").unwrap(), &r, &[], false, &[]);
+        let p = plan(crate::harness::get("codex").unwrap(), &r, &[], false);
         assert!(p.methods.is_empty() && p.deletes.is_empty(), "{p:?}");
     }
 }

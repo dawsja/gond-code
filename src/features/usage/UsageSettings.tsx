@@ -1,8 +1,10 @@
 import { ProviderIcon } from "@/components/brand/provider-icon";
 import { useAppState } from "@/lib/appState";
-import { usageKey, windowLine, type PlanUsage } from "@/lib/accounts";
-import type { Account, Harness } from "@/lib/harnesses";
+import type { Harness } from "@/lib/harnesses";
+import { limitedUntil, PLAN_AGENTS, usageKey, windowLine, type PlanUsage } from "@/lib/usage";
 import { cn } from "@/lib/utils";
+import { DEMO } from "@/features/deck/live";
+import { MOCK_USAGE } from "@/features/harness/mock";
 import { Hint } from "@/components/hint";
 
 /** A bar that fills as the plan is used: green, then amber, then red. */
@@ -18,67 +20,48 @@ function Bar({ used }: { used: number }) {
 }
 
 /**
- * Settings → Usage: every account's plan, as its agent reports it: each
- * window (what's left, when it resets). Gond can't see what an agent spends in its own CLI, so it
- * shows no costs of its own.
+ * Settings → Usage: each installed agent's plan, as its own sign-in reports it: each window
+ * (what's left, when it resets). Gond can't see what an agent spends in its own CLI, so it shows
+ * no costs of its own.
  */
-export function UsageSettings({
-  accounts,
-  harnesses,
-}: {
-  accounts: Account[];
-  harnesses: Harness[];
-}) {
-  const usage = useAppState((t) => t.usage as Record<string, PlanUsage> | undefined);
-  const nameOf = (id?: string) => harnesses.find((h) => h.id === id)?.label ?? id ?? "Any agent";
+export function UsageSettings({ harnesses }: { harnesses: Harness[] }) {
+  const live = useAppState((t) => t.usage as Record<string, PlanUsage> | undefined);
+  const usage = DEMO ? MOCK_USAGE : live;
+  const agents = PLAN_AGENTS.map((id) => harnesses.find((h) => h.id === id && h.installed)).filter(
+    (h): h is Harness => !!h,
+  );
   return (
     <div data-slot="usage" className="flex max-w-[880px] flex-col gap-5">
       <header>
         <h1 className="text-xl font-semibold">Usage</h1>
         <p className="text-sm text-muted-foreground">
-          What each account has left of its plan, as its agent reports it.
+          What each agent has left of its plan, as the agent reports it.
         </p>
       </header>
 
-      <section aria-label="Accounts" className="grid gap-3 @min-[46rem]:grid-cols-2">
-        {accounts.map((a) => {
-          const u = usage?.[usageKey(a)];
-          const demoWindow =
-            a.usage.kind === "window" || a.usage.kind === "weekly" ? a.usage : undefined;
-          const windows =
-            u?.windows ??
-            (demoWindow
-              ? [
-                  {
-                    name: demoWindow.kind === "weekly" ? ("weekly" as const) : ("session" as const),
-                    percentLeft: 100 - demoWindow.usedPercent,
-                    resetsAt: demoWindow.resetsAt,
-                  },
-                ]
-              : []);
-          const nothing = windows.length === 0;
+      <section aria-label="Agents" className="grid gap-3 @min-[46rem]:grid-cols-2">
+        {agents.map((h) => {
+          const u = usage?.[usageKey(h.id)];
+          const windows = u?.windows ?? [];
+          const limited = limitedUntil(u);
           return (
             <article
-              key={a.id}
-              data-entity="account-usage"
-              data-id={a.id}
-              aria-label={a.label}
+              key={h.id}
+              data-entity="agent-usage"
+              data-id={h.id}
+              aria-label={h.label}
               className="flex flex-col gap-3 rounded-2xl border border-edge bg-card p-4"
             >
               <div className="flex items-center gap-2.5">
-                <ProviderIcon id={a.harness ?? a.provider} size={18} />
+                <ProviderIcon id={h.brand} size={18} />
                 <div className="min-w-0 flex-1">
-                  <Hint text={a.label}>
-                    <p className="truncate text-sm font-medium">{a.label}</p>
+                  <Hint text={h.label}>
+                    <p className="truncate text-sm font-medium">{h.label}</p>
                   </Hint>
-                  <p className="truncate text-[12px] text-muted-foreground">
-                    {nameOf(a.harness)}
-                    {a.own ? " · your own sign-in" : ""}
-                  </p>
                 </div>
-                {a.limitedUntil && (
+                {limited && (
                   <span className="shrink-0 rounded-full bg-[color-mix(in_oklch,var(--tone-warn)_15%,transparent)] px-2 py-0.5 text-[11.5px] text-tone-warn">
-                    Limited until {a.limitedUntil}
+                    Limited until {limited}
                   </span>
                 )}
               </div>
@@ -95,18 +78,16 @@ export function UsageSettings({
                   </div>
                 );
               })}
-              {nothing && (
+              {windows.length === 0 && (
                 <p className="text-[12.5px] text-faint">
-                  Nothing reported yet. It shows once its agent reports its plan.
+                  Nothing reported yet. It shows once you're signed in to {h.label}.
                 </p>
               )}
             </article>
           );
         })}
-        {accounts.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No signed-in agents yet: sign in from Settings → Agents.
-          </p>
+        {agents.length === 0 && (
+          <p className="text-sm text-muted-foreground">No agents installed that report a plan.</p>
         )}
       </section>
     </div>

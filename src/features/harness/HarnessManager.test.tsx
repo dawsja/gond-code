@@ -27,7 +27,6 @@ const claude: Harness = {
   label: "Claude Code",
   brand: "claude",
   installed: false,
-  providers: [],
 };
 
 async function show(onCommand = vi.fn()) {

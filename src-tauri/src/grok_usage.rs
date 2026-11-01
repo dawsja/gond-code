@@ -2,7 +2,7 @@
 //! after a Grok turn Gond asks the CLI's own proxy, as the CLI does: `/billing` for the
 //! month's credits and `/billing?format=credits` for the week's share, with the sign-in's
 //! access token from `<GROK_HOME>/auth.json`. The token goes to curl through a 0600
-//! header file (`endpoint_test::curl`), never argv or logs, and is never refreshed here:
+//! header file (`http::curl`), never argv or logs, and is never refreshed here:
 //! an expired one just means no reading until Grok renews it on its next run.
 
 use std::path::Path;
@@ -11,7 +11,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::agents::UsageWindow;
-use crate::endpoint_test::{Fetch, Request};
+use crate::http::{Fetch, Request};
 
 const BASE: &str = "https://cli-chat-proxy.grok.com/v1";
 /// The client the proxy expects (the CLI's own headers; the version we recorded).

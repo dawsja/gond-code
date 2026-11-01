@@ -25,7 +25,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use crate::agents::UsageWindow;
-use crate::endpoint_test::{Fetch, Post, Request};
+use crate::http::{Fetch, Post, Request};
 
 const CLAUDE_USAGE: &str = "https://api.anthropic.com/api/oauth/usage";
 const TIMEOUT: Duration = Duration::from_secs(8);
@@ -137,11 +137,7 @@ const CLOUD_CODE: &str = "https://cloudcode-pa.googleapis.com/v1internal";
 
 /// agy's sign-in access token (Credential Manager, `gemini:antigravity`), unless it expired.
 pub fn agy_token() -> Option<String> {
-    use crate::vault::{SecretRef, SystemVault, Vault};
-    let raw = SystemVault::default()
-        .get(&SecretRef("gemini:antigravity".into()))
-        .ok()??;
-    agy_token_from(raw.expose())
+    agy_token_from(&crate::credentials::read("gemini:antigravity")?)
 }
 
 fn agy_token_from(raw: &str) -> Option<String> {
@@ -387,13 +383,29 @@ pub fn copilot_targets(host: &str, login: &str) -> [String; 2] {
 /// The GitHub token Copilot is signed in with in `home`: its config's last signed-in user's,
 /// from Credential Manager.
 pub fn copilot_token(home: &Path) -> Option<String> {
-    use crate::vault::{SecretRef, SystemVault, Vault};
-    let (host, login) = crate::accounts::copilot_user(home)?;
-    let vault = SystemVault::default();
-    copilot_targets(&host, &login).into_iter().find_map(|t| {
-        let raw = vault.get(&SecretRef(t)).ok()??;
-        copilot_token_from(raw.expose())
-    })
+    let (host, login) = copilot_user(home)?;
+    copilot_targets(&host, &login)
+        .into_iter()
+        .find_map(|t| copilot_token_from(&crate::credentials::read(&t)?))
+}
+
+/// Who Copilot last signed in as in `home` (`config.json`, which allows `//` comments):
+/// `(host, login)`.
+pub fn copilot_user(home: &Path) -> Option<(String, String)> {
+    let text = std::fs::read_to_string(home.join("config.json")).ok()?;
+    let json: String = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        );
+    let config: Value = serde_json::from_str(&json).ok()?;
+    let user = &config["lastLoggedInUser"];
+    let login = user["login"].as_str().filter(|l| !l.trim().is_empty())?;
+    let host = user["host"].as_str().unwrap_or("https://github.com");
+    Some((host.to_string(), login.to_string()))
 }
 
 /// A stored Copilot credential: the token itself, or JSON holding it. Copilot writes it as
@@ -558,39 +570,30 @@ mod tests {
     fn real_plan_usage() {
         let home = dirs::home_dir().unwrap();
         if let Some(t) = claude_token(&home.join(".claude")) {
-            eprintln!("claude: {:?}", claude(&t, crate::endpoint_test::curl));
+            eprintln!("claude: {:?}", claude(&t, crate::http::curl));
         }
         if let Some(p) = crate::agents::detect::find("codex", crate::process::path()) {
             eprintln!("codex: {:?}", codex(&p, None));
         }
         let grok = std::env::var_os("GROK_HOME").map_or_else(|| home.join(".grok"), Into::into);
         if let Some(t) = agy_token() {
-            eprintln!("agy: {:?}", agy(&t, crate::endpoint_test::curl_post));
+            eprintln!("agy: {:?}", agy(&t, crate::http::curl_post));
         }
         if let Some(t) = crate::grok_usage::token(&grok) {
-            eprintln!(
-                "grok: {:?}",
-                crate::grok_usage::read(&t, crate::endpoint_test::curl)
-            );
+            eprintln!("grok: {:?}", crate::grok_usage::read(&t, crate::http::curl));
         }
         // Copilot: which of its credentials reads the quota (the token itself is never shown).
         let copilot_home = home.join(".copilot");
-        if let Some((host, login)) = crate::accounts::copilot_user(&copilot_home) {
-            use crate::vault::{SecretRef, SystemVault, Vault};
+        if let Some((host, login)) = copilot_user(&copilot_home) {
             for t in copilot_targets(&host, &login) {
-                let raw = SystemVault::default()
-                    .get(&SecretRef(t.clone()))
-                    .ok()
-                    .flatten();
-                let token = raw.as_ref().and_then(|r| copilot_token_from(r.expose()));
-                let windows = token
-                    .as_deref()
-                    .map(|t| copilot(t, crate::endpoint_test::curl));
+                let raw = crate::credentials::read(&t);
+                let token = raw.as_deref().and_then(copilot_token_from);
+                let windows = token.as_deref().map(|t| copilot(t, crate::http::curl));
                 eprintln!("copilot {t}: stored={} {windows:?}", raw.is_some());
             }
         }
         if let Some(t) = dirs::data_dir().and_then(|r| cursor_token(&r)) {
-            eprintln!("cursor: {:?}", cursor(&t, crate::endpoint_test::curl_post));
+            eprintln!("cursor: {:?}", cursor(&t, crate::http::curl_post));
         }
     }
 

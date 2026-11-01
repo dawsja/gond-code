@@ -33,7 +33,7 @@ refuse any caller but the window.
 |---|---|---|
 | `project.add` | write-local | `{ path }` → `Project`: a folder agents work in (a Git repo's root when it's inside one); adding it again returns the same project. Nothing is written into the folder |
 | `project.list` | read | `{}` → `Project[]` |
-| `project.remove` | write-local; destructive with `archiveThreads` | `{ projectId, archiveThreads? }` → `null`; `invalid` while unarchived threads exist unless `archiveThreads: true` (stops and archives each) |
+| `project.remove` | write-local | `{ projectId }` → `null`: forgets the project (its folder stays on disk) and closes its terminals |
 | `project.touch` | write-local | `{ projectId }` → `null` |
 
 ## Panes and terminals
@@ -43,15 +43,12 @@ refuse any caller but the window.
 | `clipboard.read` | read, **human only** | `{}` → `{ text?, image }`: what Ctrl+Shift+V pastes into a pane: the clipboard's text, and whether it holds a picture (an agent's pane then gets its image-paste key) |
 | `pane.screen.save` | write-local, **human only** | `{ paneId, screen, cwd? }` → `null`: keeps a shell pane's screen (as xterm serialises it) and folder in `screens/` beside the database, before a restart into an update |
 | `pane.screen.take` | write-local, **human only** | `{ paneId }` → `{ screen, cwd? } \| null`: the saved screen and folder, once (reading removes it) |
-| `pane.start` | write-local | `{ threadId, cols?, rows? }` → `{ ptyId }`: a pane's agent, its own interactive CLI with the thread's account, model and thinking, in a terminal that runs until the pane closes. Opening again it resumes its conversation: Claude Code, Pi and Grok Build on the session id Gond chose, Codex and Antigravity on the session the pane started (found on disk), opencode on the folder's latest |
 | `pty.agent` | read | `{ ptyId }` → `string \| null`: the agent running in the terminal, one you typed into its shell (`claude`, `codex`…), by its program under the shell; `null` for none |
 | `pty.close` | write-local | `{ ptyId }` → `null` |
-| `pty.open` | write-local | `{ threadId?, projectId?, shell?, cwd?, cols?, rows? }` (default 120×32) → `{ ptyId, shell? }`: a plain terminal in the thread's or project's folder, else your home folder; `shell` is a `shell.list` id (else Settings' pick), `cwd` a folder to start in instead; the answer names the shell it ran |
+| `pty.open` | write-local | `{ projectId?, shell?, cwd?, cols?, rows? }` (default 120×32) → `{ ptyId, shell? }`: a terminal in the project's folder, else your home folder; `shell` is a `shell.list` id (else Settings' pick), `cwd` a folder to start in instead; the answer names the shell it ran |
 | `pty.read` | read | `{ ptyId, since?: offset, waitFor?: regex, timeoutMs? }` → `{ text, offset, truncated, exited, exitCode?, matched? }` |
 | `pty.resize` | write-local | `{ ptyId, cols, rows }` → `null` |
 | `pty.write` | write-local | `{ ptyId, data }` → `null` |
-| `thread.archive` | write-local | `{ threadId }` → `null`: the pane closed; its session record is kept, archived |
-| `thread.create` | write-local | `{ projectId, agentId, title?, accountId?, model?, thinking? }` → `Thread`: an agent pane's session record (`model`/`thinking` checked against `model.list`) |
 
 ## Agents
 
@@ -63,25 +60,17 @@ refuse any caller but the window.
 | `harness.check` | read (fetches public version metadata) | `{}` → `{ id, installed?, latest?, updateAvailable, changelog }[]`: latest from the npm registry (`claude`, `codex`) or GitHub releases (`agy`); Grok publishes none, and offline means `latest` is absent |
 | `harness.install` | **outward** | `{ harnessId, planIndex?, machineScope? }` → `{ jobId, steps: Step[] }`; prerequisites batched in front, one approval; runs in the background (no console) and reports into `/installs/{jobId}` |
 | `harness.uninstall` | **destructive**, **human only** | `{ harnessId, keepData? }` → `{ jobId, steps }` at `/installs/{jobId}`: winget uninstall, the npm/Bun globals, the vendor's files, then its user PATH entries (a shared folder only once empty), never anything outside that harness's fixed list under the user's profile. `keepData` (default true) keeps settings and sign-ins; `false` also deletes them and the harness's accounts and vault secrets. `invalid` while any of its agents run, or when nothing Gond knows is installed. Done only when the program is no longer found; the last step's note reads "X is uninstalled." |
-| `harness.uninstallPlan` | read | `{ harnessId, keepData? }` → `{ harnessId, methods: ("winget" \| "vendor" \| "npm" \| "bun")[], steps, deletes: string[], pathEntries: string[], keepData, running, accounts }`: exactly what `harness.uninstall` would remove, for the confirm card. `deletes` lists every file and folder; `keepData: false` adds the settings and sign-in dirs and Gond's account homes for that harness |
+| `harness.uninstallPlan` | read | `{ harnessId, keepData? }` → `{ harnessId, methods: ("winget" \| "vendor" \| "npm" \| "bun")[], steps, deletes: string[], pathEntries: string[], keepData, running }`: exactly what `harness.uninstall` would remove, for the confirm card. `deletes` lists every file and folder; `keepData: false` adds its settings and sign-in dirs. `running` counts the terminals running it now (uninstall refuses until they stop) |
 | `harness.update` | **outward** | `{ harnessId }` → `{ jobId, steps }`: updates the way it was installed; `invalid` when Gond can't tell |
 | `install.cancel` | write-local | `{ jobId }` → `null`: stops a running install job and its current step's process tree; the job ends `cancelled`. `not_found` once finished |
-| `model.list` | read | `{ harness, accountId? }` → `ModelInfo[]`: `{ id, label, provider, thinking: { levels: Level[], default?, via: "flag" \| "config" \| "modelSlug", note? } }`, `Level = "none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"`. Empty = the harness picks. With `accountId`, once its Test connection passed: the endpoint's own models (cached at `/endpointModels/{accountId}`), with catalog levels where the id is known and none otherwise |
 | `prereq.install` | **outward** | `{ prereqs: string[], machineScope? }` → `{ jobId, steps }`: installs the missing ones (winget, silent, per-user). Without winget, or when its install fails, Git, GitHub CLI and Node come from their official releases. Gond downloads them with the same stages and bytes, checks the vendor's published SHA-256, then runs Git's installer with `/CURRENTUSER` or unpacks the GitHub CLI and Node zips under `%LOCALAPPDATA%\Programs` and puts them on the user PATH (plan `source: "download"`) |
 | `prereq.list` | read | `{}` → `{ id: "git" \| "gh" \| "node" \| "bun", name, installed, version? }[]` |
 
-## Accounts and usage
+## Usage
 
 | Command | Risk | Input → result |
 |---|---|---|
-| `account.add` | write-local, **human only**; `/secret` and `/options/headers` redacted | `{ harness, label, kind: "oauth" \| "apiKey" \| "token" \| "gateway", secret?, endpoint?, options? }` → `Account`; the secret goes straight into Credential Manager. `options`: `{ bearer?, headers?: Record<string, string \| { secret: string }>, organization?, project?, azureApiVersion?, wireApi?, cloud? }`; a `{ secret }` header goes to the vault and reads back as `{ secret: true }`; **outward** when `endpoint` is set |
-| `account.discover` | write-local | `{}` → how many were added: the agents' own sign-ins, found again (one you removed isn't added back) |
-| `account.kinds` | read | `{ harness }` → `{ provider, kinds: AccountKind[], maxOauth? }`; agy has `maxOauth: 1` (one sign-in per Windows user) |
-| `account.signIn` | write-local, **human only** | `{ accountId, cols?, rows? }` → `{ jobId?, ptyId }`: runs the harness's own login (`claude auth login`, `codex login`, `grok login`) **in the background** with the account's home (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`), so the sign-in lands there. `/signins/{jobId}` is `{ id, accountId, harness, status: "starting" \| "waiting" \| "needsCode" \| "signedIn" \| "failed" \| "cancelled", url?, code?, message?, ptyId }`: the sign-in URL and any device code read from its output, `needsCode` when it asks for a code back, then the harness's own status check (`claude auth status`, `codex login status`) decides `signedIn`. Ten minutes, then `failed`. The hidden terminal (`/terminals/{ptyId}`, `background: true`) is only a fallback to reveal. `invalid` for key accounts. agy keeps one sign-in per Windows user: there's no job, and `ptyId` is `agy` itself, run as you, to sign in at its own prompt |
-| `account.signIn.cancel` | write-local, **human only** | `{ jobId }` → `null`: stops a running sign-in (`cancelled`); `invalid` once it has finished |
-| `account.signIn.code` | write-local, **human only**; `/code` redacted | `{ jobId, code }` → `null`: types the code the browser showed into a `needsCode` sign-in |
-| `account.test` | read for `{ accountId }`, **outward** for a draft; **human only**; `/secret` and `/options/headers` redacted | `{ accountId }` or the draft `{ harness, kind, endpoint?, secret?, options? }` → `{ ok, models?: string[], ms?, error? }`; lists the endpoint's models (Anthropic `/v1/models`, OpenAI/Azure `/models`, Google, xAI) with a 10 s limit; `error` is one plain sentence; sign-in, Bedrock and Vertex accounts return `ok: false` with why. The key goes to curl through a 0600 header file, never argv |
-| `usage.refresh` | read | `{}` → `null`; reads every signed-in Claude, Codex, Grok and Antigravity account's plan limits into `/usage/{key}/windows` (`{ name, label?, percentLeft, resetsAt?, status? }`), kept across restarts |
+| `usage.refresh` | read | `{}` → `null`; reads the plan limits of each agent's own sign-in (Claude Code, Codex, Grok Build, Antigravity, GitHub Copilot, Cursor) into `/usage/default:<agent>/windows` (`{ name, label?, percentLeft, resetsAt?, status? }`), kept across restarts |
 
 ## GitHub and Git
 

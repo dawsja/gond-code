@@ -49,23 +49,10 @@ pub fn get(store: &Store, id: &str) -> AppResult<Project> {
         .ok_or_else(|| AppError::NotFound(format!("project {id} not found")))
 }
 
-/// Forgets the project. Never touches its files. With open threads it refuses, unless
-/// `archive_threads`, which closes each one first. Returns the ids of the threads it archived.
-pub fn remove(store: &Store, id: &str, archive_threads: bool) -> AppResult<Vec<String>> {
-    get(store, id)?;
-    let open = crate::threads::list(store, id)?;
-    if !open.is_empty() && !archive_threads {
-        let n = open.len();
-        let s = if n == 1 { "" } else { "s" };
-        return Err(AppError::Invalid(format!(
-            "this project has {n} open thread{s}; archive them first, or remove it with archiveThreads"
-        )));
-    }
-    for t in &open {
-        crate::threads::archive(store, &t.id)?;
-    }
+/// Forgets the project. Never touches its files.
+pub fn remove(store: &Store, id: &str) -> AppResult<()> {
     match store.with(|c| projects::delete(c, id))? {
-        true => Ok(open.into_iter().map(|t| t.id).collect()),
+        true => Ok(()),
         false => Err(AppError::NotFound(format!("project {id} not found"))),
     }
 }
@@ -83,37 +70,6 @@ mod tests {
     use crate::git::tests::temp_repo;
 
     #[test]
-    fn remove_refuses_open_threads_unless_archiving() {
-        let store = Store::open_in_memory().unwrap();
-        let repo = temp_repo();
-        let p = add(&store, repo.path()).unwrap();
-        let new = |title: &str| crate::threads::NewThread {
-            project_id: p.id.clone(),
-            agent_id: "claude".into(),
-            title: Some(title.into()),
-            account_id: None,
-            model: None,
-            thinking: None,
-        };
-        let a = crate::threads::create(&store, new("one")).unwrap();
-        let b = crate::threads::create(&store, new("two")).unwrap();
-        crate::threads::archive(&store, &b.id).unwrap();
-
-        let err = remove(&store, &p.id, false).unwrap_err();
-        assert_eq!(err.code(), "invalid");
-        assert!(err.to_string().contains("1 open thread;"), "{err}");
-        assert_eq!(list(&store).unwrap().len(), 1, "nothing removed");
-
-        let archived = remove(&store, &p.id, true).unwrap();
-        assert_eq!(archived, std::slice::from_ref(&a.id));
-        assert!(list(&store).unwrap().is_empty());
-        // Files and worktrees are never touched.
-        assert!(repo.path().join(".git").exists());
-        assert!(Path::new(&a.worktree_path).exists());
-        assert!(Path::new(&b.worktree_path).exists());
-    }
-
-    #[test]
     fn add_list_touch_remove() {
         let store = Store::open_in_memory().unwrap();
         let repo = temp_repo();
@@ -128,12 +84,9 @@ mod tests {
         assert_eq!(list(&store).unwrap().len(), 1);
 
         touch(&store, &p.id).unwrap();
-        remove(&store, &p.id, false).unwrap();
+        remove(&store, &p.id).unwrap();
         assert!(repo.path().exists());
-        assert_eq!(
-            remove(&store, &p.id, false).unwrap_err().code(),
-            "not_found"
-        );
+        assert_eq!(remove(&store, &p.id).unwrap_err().code(), "not_found");
         assert_eq!(touch(&store, &p.id).unwrap_err().code(), "not_found");
     }
 

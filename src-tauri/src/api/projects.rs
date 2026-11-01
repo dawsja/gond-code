@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::Value;
 
 use super::registry::{Call, Def, NoInput, Registry, Risk};
 use super::state::Cause;
@@ -39,24 +38,6 @@ pub struct ProjectInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct RemoveInput {
-    pub project_id: String,
-    /// Stop and archive its threads first; without it, live threads make this `invalid`.
-    #[serde(default)]
-    pub archive_threads: bool,
-}
-
-/// Archiving a project's threads stops its agents, so it can lose work.
-fn remove_risk(input: &Value) -> Risk {
-    if input["archiveThreads"] == true {
-        Risk::Destructive
-    } else {
-        Risk::WriteLocal
-    }
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsPatch {
     /// Partial `Settings`: only its own keys, typed.
     pub patch: crate::settings::Patch,
@@ -72,8 +53,8 @@ fn cause(call: &Call<Services>, command: &str) -> Cause {
 
 /// Rewrites `/projects` from the store. Projects are few, so a full refresh is
 /// simplest; the tree's diff keeps the patch minimal.
-/// The settings key holding closed projects' ids (closed projects stay,
-/// with their threads running, but leave the switcher). No migration needed.
+/// The settings key holding closed projects' ids (closed projects stay, but leave the
+/// switcher). No migration needed.
 const CLOSED: &str = "closedProjects";
 
 fn closed(store: &Store) -> AppResult<Vec<String>> {
@@ -125,14 +106,12 @@ pub fn sync_settings(services: &Services, cause: Cause) -> AppResult<()> {
     Ok(())
 }
 
-/// Fills the tree's `projects`, `threads` (with their tasks) and `settings` at startup, so
-/// the chats and agents from before a restart show straight away.
+/// Fills the tree's `projects` and `settings` at startup.
 pub fn load(services: &Services) -> AppResult<()> {
     let boot = || Cause::Runtime {
         runtime: "startup".into(),
     };
     sync_projects(services, boot())?;
-    super::threads::sync_threads(services, boot())?;
     sync_settings(services, boot())
 }
 
@@ -187,24 +166,16 @@ pub fn register(r: &mut Registry<Services>) {
     r.add(
         Def::new(
             "project.remove",
-            "Remove a project from Gond (its repo stays on disk)",
+            "Remove a project from Gond (its repo stays on disk); its terminals close",
             Risk::WriteLocal,
-        )
-        .dynamic(
-            "destructive with archiveThreads (stops its agents)",
-            remove_risk,
         ),
-        |call, i: RemoveInput| -> AppResult<()> {
+        |call, i: ProjectInput| -> AppResult<()> {
             let s = call.ctx;
-            let archived = projects::remove(&s.store, &i.project_id, i.archive_threads)?;
+            projects::remove(&s.store, &i.project_id)?;
             s.ptys
-                .close_thread(&crate::threads::project_owner(&i.project_id));
-            for id in &archived {
-                s.ptys.close_thread(id);
-            }
+                .close_thread(&super::pty::project_owner(&i.project_id));
             set_closed(&s.store, &i.project_id, false)?;
-            sync_projects(s, cause(call, "project.remove"))?;
-            super::threads::sync_threads(s, cause(call, "project.remove"))
+            sync_projects(s, cause(call, "project.remove"))
         },
     );
     r.add(

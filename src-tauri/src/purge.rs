@@ -164,13 +164,7 @@ mod tests {
     #[test]
     fn every_data_path_is_under_a_root() {
         let roots = appdata::roots();
-        for p in [
-            crate::store::default_db_path(),
-            crate::accounts::default_root(),
-        ]
-        .into_iter()
-        .flatten()
-        {
+        for p in [crate::store::default_db_path()].into_iter().flatten() {
             assert!(roots.iter().any(|r| p.starts_with(r)), "{}", p.display());
         }
     }

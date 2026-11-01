@@ -1,11 +1,9 @@
 //! Local state in SQLite: `%APPDATA%\GondCode\gond-code.db` on Windows,
 //! `$XDG_DATA_HOME/gond-code/gond-code.db` on Linux.
 
-pub mod accounts;
 pub mod custom_agents;
 pub mod projects;
 pub mod settings;
-pub mod threads;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -67,7 +65,6 @@ impl Store {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         migrate(&mut conn)?;
-        threads::stop_orphans(&conn)?;
         Ok(Store {
             conn: Arc::new(Mutex::new(conn)),
         })

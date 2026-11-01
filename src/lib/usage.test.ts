@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { windowLine } from "./accounts";
+import { windowLine } from "./usage";
 
 it("a plan window reads as used, with when it resets", () => {
   const now = new Date("2026-10-30T12:00:00");

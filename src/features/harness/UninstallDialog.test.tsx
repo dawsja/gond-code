@@ -17,7 +17,6 @@ const plan = (removeEverything: boolean, running = 0): UninstallPlan => ({
   pathEntries: ["C:\\Users\\d\\AppData\\Local\\agy\\bin"],
   keepData: !removeEverything,
   running,
-  accounts: 2,
 });
 
 it("lists exactly what goes, keeps settings by default, and re-reads the plan on Remove everything", async () => {
@@ -37,7 +36,6 @@ it("lists exactly what goes, keeps settings by default, and re-reads the plan on
   await act(async () => fireEvent.click(screen.getByRole("radio", { name: "Remove everything" })));
   expect(load).toHaveBeenLastCalledWith("agy", true);
   expect(screen.getByRole("list", { name: "Deletes" }).children).toHaveLength(2);
-  expect(screen.getByText(/2 accounts/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Remove everything" }));
   expect(onUninstall).toHaveBeenCalledWith(true);
 });
