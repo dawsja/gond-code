@@ -11,10 +11,16 @@ every agent by what it's doing.
 - **Agents.** The sidebar lists every agent pane in every session, grouped by status: **Needs
   you**, **Working**, **Done**, **Idle** (and Exited), with how long it has been in that status.
   Gond reads the status from each terminal's output, as you would: output still coming means
-  working, a question on screen ("Do you want to…", "[y/n]") means it needs you. After its name,
+  working, a question on screen ("Do you want to…", "[y/n]", at the bottom of the pane or where
+  the agent's cursor is) means it needs you. After its name,
   an agent with a plan has a usage icon, amber when a window is at 10% or less and red when one
   is used up; hovering it shows every limit of the plan with its bar and when it resets. Gond
   warns once as it gets low and once when it runs out. While one runs, Gond reads its plan when it starts and every 5 minutes.
+- **Sounds.** A chime when an agent finishes while you're in another pane or another app, and an
+  alert when one asks you something (not the pane you're typing in). They work from the tray too.
+  Several at once play one after another; one already waiting isn't repeated. Both are made by
+  the app (no audio files) and played by Windows directly, with no process per sound. Settings →
+  General → Sounds turns them off.
 - **Panes.** Each pane is a terminal in your default shell. You start an agent by typing it
   there (Claude Code, Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or
   a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
@@ -70,7 +76,7 @@ every agent by what it's doing.
 - **Settings.**
   - **General:** colour, default shell (PowerShell, Command Prompt, Git Bash, WSL; whichever are
     on the PC), terminal font (JetBrains Mono, Hack or Fira Code Nerd Font; nothing custom), speech
-    to text, close to tray.
+    to text, sounds, keep terminals running, close to tray.
   - **Usage:** each installed agent's plan limits, as the agent reports them for its own sign-in
     (session, weekly, monthly windows). Gond does not count spend.
   - **Agents:** install, update and uninstall each agent CLI. A running install can be

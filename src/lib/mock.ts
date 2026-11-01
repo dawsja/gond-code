@@ -79,6 +79,7 @@ let settings: Settings = {
   closeToTray: true,
   keepTerminals: true,
   terminalFont: "jetbrains-mono",
+  sounds: true,
 };
 
 type Listener = (payload: unknown) => void;

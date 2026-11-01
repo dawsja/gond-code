@@ -77,4 +77,6 @@ export type Settings = {
   editor?: string | null;
   /** The terminals' font (not the app's). Default JetBrains Mono. */
   terminalFont?: TerminalFont;
+  /** A chime when an agent is done, an alert when it needs you. Default true. */
+  sounds?: boolean;
 };

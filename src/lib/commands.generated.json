@@ -2894,6 +2894,11 @@
             "null"
           ]
         },
+        "sounds": {
+          "default": true,
+          "description": "A chime when an agent is done, an alert when it needs you (`sound.rs`).",
+          "type": "boolean"
+        },
         "terminalFont": {
           "$ref": "#/$defs/TerminalFont",
           "default": "jetbrains-mono",
@@ -2946,6 +2951,13 @@
               "default": null,
               "type": [
                 "string",
+                "null"
+              ]
+            },
+            "sounds": {
+              "default": null,
+              "type": [
+                "boolean",
                 "null"
               ]
             },
@@ -3061,6 +3073,11 @@
             "null"
           ]
         },
+        "sounds": {
+          "default": true,
+          "description": "A chime when an agent is done, an alert when it needs you (`sound.rs`).",
+          "type": "boolean"
+        },
         "terminalFont": {
           "$ref": "#/$defs/TerminalFont",
           "default": "jetbrains-mono",
@@ -3125,6 +3142,48 @@
       },
       "title": "Array_of_Shell",
       "type": "array"
+    }
+  },
+  {
+    "name": "sound.play",
+    "summary": "Play the cue for an agent that's done or needs you, if Sounds is on",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$defs": {
+        "Cue": {
+          "description": "Which cue.",
+          "oneOf": [
+            {
+              "const": "done",
+              "description": "An agent stopped working while you were elsewhere.",
+              "type": "string"
+            },
+            {
+              "const": "needs",
+              "description": "An agent is asking you something.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cue": {
+          "$ref": "#/$defs/Cue"
+        }
+      },
+      "required": [
+        "cue"
+      ],
+      "title": "PlayInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "boolean",
+      "type": "boolean"
     }
   },
   {

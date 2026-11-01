@@ -118,7 +118,8 @@ A section nav (General, Usage, Agents, Plugins, Updates) and the section; below 
 row of tabs.
 - **General:** Colour (tint swatches), Default shell, Terminal font (JetBrains Mono, Hack or Fira Code
   Nerd Font, each shown in itself; no custom font), Transcription (speech to text: download with progress, or
-  why this CPU can't), Closing the window (keep running in the tray).
+  why this CPU can't), Sounds (a switch: "Play a sound when an agent is done or needs you"), Quitting
+  (keep terminals running), Closing the window (keep running in the tray).
 - **Usage:** a card per installed agent: its plan windows as bars that fill as the plan is used (green, then
   amber, then red), with what's left and when it resets. No costs.
 - **Agents:** a card per agent: version → latest, install source, Install / Update / Check, and

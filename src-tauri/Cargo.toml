@@ -59,13 +59,14 @@ transcribe-cpp = { version = "=0.4.1", default-features = false }
 [target.'cfg(windows)'.dependencies]
 # Answering WebView2's microphone prompt for speech to text (wry's own copy).
 webview2-com = "=0.39.1"
-# The DWM caption, process trees, the PATH registry edit, the clipboard for a paste and
-# Credential Manager for the accounts vault.
+# The DWM caption, process trees, the PATH registry edit, the clipboard for a paste,
+# Credential Manager for the accounts vault and the sound cues.
 windows-sys = { version = "=0.61.2", features = [
   "Win32_Foundation",
   "Win32_System_Registry",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
   "Win32_NetworkManagement_IpHelper",
   "Win32_Networking_WinSock",
   "Win32_Security_Credentials",

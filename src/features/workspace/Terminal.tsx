@@ -260,8 +260,17 @@ export function Terminal({
     let busySince = 0;
     let state: Status = "idle";
     const set = (s: Status) => {
+      const was = state;
       state = s;
       setStatus(paneId, agent ? s : undefined);
+      if (agent && s !== was && (s === "done" || s === "needs")) cue(s);
+    };
+    // The sound for an agent that's done or needs you (Settings → General → Sounds), queued in
+    // Rust. Not for a question already on screen when the pane opened, nor one you're looking at.
+    const cue = (s: "done" | "needs") => {
+      if (ticks < 6 || (s === "needs" && live.current.active && document.hasFocus())) return;
+      if (liveBackend() && isRegistered("sound.play"))
+        runCommand("sound.play", { cue: s }).catch(() => undefined);
     };
     const lines = () => {
       const b = t.buffer.active;
@@ -270,7 +279,17 @@ export function Terminal({
         out.push(b.getLine(y)?.translateToString(true) ?? "");
       return out;
     };
-    const screen = () => lines().join("\n");
+    // What an agent shows you: the pane's last rows, and the rows up to its cursor, since an
+    // agent drawn inline (Claude Code's questions) sits at the cursor, high in a tall pane.
+    const screen = () => {
+      const b = t.buffer.active;
+      const out = lines();
+      const bottom = Math.max(0, b.baseY + t.rows - 14);
+      const end = Math.min(b.baseY + b.cursorY + 2, bottom);
+      for (let y = Math.max(0, end - 14); y < end; y++)
+        out.push(b.getLine(y)?.translateToString(true) ?? "");
+      return out.join("\n");
+    };
 
     // Before a restart into an update, a shell keeps its screen (colours and scrollback) and the
     // folder its prompt shows, to come back as it was. One running an agent comes back as its

@@ -11,6 +11,7 @@ pub mod layout;
 pub mod projects;
 pub mod pty;
 pub mod registry;
+pub mod sound;
 pub mod speech;
 pub mod state;
 pub mod usage;
@@ -105,6 +106,7 @@ pub fn registry() -> Registry<Services> {
     git::register(&mut r);
     harness::register(&mut r);
     pty::register(&mut r);
+    sound::register(&mut r);
     speech::register(&mut r);
     usage::register(&mut r);
     layout::register(&mut r);

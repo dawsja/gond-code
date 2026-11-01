@@ -52,6 +52,9 @@ pub struct Settings {
     /// The terminals' font (not the app's).
     #[serde(default)]
     pub terminal_font: TerminalFont,
+    /// A chime when an agent is done, an alert when it needs you (`sound.rs`).
+    #[serde(default = "yes")]
+    pub sounds: bool,
 }
 
 /// What `settings.set` takes: every key typed, nothing else (the exported schema has
@@ -72,6 +75,8 @@ pub struct Patch {
     pub editor: Option<Option<String>>,
     #[serde(default)]
     pub terminal_font: Option<TerminalFont>,
+    #[serde(default)]
+    pub sounds: Option<bool>,
 }
 
 /// A present key, which may be `null` (clear it): `Some(None)`.
@@ -95,6 +100,9 @@ impl Patch {
         }
         if let Some(on) = self.keep_terminals {
             m.insert("keepTerminals".into(), Value::from(on));
+        }
+        if let Some(on) = self.sounds {
+            m.insert("sounds".into(), Value::from(on));
         }
         if let Some(f) = self.terminal_font {
             m.insert(
@@ -125,6 +133,7 @@ impl Default for Settings {
             shell: None,
             editor: None,
             terminal_font: TerminalFont::default(),
+            sounds: true,
         }
     }
 }
@@ -137,6 +146,7 @@ const KEYS: &[&str] = &[
     "shell",
     "editor",
     "terminalFont",
+    "sounds",
 ];
 
 fn as_object(s: &Settings) -> Map<String, Value> {
@@ -209,7 +219,8 @@ mod tests {
                 "tint": "blue",
                 "closeToTray": true,
                 "keepTerminals": true,
-                "terminalFont": "jetbrains-mono"
+                "terminalFont": "jetbrains-mono",
+                "sounds": true
             })
         );
     }
@@ -220,10 +231,11 @@ mod tests {
         set(&store, patch(json!({ "shell": "cmd" }))).unwrap();
         let s = set(
             &store,
-            patch(json!({ "tint": "green", "closeToTray": false, "terminalFont": "hack", "keepTerminals": false })),
+            patch(json!({ "tint": "green", "closeToTray": false, "terminalFont": "hack", "keepTerminals": false, "sounds": false })),
         )
         .unwrap();
         assert!(!s.keep_terminals);
+        assert!(!s.sounds);
         assert_eq!(s.terminal_font, TerminalFont::Hack);
         assert_eq!(s.shell.as_deref(), Some("cmd"));
         assert_eq!(s.tint, Tint::Green);

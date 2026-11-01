@@ -29,6 +29,7 @@ pub mod purge;
 pub mod releases;
 pub mod settings;
 pub mod shells;
+pub mod sound;
 pub mod speech;
 pub mod store;
 pub mod tray;

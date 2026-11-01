@@ -227,6 +227,24 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
       <Field label="Transcription">
         <SpeechSetting />
       </Field>
+      <Field label="Sounds">
+        <label className="flex items-start gap-3 text-sm">
+          <Switch
+            checked={settings.sounds !== false}
+            onCheckedChange={(on) => onChange({ sounds: on })}
+            data-command="settings.set"
+            data-arg="sounds"
+            aria-label="Play sounds"
+          />
+          <span className="grid gap-1">
+            <span>Play a sound when an agent is done or needs you</span>
+            <span className="text-xs text-muted-foreground">
+              A chime when one finishes while you&apos;re elsewhere, an alert when one asks you
+              something. Several at once play one after another.
+            </span>
+          </span>
+        </label>
+      </Field>
       <Field label="Quitting">
         <label className="flex items-start gap-3 text-sm">
           <Switch

@@ -24,7 +24,7 @@ refuse any caller but the window.
 | `sessions.get` | read | `{}` → the saved sessions (`{ sessions: { id, name, layout }[], current? }`, each layout a tree of right/down splits whose leaves are panes), or `null` before any. A `spaces.json` from before the rename is read until the next save |
 | `sessions.set` | write-local | `{ sessions }` → `null`: saves them to `sessions.json` beside the database, written whole then swapped in |
 | `settings.get` | read | `{}` → `Settings` |
-| `settings.set` | write-local | `{ patch }` → `Settings`: `patch` takes `tint`, `shell` (a `shell.list` id, `null` for the default), `editor` (a `file.editors` id, `system` for the default app, `null` for the first editor found), `closeToTray`, `keepTerminals` (quitting leaves the terminals running in the terminal host; default `true`) and `terminalFont` (`jetbrains-mono`, `hack` or `fira-code`); nothing else |
+| `settings.set` | write-local | `{ patch }` → `Settings`: `patch` takes `tint`, `shell` (a `shell.list` id, `null` for the default), `editor` (a `file.editors` id, `system` for the default app, `null` for the first editor found), `closeToTray`, `keepTerminals` (quitting leaves the terminals running in the terminal host; default `true`) `terminalFont` (`jetbrains-mono`, `hack` or `fira-code`) and `sounds` (the cues when an agent is done or needs you; default `true`); nothing else |
 | `shell.list` | read | `{}` → `{ id, label, program, args }[]`: the shells a plain terminal can run on this PC: PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, each WSL distribution. Settings `shell` picks one by id; `pty.open` from the human starts it |
 
 ## Folders
@@ -56,6 +56,7 @@ refuse any caller but the window.
 | `pty.read` | read | `{ ptyId, since?: offset, waitFor?: regex, timeoutMs? }` → `{ text, offset, truncated, exited, exitCode?, matched? }` |
 | `pty.resize` | write-local | `{ ptyId, cols, rows }` → `null` |
 | `pty.write` | write-local | `{ ptyId, data }` → `null` |
+| `sound.play` | write-local | `{ cue: "done" \| "needs" }` → `boolean`: queues the chime for an agent that finished while you were elsewhere, or the alert for one that needs you; cues play one after another, and one already waiting isn't queued twice. `false` when Sounds is off (`settings.set` `sounds`) or it was already waiting |
 
 ## Agents
 

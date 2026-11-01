@@ -27,6 +27,8 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
 - **Agents in the sidebar**, grouped by status read from each terminal: Needs you, Working,
   Done, Idle. Each has a usage icon after its name, amber when it's low and red when it's out;
   hover it for every limit of its plan, what's used and when it resets.
+- **Sounds:** a chime when an agent finishes while you're elsewhere, an alert when one needs you,
+  queued so several play in turn; Settings → General turns them off.
 - **Agents from the terminal:** every pane is your default shell; type `claude`, `codex` or any
   installed agent to start it, and Gond shows it on the pane and in the sidebar.
 - **Search every pane (Ctrl+Shift+F):** what any terminal in any session printed, newest
@@ -47,7 +49,7 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   pane picks its terminal back up with what it printed meanwhile. (Settings → General can close
   them on quit instead; the tray's "Quit and close all terminals" always does.)
 - **Fast terminals:** xterm.js on WebGL with full 24-bit colour; Rust runs the PTYs (ConPTY).
-- **Settings:** General (colour, default shell, open files in, terminal font, speech to text, close to tray, keep terminals running), Usage (plan
+- **Settings:** General (colour, default shell, open files in, terminal font, speech to text, sounds, close to tray, keep terminals running), Usage (plan
   limits), Agents (install, update, uninstall), GitHub (Git and GitHub CLI install and sign-in),
   Updates.
 - **Transcription** (speech to text), optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say
