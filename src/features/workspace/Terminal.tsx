@@ -126,13 +126,21 @@ export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShor
     t.loadAddon(new WebLinksAddon((_, uri) => void openExternal(uri)));
     term.current = t;
 
-    // Text is pasted (bracketed, when the program asks); a clipboard with no text holds an image
-    // (or nothing), which the agent reads off the clipboard itself on its image-paste key.
+    // Text is pasted (bracketed, when the program asks); a picture the agent reads off the
+    // clipboard itself, on its image-paste key. The app reads the clipboard, not the WebView,
+    // which would ask permission first.
+    const clipboard = (): Promise<{ text?: string; image: boolean }> =>
+      liveBackend() && isRegistered("clipboard.read")
+        ? runCommand("clipboard.read", {})
+        : (navigator.clipboard?.readText() ?? Promise.resolve("")).then((text) => ({
+            text,
+            image: !text,
+          }));
     const paste = () =>
-      void (navigator.clipboard?.readText() ?? Promise.resolve("")).then(
-        (text) => {
+      void clipboard().then(
+        ({ text, image }) => {
           if (text) return t.paste(text);
-          const key = imagePasteKey(live.current.agentId);
+          const key = image && imagePasteKey(live.current.agentId);
           if (key) t.input(key);
         },
         () => undefined,

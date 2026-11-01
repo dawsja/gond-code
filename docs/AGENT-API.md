@@ -40,6 +40,7 @@ refuse any caller but the window.
 
 | Command | Risk | Input → result |
 |---|---|---|
+| `clipboard.read` | read, **human only** | `{}` → `{ text?, image }`: what Ctrl+Shift+V pastes into a pane: the clipboard's text, and whether it holds a picture (an agent's pane then gets its image-paste key) |
 | `pane.screen.save` | write-local, **human only** | `{ paneId, screen, cwd? }` → `null`: keeps a shell pane's screen (as xterm serialises it) and folder in `screens/` beside the database, before a restart into an update |
 | `pane.screen.take` | write-local, **human only** | `{ paneId }` → `{ screen, cwd? } \| null`: the saved screen and folder, once (reading removes it) |
 | `pane.start` | write-local | `{ threadId, cols?, rows? }` → `{ ptyId }`: a pane's agent, its own interactive CLI with the thread's account, model and thinking, in a terminal that runs until the pane closes. Opening again it resumes its conversation: Claude Code, Pi and Grok Build on the session id Gond chose, Codex and Antigravity on the session the pane started (found on disk), opencode on the folder's latest |

@@ -4,6 +4,7 @@ pub mod api;
 #[cfg(windows)]
 pub mod app_id;
 pub mod appdata;
+pub mod clipboard;
 pub mod commands;
 pub mod endpoint_test;
 pub mod error;

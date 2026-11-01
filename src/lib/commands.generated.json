@@ -1259,6 +1259,39 @@
     }
   },
   {
+    "name": "clipboard.read",
+    "summary": "The clipboard's text, and whether it holds a picture, for a paste into a pane",
+    "risk": "read",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "The clipboard's text, if it holds any, and whether it holds a picture.",
+      "properties": {
+        "image": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "title": "Clip",
+      "type": "object"
+    }
+  },
+  {
     "name": "folder.git",
     "summary": "The git repository and branch a folder is in, if any (the status bar)",
     "risk": "read",

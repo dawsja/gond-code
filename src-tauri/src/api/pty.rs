@@ -364,6 +364,17 @@ pub fn register(r: &mut Registry<Services>) {
         },
     );
     r.add(
+        Def::new(
+            "clipboard.read",
+            "The clipboard's text, and whether it holds a picture, for a paste into a pane",
+            Risk::Read,
+        )
+        .human_only(),
+        |_, _: super::registry::NoInput| -> AppResult<crate::clipboard::Clip> {
+            Ok(crate::clipboard::read())
+        },
+    );
+    r.add(
         Def::new("pty.write", "Type into a terminal", Risk::WriteLocal),
         |call, i: WriteInput| -> AppResult<()> { call.ctx.ptys.write(&i.pty_id, &i.data) },
     );
