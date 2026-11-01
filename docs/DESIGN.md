@@ -54,8 +54,9 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Sidebar** (248px, `--sidebar`, right border):
   - **Sessions** with a + (New session): one row per session; the current one on `--hover`.
     Double-click or right-click → Rename; right-click → Close session.
-  - **Agents** with a + (New agent, as Ctrl+T): every agent pane in every session, grouped in
-    the order Needs you, Working, Done, Idle, Exited. Each group heading is the status in its
+  - **Agents**: every pane in every session running an agent you started in its shell (found
+    by `pty.agent`), grouped in the order Needs you, Working, Done, Idle, Exited. With none it
+    says "No agents running." Each group heading is the status in its
     tone with a count. Each row: brand icon, the pane's name, how long it has held that status
     ("2m"), a status icon (amber alert, spinning loader in tint ink, green check, grey dot, red
     x). Clicking a row opens its session and focuses the pane. A tooltip names pane · agent ·
@@ -68,35 +69,31 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 
 - A pane is a card: 10px radius, 1px `--edge` border that turns `--tint-edge` when focused, on
   pure black. Panes are laid out flat, so splitting never remounts a terminal.
-- **Header** (32px, 12px text): brand icon (or a terminal glyph for a shell), the pane's name
-  (Rename edits it in place), its detail in `--faint` ("Opus 5.5 · High"), then the status
-  (dot and word; amber for Needs you) and a close ×. Focused: a light tint wash; else `#070707`.
+- **Header** (32px, 12px text): the running agent's brand icon (or a terminal glyph), the
+  pane's name (Rename edits it in place; else the agent's name, or "Terminal"), then while an
+  agent runs its status (dot and word; amber for Needs you) and a close ×. Focused: a light tint wash; else `#070707`.
 - **Terminal:** xterm.js on the WebGL renderer, JetBrains Mono, a palette in Gond's tones (true
   black ground, saturated ANSI colours, readable brights, 24-bit colour passed through).
-- **Keys:** Ctrl+T new agent; Ctrl+Shift+→ split right; Ctrl+Shift+↓ split down; Ctrl+Shift+Z
+- **Keys:** Ctrl+T new terminal beside the pane; Ctrl+Shift+→ split right; Ctrl+Shift+↓ split down; Ctrl+Shift+Z
   zoom; Ctrl+Shift+W close; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
   selection, else stops the program); Ctrl+Shift+Space dictation, Esc cancels it.
 - **Shortcut list (Ctrl+Shift+P):** a command-menu-style dialog (`KeyHelp.tsx`) with a search
   field and the keys grouped as Panes, Terminal, Speech and Help. It only lists them.
-- **Right-click menu:** Copy, Paste, Select all, Split right, Split down, Rename, Restart session (Restart
-  terminal for a shell), Open folder, Zoom pane, Close pane.
-- Dividers between panes drag to resize.
+- **Right-click menu:** Copy, Paste, Select all, Split right, Split down, Rename, Restart
+  terminal, Open folder, Zoom pane, Close pane.
+- Dividers between panes drag to resize; a double-click evens the split.
 
-## 4. New agent (Ctrl+T)
+## 4. Starting an agent
 
-A dialog: **Agent** (installed agents with brand icons, plus a plain terminal), **Sign in as**
-(the agent's own sign-in, other accounts, or "Paste an API key…", saved to Credential Manager),
-**Folder** (recent folders, or Browse), **Model** (each with its brand icon; one that thinks
-opens its thinking levels beside it, and picking a level picks the model), then **Split right**
-or **Split down** when the session already has panes. Enter starts it. The menus are Gond's own
-(shadcn), never the browser's.
+There's no New agent dialog: every new pane (Ctrl+T, Split right, Split down) is a terminal in
+the default shell, in the folder of the pane it splits. You start an agent by typing it there
+(`claude`, `codex`…); the pane then shows it, and the sidebar lists it.
 
 ## 5. Empty session
 
 No starter screen and no setup screen: a session with no panes opens one terminal in the
 default shell (`AutoShell.tsx`), in the last folder used, or the home folder before any. Closing
-a session's last terminal opens a fresh one in the same shell. Agents come from Ctrl+T or the
-Agents +.
+a session's last terminal opens a fresh one in the same shell.
 
 ## 6. Settings
 

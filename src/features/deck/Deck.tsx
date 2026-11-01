@@ -34,11 +34,11 @@ import { useDeck } from "./useDeck";
 import { Dictation, dictate } from "@/features/workspace/Dictation";
 import { KeyHelp, showKeys } from "@/features/workspace/KeyHelp";
 import { AutoShell } from "@/features/workspace/AutoShell";
-import { NewAgent } from "@/features/workspace/NewAgent";
 import { SessionsSidebar } from "@/features/workspace/SessionsSidebar";
 import { useStatuses } from "@/features/workspace/status";
 import { useSessions } from "@/features/workspace/useSessions";
-import { find, panes } from "@/features/workspace/layout";
+import { find } from "@/features/workspace/layout";
+import { usePaneAgents } from "@/features/workspace/paneAgent";
 import { StatusBar } from "@/features/workspace/StatusBar";
 import { Workspace } from "@/features/workspace/Workspace";
 
@@ -64,9 +64,9 @@ function useSettings() {
 }
 
 /**
- * Gond Code: a terminal workspace for coding agents. The sidebar lists your
- * folders and the agents running in each; each agent runs its own CLI in a pane you split right
- * or down, signed in with your subscription or an API key.
+ * Gond Code: a terminal workspace for coding agents. Every pane is a terminal in your default
+ * shell, split right or down; you start an agent by typing it there. The sidebar lists your
+ * sessions and the agents running in their panes.
  */
 /** The account providers each built-in agent signs in with. */
 const PROVIDERS: Record<string, string[]> = {
@@ -125,7 +125,7 @@ export function Deck() {
           accountModels,
         }),
   };
-  // Adding an account, wherever it's offered (New agent, Settings → Agents).
+  // Adding an account (Settings → Agents).
   const signInLive = !DEMO && liveBackend() && isRegistered("account.signIn");
   const testLive = !DEMO && liveBackend() && isRegistered("account.test");
   const accountFlows: AccountFlows = {
@@ -178,22 +178,16 @@ export function Deck() {
     return () => window.removeEventListener("focus", discover);
   }, [discover]);
   const statuses = useStatuses();
-  const sp = useSessions({
-    agents,
-    models: spawnData.models,
-    accounts: spawnData.accounts,
-    projects: DEMO ? MOCK_PROJECTS : liveProjects,
-  });
-  // Each agent's open panes, in every session: Settings → Agents won't uninstall it under them.
+  const sp = useSessions({ projects: DEMO ? MOCK_PROJECTS : liveProjects });
+  // The panes each agent is running in: Settings → Agents won't uninstall it under them.
+  const paneAgents = usePaneAgents();
   const openPanes: Record<string, number> = {};
-  for (const g of sp.sessions)
-    for (const p of panes(g.layout.root))
-      if (p.agentId) openPanes[p.agentId] = (openPanes[p.agentId] ?? 0) + 1;
+  for (const id of Object.values(paneAgents)) openPanes[id] = (openPanes[id] ?? 0) + 1;
   const toWorkspace = useCallback(() => {
     if (layout.focus.panel === "settings") onCommand("layout.focus", { panel: "chat" });
   }, [layout.focus.panel, onCommand]);
-  // Ctrl+T, Ctrl+Shift+Space and Ctrl+Shift+P wherever focus is; a pane's terminal handles its
-  // own, so a key pressed there doesn't happen twice.
+  // Ctrl+T (a new terminal beside the focused pane), Ctrl+Shift+Space and Ctrl+Shift+P wherever
+  // focus is; a pane's terminal handles its own, so a key pressed there doesn't happen twice.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || (e.target as Element | null)?.closest?.(".xterm")) return;
@@ -202,7 +196,8 @@ export function Deck() {
         showKeys();
       } else if (!e.shiftKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
-        sp.openPicker({});
+        toWorkspace();
+        sp.openShell("right");
       } else if (e.shiftKey && e.code === "Space") {
         e.preventDefault();
         dictate();
@@ -210,7 +205,7 @@ export function Deck() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [sp]);
+  }, [sp, toWorkspace]);
   const setup = useSetup();
   // The set-up job (Settings → Plugins installs Git and gh) carries on in a toast; ?toast shows one
   // on the mock build.
@@ -248,10 +243,6 @@ export function Deck() {
           agents={agents}
           statuses={statuses}
           renaming={sp.renaming}
-          onNewAgent={() => {
-            toWorkspace();
-            sp.openPicker({});
-          }}
           onSelectSession={(id) => {
             toWorkspace();
             sp.selectSession(id);
@@ -351,17 +342,6 @@ export function Deck() {
             version={version}
           />
         </main>
-        <NewAgent
-          open={sp.picker.open}
-          onOpenChange={sp.setPickerOpen}
-          agents={agents}
-          accounts={spawnData.accounts}
-          models={spawnData.models}
-          projects={projects}
-          initial={sp.picker.initial}
-          hasPanes={() => !!sp.current?.layout.root}
-          onStart={(s) => void sp.start(s, sp.picker.at)}
-        />
         {shownJob && shownJob.id !== hiddenToast && (
           <SetupToast job={shownJob} onHide={() => setHiddenToast(shownJob.id)} onGone={clearJob} />
         )}

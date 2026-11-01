@@ -1,22 +1,16 @@
-// The panes: a tree of splits, right (side
-// by side) or down (one above the other), whose leaves are terminals: an agent's own CLI on its
-// session (a thread), or a plain shell, each in the folder picked for it. Kept on this PC, so the
-// app reopens as you left it and each agent resumes its session.
+// The panes: a tree of splits, right (side by side) or down (one above the other), whose leaves
+// are terminals, each a shell in its folder; an agent is whatever you start in one. Kept on this
+// PC, so the app reopens as you left it.
 
-/** A terminal: an agent's when it has a thread, else a shell in the folder. */
+/** A terminal: a shell in the folder. */
 export type Pane = {
   kind: "pane";
   id: string;
   projectId: string;
-  /** The agent's session (thread.create); none for a shell. */
-  threadId?: string;
-  agentId?: string;
   /** A terminal's shell (shell.list id), once it has run: it keeps it, whatever Settings says. */
   shell?: string;
-  /** Your name for it (Rename); else the agent's name. */
+  /** Your name for it (Rename); else the running agent's name, or "Terminal". */
   title?: string;
-  /** What it runs, for its header ("Opus 5.5 · High · Auto"). */
-  detail?: string;
 };
 
 /** Two panes or splits: side by side ("right") or stacked ("down"); `ratio` is the first's share. */
@@ -118,16 +112,32 @@ export function fromSaved(v: unknown): Saved {
   const o = (v && typeof v === "object" ? v : {}) as Partial<Saved> & {
     groups?: { id: string; name: string; space: Layout }[];
   } & Record<string, unknown>;
-  if (Array.isArray(o.sessions) && o.sessions.length)
-    return { sessions: o.sessions, current: o.current };
-  if (Array.isArray(o.groups) && o.groups.length)
-    return {
-      sessions: o.groups.map((g) => ({ id: g.id, name: g.name, layout: g.space })),
-      current: o.current,
-    };
+  const saved: Saved =
+    Array.isArray(o.sessions) && o.sessions.length
+      ? { sessions: o.sessions, current: o.current }
+      : Array.isArray(o.groups) && o.groups.length
+        ? {
+            sessions: o.groups.map((g) => ({ id: g.id, name: g.name, layout: g.space })),
+            current: o.current,
+          }
+        : { sessions: [{ id: newId(), name: "Main", layout: one(o as Record<string, Layout>) }] };
   return {
-    sessions: [{ id: newId(), name: "Main", layout: one(o as Record<string, Layout>) }],
+    ...saved,
+    sessions: saved.sessions.map((g) => ({
+      ...g,
+      layout: { ...g.layout, root: g.layout.root && shells(g.layout.root) },
+    })),
   };
+}
+
+/**
+ * Every pane as a shell: a pane saved when panes ran an agent directly (its thread, agent and
+ * model line) opens as a terminal in its folder, for you to start the agent again.
+ */
+function shells(n: Node): Node {
+  if (n.kind === "split") return { ...n, a: shells(n.a), b: shells(n.b) };
+  const { kind, id, projectId, shell, title } = n;
+  return { kind, id, projectId, ...(shell && { shell }), ...(title && { title }) };
 }
 
 const KEY = "gond.sessions";

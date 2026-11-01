@@ -13,9 +13,9 @@ const GROUPS: { title: string; keys: { keys: string[]; does: string }[] }[] = [
   {
     title: "Panes",
     keys: [
-      { keys: ["Ctrl", "T"], does: "New agent" },
-      { keys: ["Ctrl", "Shift", "→"], does: "Split right" },
-      { keys: ["Ctrl", "Shift", "↓"], does: "Split down" },
+      { keys: ["Ctrl", "T"], does: "New terminal beside the pane" },
+      { keys: ["Ctrl", "Shift", "→"], does: "Split right: a new terminal" },
+      { keys: ["Ctrl", "Shift", "↓"], does: "Split down: a new terminal" },
       { keys: ["Ctrl", "Shift", "Z"], does: "Zoom the pane, or unzoom it" },
       { keys: ["Ctrl", "Shift", "W"], does: "Close the pane" },
     ],

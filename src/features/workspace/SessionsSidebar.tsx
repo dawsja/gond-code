@@ -21,6 +21,7 @@ import { AppUpdate } from "@/features/shell/AppUpdate";
 import type { AgentInfo, Project } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { panes, type Session, type Pane } from "./layout";
+import { usePaneAgents } from "./paneAgent";
 import { ago, STATUS_LABEL, type PaneStatus, type Status } from "./status";
 import { Hint } from "@/components/hint";
 
@@ -45,9 +46,9 @@ function StatusIcon({ status }: { status: Status }) {
 }
 
 /**
- * The sidebar: your sessions, by name
- * (+ adds one); then every agent (+ starts one, as Ctrl T does) in every session, grouped by what it's doing (needs you, working,
- * done, idle) with how long it's been at it. Settings below.
+ * The sidebar: your sessions, by name (+ adds one); then every agent running in a pane of any
+ * session (one you started by typing it into the pane's shell), grouped by what it's doing
+ * (needs you, working, done, idle) with how long it's been at it. Settings below.
  */
 export function SessionsSidebar({
   sessions,
@@ -58,7 +59,6 @@ export function SessionsSidebar({
   agents,
   statuses,
   renaming,
-  onNewAgent,
   onSelectSession,
   onAddSession,
   onRenameSession,
@@ -79,7 +79,6 @@ export function SessionsSidebar({
   statuses: Record<string, PaneStatus>;
   /** The session being renamed. */
   renaming?: string;
-  onNewAgent: () => void;
   onSelectSession: (id: string) => void;
   onAddSession: () => void;
   onRenameSession: (id: string) => void;
@@ -99,21 +98,23 @@ export function SessionsSidebar({
   const row =
     "flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-tint";
   const heading = "flex h-7 items-center px-2.5 text-[12px] font-medium text-muted-foreground";
-  // Every agent pane in every session, with what it's doing.
+  // Every pane running an agent, in every session, with what it's doing.
+  const running = usePaneAgents();
   const all = sessions.flatMap((g) =>
     panes(g.layout.root)
-      .filter((p) => p.agentId)
+      .filter((p) => running[p.id])
       .map((p) => ({
         pane: p,
+        agentId: running[p.id],
         session: g,
         st: statuses[p.id] ?? { status: "idle" as Status, since: now },
       })),
   );
-  const nameOf = (p: Pane) =>
+  const nameOf = (p: Pane, agentId: string) =>
     p.title ??
     projects.find((x) => x.id === p.projectId)?.name ??
-    agents.find((a) => a.id === p.agentId)?.name ??
-    p.agentId;
+    agents.find((a) => a.id === agentId)?.name ??
+    agentId;
   return (
     <aside
       aria-label="Sessions and agents"
@@ -191,21 +192,10 @@ export function SessionsSidebar({
       >
         <div className={heading}>
           <span className="flex-1">Agents</span>
-          <Hint text="New agent (Ctrl T)">
-            <button
-              type="button"
-              aria-label="New agent"
-              data-local="pane.new"
-              onClick={onNewAgent}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-tint"
-            >
-              <PlusIcon className="size-4" />
-            </button>
-          </Hint>
         </div>
         <div className="flex min-h-0 flex-col overflow-y-auto">
           {all.length === 0 && (
-            <p className="px-2.5 py-1 text-[12px] text-muted-foreground">No agents running yet.</p>
+            <p className="px-2.5 py-1 text-[12px] text-muted-foreground">No agents running.</p>
           )}
           {ORDER.map((status) => {
             const here = all.filter((a) => a.st.status === status);
@@ -216,12 +206,12 @@ export function SessionsSidebar({
                   <span className={TONE[status]}>{STATUS_LABEL[status]}</span>
                   <span className="text-muted-foreground">{here.length}</span>
                 </p>
-                {here.map(({ pane, session, st }) => {
-                  const agent = agents.find((a) => a.id === pane.agentId);
+                {here.map(({ pane, agentId, session, st }) => {
+                  const agent = agents.find((a) => a.id === agentId);
                   const on = !settings && current === session.id && focusedPane === pane.id;
                   return (
                     <Hint
-                      text={`${nameOf(pane)} · ${agent?.name ?? pane.agentId} · ${session.name}`}
+                      text={`${nameOf(pane, agentId)} · ${agent?.name ?? agentId} · ${session.name}`}
                     >
                       <button
                         key={pane.id}
@@ -231,8 +221,8 @@ export function SessionsSidebar({
                         onClick={() => onSelectPane(pane.id)}
                         className={cn(row, on && "bg-hover")}
                       >
-                        <ProviderIcon id={agent?.provider ?? pane.agentId!} size={15} />
-                        <span className="min-w-0 flex-1 truncate">{nameOf(pane)}</span>
+                        <ProviderIcon id={agent?.provider ?? agentId} size={15} />
+                        <span className="min-w-0 flex-1 truncate">{nameOf(pane, agentId)}</span>
                         <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
                           {ago(st.since, now)}
                         </span>

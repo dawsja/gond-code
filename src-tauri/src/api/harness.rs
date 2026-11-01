@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn detect_and_install_plans() {
         let (r, s, h) = (registry(), Services::default(), Actor::human());
-        // Every built-in agent is listed, installed or not, for the New agent picker.
+        // Every built-in agent is listed, installed or not, for Settings → Agents.
         let found = r.run(&s, &h, "agent.detect", json!({})).unwrap();
         for id in ["claude", "codex", "agy", "grok", "opencode", "pi"] {
             assert!(

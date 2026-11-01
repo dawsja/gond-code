@@ -375,6 +375,27 @@ pub fn register(r: &mut Registry<Services>) {
         },
     );
     r.add(
+        Def::new(
+            "pty.agent",
+            "The agent running in a terminal (one you typed into its shell), if any",
+            Risk::Read,
+        ),
+        |call, i: PtyInput| -> AppResult<Option<String>> {
+            let Some(pid) = call.ctx.ptys.pid(&i.pty_id) else {
+                return Ok(None);
+            };
+            let mut agents: Vec<(String, String)> = crate::agents::BUILT_IN
+                .iter()
+                .map(|(id, _, _, command)| (id.to_string(), command.to_string()))
+                .collect();
+            if let Ok(customs) = crate::agents::list_custom(&call.ctx.store) {
+                agents.extend(customs.into_iter().map(|c| (c.id, c.command)));
+            }
+            let procs = crate::agents::running::snapshot();
+            Ok(crate::agents::running::agent_under(pid, &procs, &agents))
+        },
+    );
+    r.add(
         Def::new("pty.write", "Type into a terminal", Risk::WriteLocal),
         |call, i: WriteInput| -> AppResult<()> { call.ctx.ptys.write(&i.pty_id, &i.data) },
     );

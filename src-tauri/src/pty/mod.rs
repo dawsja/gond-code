@@ -35,6 +35,8 @@ struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Writer,
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// The program's process id (the shell's, for a plain terminal).
+    pid: Option<u32>,
 }
 
 type Writer = Arc<Mutex<Box<dyn Write + Send>>>;
@@ -247,6 +249,7 @@ impl PtyManager {
                 master: pair.master,
                 writer,
                 killer: child.clone_killer(),
+                pid: child.process_id(),
             },
         );
 
@@ -303,6 +306,11 @@ impl PtyManager {
             .ok_or_else(|| not_found(pty_id))?;
         let timeout = timeout.unwrap_or(READ_TIMEOUT).min(READ_TIMEOUT_MAX);
         Ok(scroll.read(since, re.as_ref(), timeout))
+    }
+
+    /// The terminal's program's process id, while it runs.
+    pub fn pid(&self, pty_id: &str) -> Option<u32> {
+        self.lock().get(pty_id).and_then(|s| s.pid)
     }
 
     /// Whether the terminal's program is still running.

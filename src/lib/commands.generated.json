@@ -3332,6 +3332,34 @@
     }
   },
   {
+    "name": "pty.agent",
+    "summary": "The agent running in a terminal (one you typed into its shell), if any",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "ptyId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ptyId"
+      ],
+      "title": "PtyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "Nullable_string",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  {
     "name": "pty.close",
     "summary": "Close a terminal",
     "risk": "write-local",

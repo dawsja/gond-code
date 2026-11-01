@@ -14,6 +14,7 @@ pub mod grok;
 pub mod models;
 pub mod opencode;
 pub mod pi;
+pub mod running;
 pub mod sessions;
 
 use serde::{Deserialize, Serialize};

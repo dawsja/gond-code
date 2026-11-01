@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isRegistered, liveBackend, runCommand } from "@/lib/appState";
-import type { Account, ModelInfo } from "@/lib/harnesses";
-import { LEVEL_LABEL } from "@/lib/harnesses";
 import { notify } from "@/lib/notify";
 import { onBeforeRestart } from "@/lib/restart";
-import { errorText, type AgentInfo, type Project } from "@/lib/types";
+import { errorText, type Project } from "@/lib/types";
 import {
   find,
   fromSaved,
@@ -23,10 +21,9 @@ import {
 } from "./layout";
 import { dictate } from "./Dictation";
 import { showKeys } from "./KeyHelp";
-import type { Start } from "./NewAgent";
 import type { Shortcut } from "./Terminal";
 
-/** What the picker remembers between uses: the agent and the folder you started last. */
+/** The folder you last opened a terminal in. */
 const remembered = (key: string) => {
   try {
     return localStorage.getItem(key) ?? undefined;
@@ -34,37 +31,17 @@ const remembered = (key: string) => {
     return undefined;
   }
 };
-const remember = (key: string, v: string) => {
-  try {
-    localStorage.setItem(key, v);
-  } catch {
-    // Not remembered: the picker starts on the first one instead.
-  }
-};
 
 /**
- * The sessions and their panes: named groups you switch
- * between, each with its own splits. Start an agent or a terminal beside a pane, close, zoom,
- * rename and restart panes, resize splits. Agents run as threads (their account, model and
- * mode), each in its own CLI on its own session, in the folder picked for it.
+ * The sessions and their panes: named groups you switch between, each with its own splits.
+ * Every pane is a terminal in your default shell; an agent is whatever you start in one
+ * (`claude`, `codex`…). Open a terminal beside a pane, close, zoom, rename and restart panes,
+ * resize splits.
  */
-export function useSessions({
-  agents,
-  models,
-  projects,
-}: {
-  agents: AgentInfo[];
-  models: Record<string, ModelInfo[]>;
-  accounts: Account[];
-  projects: Project[];
-}) {
+export function useSessions({ projects }: { projects: Project[] }) {
   const [saved, setSaved] = useState<Saved>(() => fromSaved(load()));
   const [restarts, setRestarts] = useState<Record<string, number>>({});
   const [renaming, setRenaming] = useState<string>();
-  const [picker, setPicker] = useState<{ open: boolean; initial: Partial<Start>; at?: string }>({
-    open: false,
-    initial: {},
-  });
   // Kept by the app (sessions.json beside its database), so a crash or a forced close can't lose
   // them; this PC's WebView storage is only the fallback. Nothing is saved until they're read,
   // so an empty start never overwrites them.
@@ -151,11 +128,8 @@ export function useSessions({
         sessions: v.sessions.map((g) => (g.id === id ? { ...g, name: name.trim() } : g)),
       }));
   };
-  /** Closes a session and every agent in it; there's always one left. */
+  /** Closes a session and every terminal in it; there's always one left. */
   const removeSession = (id: string) => {
-    const g = savedRef.current.sessions.find((x) => x.id === id);
-    for (const p of panes(g?.layout.root ?? null))
-      if (p.threadId) runCommand("thread.archive", { threadId: p.threadId }).catch(() => undefined);
     setSaved((v) => {
       const left = v.sessions.filter((x) => x.id !== id);
       const sessions: Session[] = left.length
@@ -165,7 +139,7 @@ export function useSessions({
     });
   };
 
-  // The folder a new agent starts in: the focused pane's, else the last you used, else the first.
+  // The folder a new terminal starts in: the focused pane's, else the last you used, else the first.
   const known = (id?: string) => (id && projects.some((p) => p.id === id) ? id : undefined);
   const focused = current?.layout.focus
     ? find(current.layout.root, current.layout.focus)
@@ -190,61 +164,25 @@ export function useSessions({
     [],
   );
 
-  /** Starts an agent (or a terminal) and puts its pane beside `at` (or the focused pane). */
-  const start = useCallback(
-    async (s: Start, at?: string): Promise<string | undefined> => {
-      let pane: Pane = { kind: "pane", id: newId(), projectId: s.projectId };
-      remember("gond.lastFolder", s.projectId);
-      if (s.agentId !== "shell") {
-        remember("gond.lastAgent", s.agentId);
-        const agent = agents.find((a) => a.id === s.agentId);
-        const model = (models[s.agentId] ?? []).find((m) => m.id === s.model);
-        try {
-          // A pasted key becomes the agent's account first, kept in Credential Manager.
-          const accountId = s.apiKey
-            ? (
-                await runCommand<{ id: string }>("account.add", {
-                  harness: s.agentId,
-                  label: `${agent?.name ?? s.agentId} API key`,
-                  kind: "apiKey",
-                  secret: s.apiKey,
-                })
-              ).id
-            : s.accountId;
-          const t = await runCommand<{ id: string }>("thread.create", {
-            projectId: s.projectId,
-            agentId: s.agentId,
-            title: agent?.name ?? s.agentId,
-            accountId,
-            model: s.model,
-            thinking: s.model ? s.thinking : undefined,
-          });
-          const detail = [
-            model?.label ?? "Default model",
-            s.thinking && model ? LEVEL_LABEL[s.thinking] : undefined,
-          ].filter(Boolean);
-          pane = { ...pane, threadId: t.id, agentId: s.agentId, detail: detail.join(" · ") };
-        } catch (e) {
-          notify.error(`Couldn't start ${agent?.name ?? "the agent"}`, {
-            description: errorText(e),
-          });
-          return undefined;
-        }
-      }
-      // Beside the pane it was asked , in that pane's session; else in the session you're in.
-      const session = (at && paneOf(at)?.session) ?? savedRef.current.current;
-      change(
-        (sp) => ({
-          root: split(sp.root, at ?? sp.focus, s.place, pane),
-          focus: pane.id,
-          zoom: undefined,
-        }),
-        session,
-      );
-      return pane.id;
+  /**
+   * A terminal in your default shell beside pane `at` (or the session's focused one), right or
+   * down, in the same folder.
+   */
+  const openShell = useCallback(
+    (place: "right" | "down", at?: string) => {
+      const from = at ? paneOf(at) : undefined;
+      const session = from?.session ?? savedRef.current.current;
+      change((sp) => {
+        const beside = from?.pane ?? (sp.focus ? find(sp.root, sp.focus) : undefined);
+        const pane: Pane = {
+          kind: "pane",
+          id: newId(),
+          projectId: beside?.projectId ?? folder ?? "",
+        };
+        return { root: split(sp.root, beside?.id, place, pane), focus: pane.id, zoom: undefined };
+      }, session);
     },
-
-    [agents, models, change],
+    [change, folder],
   );
 
   /**
@@ -267,7 +205,7 @@ export function useSessions({
         const root = remove(s.root, paneId);
         // Closing a session's last terminal gives you a fresh one in the same shell, not the
         // Settings default.
-        if (!root && !at.pane.threadId) {
+        if (!root) {
           const pane: Pane = {
             kind: "pane",
             id: newId(),
@@ -282,25 +220,9 @@ export function useSessions({
           zoom: s.zoom === paneId ? undefined : s.zoom,
         };
       }, at.session);
-      if (at.pane.threadId)
-        runCommand("thread.archive", { threadId: at.pane.threadId }).catch(() => undefined);
     },
 
     [change],
-  );
-
-  const openPicker = useCallback(
-    (initial: Partial<Start>, at?: string) =>
-      setPicker({
-        open: true,
-        initial: {
-          agentId: remembered("gond.lastAgent"),
-          projectId: folder,
-          ...initial,
-        },
-        at,
-      }),
-    [folder],
   );
 
   const shortcut = useCallback(
@@ -315,17 +237,10 @@ export function useSessions({
           (sp) => ({ ...sp, zoom: sp.zoom === paneId ? undefined : paneId, focus: paneId }),
           at.session,
         );
-      openPicker(
-        {
-          projectId: at.pane.projectId,
-          agentId: at.pane.agentId,
-          place: s === "down" ? "down" : "right",
-        },
-        paneId,
-      );
+      openShell(s === "down" ? "down" : "right", paneId);
     },
 
-    [close, change, openPicker],
+    [close, change, openShell],
   );
 
   const actions = useMemo(
@@ -357,14 +272,12 @@ export function useSessions({
   };
 
   /**
-   * How a pane's process starts: its agent's session (pane.start), or a shell in its folder: the
-   * one it ran before, else Settings' pick, which it then keeps.
+   * How a pane's shell starts, in its folder: the one it ran before, else Settings' pick, which
+   * it then keeps.
    */
   const opener = useCallback(
     (p: Pane) =>
       async ({ cols, rows, cwd }: { cols: number; rows: number; cwd?: string }) => {
-        if (p.threadId)
-          return runCommand<{ ptyId: string }>("pane.start", { threadId: p.threadId, cols, rows });
         const opened = await runCommand<{ ptyId: string; shell?: string }>("pty.open", {
           ...(p.projectId ? { projectId: p.projectId } : {}),
           ...(p.shell ? { shell: p.shell } : {}),
@@ -395,10 +308,7 @@ export function useSessions({
     restarts,
     renaming,
     renamed,
-    picker,
-    setPickerOpen: (open: boolean) => setPicker((p) => ({ ...p, open })),
-    openPicker,
-    start,
+    openShell,
     startShell,
     actions,
     opener,

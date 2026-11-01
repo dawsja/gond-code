@@ -77,7 +77,7 @@ src/                       React app
   components/ui/           shadcn-style kit restyled to Gond
   components/brand/        agent and shell brand icons (@lobehub/icons, plus Pi's)
   features/deck/           Deck.tsx: the app shell (sidebar, workspace, settings)
-  features/workspace/      sessions, panes, layout, New agent, status, dictation, KeyHelp
+  features/workspace/      sessions, panes, layout, agent detection, status, dictation, KeyHelp
   features/terminal/       the sign-in fallback terminal
   features/settings/       Settings space, General, Updates
   features/usage/          Settings → Usage

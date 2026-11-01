@@ -25,10 +25,9 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   Sessions are saved, so the app reopens as you left it.
 - **Agents in the sidebar**, grouped by status read from each terminal: Needs you, Working,
   Done, Idle.
-- **New agent (Ctrl+T):** pick the agent, how it signs in (your subscription or a pasted API
-  key), the folder, the model and thinking level.
-- **Conversations resume** after a restart or an update, for every built-in agent. Shell panes
-  come back in the same shell and folder.
+- **Agents from the terminal:** every pane is your default shell; type `claude`, `codex` or any
+  installed agent to start it, and Gond shows it on the pane and in the sidebar.
+- **Panes come back** after a restart or an update in the same shell and folder.
 - **Fast terminals:** xterm.js on WebGL with full 24-bit colour; Rust runs the PTYs (ConPTY).
 - **Settings:** General (colour, default shell, speech to text, close to tray), Usage (plan
   limits), Agents (install, update, uninstall), GitHub (Git and GitHub CLI install and sign-in),

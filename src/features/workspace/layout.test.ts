@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { one, panes, remove, resize, split, type Node, type Pane } from "./layout";
+import { fromSaved, one, panes, remove, resize, split, type Node, type Pane } from "./layout";
 
 const pane = (id: string): Pane => ({ kind: "pane", id, projectId: "p" });
 
@@ -31,6 +31,33 @@ describe("a folder's panes", () => {
       root: pane("grok"),
       focus: "grok",
     });
+  });
+
+  it("opens a pane saved when it ran an agent as a shell in its folder", () => {
+    const saved = fromSaved({
+      sessions: [
+        {
+          id: "s",
+          name: "Main",
+          layout: {
+            root: {
+              ...split(pane("a"), "a", "right", pane("b")),
+              a: {
+                ...pane("a"),
+                threadId: "t1",
+                agentId: "claude",
+                detail: "Opus 5.5",
+                title: "Fix",
+              },
+            },
+          },
+        },
+      ],
+    });
+    expect(panes(saved.sessions[0].layout.root)).toEqual([
+      { ...pane("a"), title: "Fix" },
+      pane("b"),
+    ]);
   });
 
   it("keeps a resized split from squeezing either side away", () => {

@@ -11,6 +11,7 @@ import { on, openExternal } from "@/lib/ipc";
 import { onBeforeRestart } from "@/lib/restart";
 import { errorText } from "@/lib/types";
 import { imagePasteKey } from "./imagePaste";
+import { setPaneAgent } from "./paneAgent";
 import { setPaneFolder } from "./paneFolder";
 import { promptFolder } from "./prompt";
 import { asks, setStatus, type Status } from "./status";
@@ -76,31 +77,33 @@ const shortcut = (e: KeyboardEvent): Shortcut | undefined => {
 
 type Props = {
   paneId: string;
-  /** Starts the pane's process (pane.start, pty.open) and answers its pty; a shell coming back
-   *  after an update starts in the folder it was in (`cwd`). */
+  /** Starts the pane's shell (pty.open) and answers its pty; a shell coming back after an
+   *  update starts in the folder it was in (`cwd`). */
   open: (size: { cols: number; rows: number; cwd?: string }) => Promise<{ ptyId: string }>;
-  /** An agent's pane watches its screen for Working / Needs you / Done; a shell's doesn't. */
-  watch: boolean;
-  /** The pane's agent (none for a shell): an image paste goes to it on its own key. */
-  agentId?: string;
   active: boolean;
   onFocus: () => void;
   onShortcut: (s: Shortcut) => void;
 };
 
-/** One terminal, drawn on the GPU (WebGL), on a pty the Rust side runs; it lives until unmounted. */
-export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShortcut }: Props) {
+/**
+ * One terminal, drawn on the GPU (WebGL), on a pty the Rust side runs; it lives until unmounted.
+ * It runs a shell; an agent you start in it (`claude`, `codex`…) is found under that shell and
+ * watched for Working / Needs you / Done while it runs.
+ */
+export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm>(null);
-  const live = useRef({ open, onShortcut, onFocus, active, watch, agentId });
+  const live = useRef({ open, onShortcut, onFocus, active });
   useEffect(() => {
-    live.current = { open, onShortcut, onFocus, active, watch, agentId };
+    live.current = { open, onShortcut, onFocus, active };
   });
 
   useEffect(() => {
     const el = box.current!;
     let disposed = false;
     let ptyId: string | null = null;
+    // The agent running under the shell (pty.agent), if any.
+    let agent: string | undefined;
     const early: { ptyId: string; data: string }[] = [];
     const t = new XTerm({
       fontFamily: '"JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace',
@@ -140,7 +143,7 @@ export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShor
       void clipboard().then(
         ({ text, image }) => {
           if (text) return t.paste(text);
-          const key = image && imagePasteKey(live.current.agentId);
+          const key = image && imagePasteKey(agent);
           if (key) t.input(key);
         },
         () => undefined,
@@ -195,7 +198,7 @@ export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShor
     let state: Status = "idle";
     const set = (s: Status) => {
       state = s;
-      setStatus(paneId, live.current.watch ? s : undefined);
+      setStatus(paneId, agent ? s : undefined);
     };
     const lines = () => {
       const b = t.buffer.active;
@@ -207,9 +210,27 @@ export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShor
     const screen = () => lines().join("\n");
 
     // Before a restart into an update, a shell keeps its screen (colours and scrollback) and the
-    // folder its prompt shows, to come back as it was. An agent restores its own conversation.
-    const shellsOnly = () =>
-      !live.current.watch && liveBackend() && isRegistered("pane.screen.save");
+    // folder its prompt shows, to come back as it was. One running an agent comes back as its
+    // shell, for you to start the agent again.
+    const shellsOnly = () => !agent && liveBackend() && isRegistered("pane.screen.save");
+    // Which agent runs under the shell, looked for every 2 s: it starts and stops as you type.
+    let asking = false;
+    let ticks = 0;
+    const lookForAgent = () => {
+      if (!ptyId || asking || !liveBackend() || !isRegistered("pty.agent")) return;
+      asking = true;
+      runCommand<string | null>("pty.agent", { ptyId })
+        .then((found) => {
+          const next = found ?? undefined;
+          if (disposed || next === agent) return;
+          agent = next;
+          setPaneAgent(paneId, agent);
+          busySince = 0;
+          set("idle");
+        })
+        .catch(() => undefined)
+        .finally(() => (asking = false));
+    };
     const stopSaving = onBeforeRestart(async () => {
       if (!ptyId || !shellsOnly()) return;
       await runCommand("pane.screen.save", {
@@ -220,10 +241,12 @@ export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShor
     });
     const tick = window.setInterval(() => {
       if (state === "exited") return;
+      if (ticks++ % 4 === 0) lookForAgent();
       // A shell can cd anywhere: the status bar follows the folder its prompt shows.
-      if (!live.current.watch) {
+      if (!agent) {
         const folder = promptFolder(lines());
         if (folder) setPaneFolder(paneId, folder);
+        return;
       }
       const now = Date.now();
       // A question on screen is the agent waiting for you, even while it redraws (Codex's
@@ -313,6 +336,7 @@ export function Terminal({ paneId, open, watch, agentId, active, onFocus, onShor
       stopSaving();
       window.clearInterval(tick);
       setPaneFolder(paneId, undefined);
+      setPaneAgent(paneId, undefined);
       resize.disconnect();
       stopData.then((stop) => stop());
       stopExit.then((stop) => stop());

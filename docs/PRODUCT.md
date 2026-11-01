@@ -12,26 +12,25 @@ every agent by what it's doing.
   you**, **Working**, **Done**, **Idle** (and Exited), with how long it has been in that status.
   Gond reads the status from each terminal's output, as you would: output still coming means
   working, a question on screen ("Do you want to…", "[y/n]") means it needs you.
-- **Panes.** Each pane is a terminal: an installed agent's own CLI (Claude Code, Codex,
-  Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or a custom agent) or a plain
-  shell. Panes split right
+- **Panes.** Each pane is a terminal in your default shell. You start an agent by typing it
+  there (Claude Code, Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or
+  a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
   or down, resize, zoom, rename and restart. The right-click menu has Copy, Paste, Select all,
   Split right, Split down, Rename, Restart, Open folder, Zoom and Close.
 - **Status bar.** A thin bar under the panes: on the left, where the focused pane is (the git
   repository and branch, or a plain folder, following a shell's `cd`); on the right, Gond Code's
   version.
-- **New agent (Ctrl+T).** Pick the agent (or a plain terminal), how it signs in (your
-  subscription or a pasted API key, saved to Credential Manager), the folder, the model and
-  thinking level, and whether it splits right or down.
+- **New terminal (Ctrl+T).** A terminal in the default shell beside the focused pane, in its
+  folder; Split right and Split down open one too.
 - **No setup screen.** A new or empty session opens a terminal in the default shell from
   Settings, in the last folder you used (your home folder before any). Each terminal remembers
   its shell; closing a session's last terminal opens the same shell again.
-- **Resume.** After a restart or an update every built-in agent picks its conversation back up
-  (docs/HARNESSES.md has how each one does it). After Restart to update, shell panes also come
-  back with their screen, in the folder they were in.
+- **Resume.** After Restart to update, panes come back as their shells, with their screen, in
+  the folder they were in; you start the agent again with its own resume (`claude --continue`,
+  `codex resume`).
 - **Terminals.** xterm.js on the WebGL renderer with full 24-bit colour; Rust runs the PTYs
   (ConPTY).
-- **Keys.** Ctrl+T new agent; Ctrl+Shift+→ / ↓ split right / down; Ctrl+Shift+Z zoom;
+- **Keys.** Ctrl+T new terminal; Ctrl+Shift+→ / ↓ split right / down; Ctrl+Shift+Z zoom;
   Ctrl+Shift+W close pane; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
   selection); Ctrl+Shift+Space speech to text, Esc cancels it. Ctrl+Shift+P opens a searchable
   list of them.

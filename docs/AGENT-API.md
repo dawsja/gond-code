@@ -44,6 +44,7 @@ refuse any caller but the window.
 | `pane.screen.save` | write-local, **human only** | `{ paneId, screen, cwd? }` → `null`: keeps a shell pane's screen (as xterm serialises it) and folder in `screens/` beside the database, before a restart into an update |
 | `pane.screen.take` | write-local, **human only** | `{ paneId }` → `{ screen, cwd? } \| null`: the saved screen and folder, once (reading removes it) |
 | `pane.start` | write-local | `{ threadId, cols?, rows? }` → `{ ptyId }`: a pane's agent, its own interactive CLI with the thread's account, model and thinking, in a terminal that runs until the pane closes. Opening again it resumes its conversation: Claude Code, Pi and Grok Build on the session id Gond chose, Codex and Antigravity on the session the pane started (found on disk), opencode on the folder's latest |
+| `pty.agent` | read | `{ ptyId }` → `string \| null`: the agent running in the terminal, one you typed into its shell (`claude`, `codex`…), by its program under the shell; `null` for none |
 | `pty.close` | write-local | `{ ptyId }` → `null` |
 | `pty.open` | write-local | `{ threadId?, projectId?, shell?, cwd?, cols?, rows? }` (default 120×32) → `{ ptyId, shell? }`: a plain terminal in the thread's or project's folder, else your home folder; `shell` is a `shell.list` id (else Settings' pick), `cwd` a folder to start in instead; the answer names the shell it ran |
 | `pty.read` | read | `{ ptyId, since?: offset, waitFor?: regex, timeoutMs? }` → `{ text, offset, truncated, exited, exitCode?, matched? }` |

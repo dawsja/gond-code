@@ -25,6 +25,7 @@ import { ProviderIcon } from "@/components/brand/provider-icon";
 import type { AgentInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { panes, type Node, type Pane, type Layout } from "./layout";
+import { usePaneAgents } from "./paneAgent";
 import { STATUS_LABEL, type PaneStatus, type Status } from "./status";
 import { handles, Terminal, type Shortcut } from "./Terminal";
 import { Hint } from "@/components/hint";
@@ -99,7 +100,7 @@ export function Workspace({
   statuses: Record<string, PaneStatus>;
   /** How often each pane was restarted: a new count starts its process again. */
   restarts: Record<string, number>;
-  /** Starts a pane's process: its agent's session, or a shell. */
+  /** Starts a pane's shell. */
   start: (pane: Pane) => (size: { cols: number; rows: number }) => Promise<{ ptyId: string }>;
   actions: PaneActions;
   /** The pane being renamed, and what to do with the new name. */
@@ -218,8 +219,10 @@ function PaneView({
   renaming: boolean;
   onRenamed: (title: string) => void;
 }) {
-  const agent = agents.find((a) => a.id === pane.agentId);
-  const name = pane.title ?? agent?.name ?? (pane.agentId ? pane.agentId : "Terminal");
+  // The agent you started in its shell, while it runs.
+  const running = usePaneAgents()[pane.id];
+  const agent = agents.find((a) => a.id === running);
+  const name = pane.title ?? agent?.name ?? running ?? "Terminal";
   const h = () => handles.get(pane.id);
   return (
     <ContextMenu>
@@ -240,8 +243,8 @@ function PaneView({
               focused ? "bg-tint-wash/40" : "bg-[#070707]",
             )}
           >
-            {pane.agentId ? (
-              <ProviderIcon id={agent?.provider ?? pane.agentId} size={13} />
+            {running ? (
+              <ProviderIcon id={agent?.provider ?? running} size={13} />
             ) : (
               <SquareTerminalIcon className="size-3.5 text-muted-foreground" />
             )}
@@ -260,13 +263,8 @@ function PaneView({
             ) : (
               <span className="shrink-0 font-medium">{name}</span>
             )}
-            {pane.detail && (
-              <Hint text={pane.detail}>
-                <span className="min-w-0 truncate text-faint">· {pane.detail}</span>
-              </Hint>
-            )}
             <span className="flex-1" />
-            {pane.agentId && status && (
+            {running && status && (
               <span
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground",
@@ -294,8 +292,6 @@ function PaneView({
             key={`${pane.id}:${restart}`}
             paneId={pane.id}
             open={open}
-            watch={!!pane.agentId}
-            agentId={pane.agentId}
             active={focused && visible}
             onFocus={() => actions.focus(pane.id)}
             onShortcut={(s) => actions.shortcut(pane.id, s)}
@@ -325,7 +321,7 @@ function PaneView({
           <PencilIcon /> Rename
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => actions.restart(pane.id)}>
-          <RotateCwIcon /> {pane.agentId ? "Restart session" : "Restart terminal"}
+          <RotateCwIcon /> Restart terminal
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => actions.openFolder(pane.projectId)}>
           <FolderOpenIcon /> Open folder
