@@ -90,6 +90,58 @@ function ShellPicker({
   );
 }
 
+/** Where a `file:line` link in a pane opens: an editor on this PC (file.editors), or the file's
+ *  default app. None picked = the first editor found. */
+function EditorPicker({
+  value,
+  onChange,
+}: {
+  value?: string | null;
+  onChange: (id: string) => void;
+}) {
+  const [editors, setEditors] = useState<{ id: string; label: string }[]>();
+  useEffect(() => {
+    if (!liveBackend() || !isRegistered("file.editors")) return;
+    runCommand<{ id: string; label: string }[]>("file.editors", {}).then(setEditors, () =>
+      setEditors([]),
+    );
+  }, []);
+  const options = [
+    ...(editors ?? []),
+    ...(value && value !== "system" && editors && !editors.some((e) => e.id === value)
+      ? [{ id: value, label: `${value} (not found)` }]
+      : []),
+    { id: "system", label: "Default app" },
+  ];
+  const on =
+    options.find((o) => o.id === (value ?? editors?.[0]?.id ?? "system")) ?? options.at(-1)!;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Open files in: ${on.label}`}
+        data-command="settings.set"
+        data-arg="editor"
+        className="flex h-9 w-full max-w-72 items-center gap-2 rounded-[10px] border border-edge bg-raised px-2.5 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-tint data-[state=open]:border-tint-edge"
+      >
+        <span className="min-w-0 flex-1 truncate">{on.label}</span>
+        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 rounded-2xl p-1.5 flex flex-col gap-0.5">
+        {options.map((o) => (
+          <DropdownMenuItem
+            key={o.id}
+            onSelect={() => onChange(o.id)}
+            className={cn("gap-2.5 rounded-xl px-2 py-1.5", o.id === on.id && "bg-tint-wash")}
+          >
+            <span className="min-w-0 flex-1 truncate font-medium">{o.label}</span>
+            {o.id === on.id && <CheckIcon className="size-3.5 shrink-0 text-tint-ink" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /** The terminals' font: one of the three Nerd Fonts the app ships, each shown in itself. */
 function FontPicker({
   value,
@@ -162,6 +214,9 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
       </Field>
       <Field label="Default shell">
         <ShellPicker value={settings.shell} onChange={(shell) => onChange({ shell })} />
+      </Field>
+      <Field label="Open files in">
+        <EditorPicker value={settings.editor} onChange={(editor) => onChange({ editor })} />
       </Field>
       <Field label="Terminal font">
         <FontPicker

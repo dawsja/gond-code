@@ -20,6 +20,14 @@ every agent by what it's doing.
   a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
   or down, resize, zoom, rename and restart. The right-click menu has Copy, Paste, Select all,
   Split right, Split down, Rename, Restart, Open folder, Zoom and Close.
+- **Search every pane (Ctrl+Shift+F).** A search box over what every terminal in every session
+  printed (its scrollback, replays included), newest first, grouped by pane and session.
+  Choosing a match opens its session, focuses the pane, scrolls to the line and selects it.
+- **`file:line` links.** A path a pane prints (`src/pty/host.rs:199:16`, `main.c(12,5)`,
+  `./docs/PRODUCT.md`) is a link when it is a real file, from the folder the pane is in. A
+  click opens it at the line in the editor picked in Settings → General → Open files in (VS
+  Code, Cursor, Windsurf or Zed, whichever are installed), else the file's default app. This is
+  the one way into an editor: Gond has no editor or Explorer panels.
 - **Drag and drop.** Files and folders dragged over a pane light it up ("Drop to insert the
   path"); dropping types their paths in, as a paste would, the way the pane's shell writes a
   path (`/c/…` in Git Bash, `/mnt/c/…` in WSL, quoted when needed). An agent there reads them;

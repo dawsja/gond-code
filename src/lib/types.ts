@@ -73,6 +73,8 @@ export type Settings = {
   keepTerminals?: boolean;
   /** A plain terminal's shell (shell.list id: "pwsh", "cmd", "wsl:Ubuntu"…); none = PowerShell. */
   shell?: string | null;
+  /** Where a `file:line` link opens: a file.editors id, "system", none = the first editor found. */
+  editor?: string | null;
   /** The terminals' font (not the app's). Default JetBrains Mono. */
   terminalFont?: TerminalFont;
 };

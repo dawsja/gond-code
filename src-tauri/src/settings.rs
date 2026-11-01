@@ -45,6 +45,10 @@ pub struct Settings {
     /// PowerShell 7, else Windows PowerShell, else Command Prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
+    /// Where a `file:line` link in a pane opens: a `file.editors` id, `system` (the file's
+    /// default app); none = the first editor found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<String>,
     /// The terminals' font (not the app's).
     #[serde(default)]
     pub terminal_font: TerminalFont,
@@ -64,6 +68,8 @@ pub struct Patch {
     pub keep_terminals: Option<bool>,
     #[serde(default, deserialize_with = "nullable")]
     pub shell: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub editor: Option<Option<String>>,
     #[serde(default)]
     pub terminal_font: Option<TerminalFont>,
 }
@@ -96,6 +102,9 @@ impl Patch {
                 serde_json::to_value(f).unwrap_or_default(),
             );
         }
+        if let Some(editor) = self.editor {
+            m.insert("editor".into(), editor.map_or(Value::Null, Value::from));
+        }
         if let Some(shell) = self.shell {
             m.insert("shell".into(), shell.map_or(Value::Null, Value::from));
         }
@@ -114,6 +123,7 @@ impl Default for Settings {
             close_to_tray: true,
             keep_terminals: true,
             shell: None,
+            editor: None,
             terminal_font: TerminalFont::default(),
         }
     }
@@ -125,6 +135,7 @@ const KEYS: &[&str] = &[
     "closeToTray",
     "keepTerminals",
     "shell",
+    "editor",
     "terminalFont",
 ];
 
@@ -246,6 +257,7 @@ mod tests {
     fn keys_match_the_struct() {
         let mut all = as_object(&Settings {
             shell: Some(String::new()),
+            editor: Some(String::new()),
             ..Settings::default()
         })
         .keys()

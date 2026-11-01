@@ -185,9 +185,10 @@ pub fn valid_name(name: &str) -> bool {
         })
 }
 
-/// Commands that open code for human editing (editor, Explorer). The rule:
-/// agents edit, the human steers and approves. Never
-/// registered. Terminals are not editor features.
+/// Commands that open code for human editing (editor or Explorer panels, "open in editor"
+/// buttons). The rule: agents edit, the human steers and approves. Never registered.
+/// Terminals are not editor features. The one way into an editor is a `file:line` link a pane
+/// printed, which the human clicks: `file.open`, human only.
 pub fn human_editing(name: &str) -> bool {
     let last = name.rsplit('.').next().unwrap_or_default();
     name.starts_with("editor.")

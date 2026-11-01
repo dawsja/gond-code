@@ -86,6 +86,10 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Right-click menu:** Copy, Paste, Select all, Split right, Split down, Rename, Restart
   terminal, Open folder, Zoom pane, Close pane.
 - Dividers between panes drag to resize; a double-click evens the split.
+- **Search every pane (Ctrl+Shift+F):** a dialog like the shortcut list, 720px: a search field
+  with the match count, then matches grouped by pane (brand icon, name · session, count), each
+  a mono line with the match on a tint mark; ↑↓ move, Enter goes there, Esc closes.
+- **`file:line` links:** underlined on hover with a pointer, like URLs; a click opens the file.
 - **Drag and drop:** files dragged over a pane put a 2px tint border and a faint tint wash on it,
   with a pill in the middle ("Drop to insert the path" / "Drop to insert 3 paths"); dropping
   types the paths in and focuses the pane.

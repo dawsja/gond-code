@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod commands;
 pub mod credentials;
 pub mod drop;
+pub mod editors;
 pub mod error;
 pub mod fallback;
 pub mod git;

@@ -105,6 +105,10 @@ src-tauri/src/             Rust
   pty/                     PtyManager, scrollback
   projects.rs              folders
   clipboard.rs             the clipboard for a paste into a pane
+  editors.rs api/files.rs  `file:line` links: which printed paths are files (`file.resolve`),
+                           opening one at its line (`file.open`), the editors (`file.editors`);
+                           `fileLinks.ts` finds them in a pane, `PaneSearch.tsx` searches
+                           every pane's xterm buffer (`scrollbackSearch.ts`)
   drop.rs                  files dropped on a pane: paths as its shell writes them, temp
                            files copied to `drops/` (`pane.drop`; `FileDrop.tsx` listens)
   harness.rs install.rs    install/update plans; the background install engine

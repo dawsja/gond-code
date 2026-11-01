@@ -21,6 +21,7 @@ import {
 } from "./layout";
 import { dictate } from "./Dictation";
 import { showKeys } from "./KeyHelp";
+import { showSearch } from "./scrollbackSearch";
 import type { Shortcut } from "./Terminal";
 
 /** The folder you last opened a terminal in. */
@@ -236,6 +237,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
     (paneId: string, s: Shortcut) => {
       if (s === "dictate") return dictate();
       if (s === "keys") return showKeys();
+      if (s === "search") return showSearch();
       const at = paneOf(paneId);
       if (!at) return;
       if (s === "close") return close(paneId);

@@ -26,6 +26,8 @@ import { useDeck } from "./useDeck";
 import { Dictation, dictate } from "@/features/workspace/Dictation";
 import { KeyHelp, showKeys } from "@/features/workspace/KeyHelp";
 import { FileDrop } from "@/features/workspace/FileDrop";
+import { PaneSearch } from "@/features/workspace/PaneSearch";
+import { showSearch } from "@/features/workspace/scrollbackSearch";
 import { AutoShell } from "@/features/workspace/AutoShell";
 import { SessionsSidebar } from "@/features/workspace/SessionsSidebar";
 import { useStatuses } from "@/features/workspace/status";
@@ -130,6 +132,9 @@ export function Deck() {
       if (e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
         showKeys();
+      } else if (e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        showSearch();
       } else if (!e.shiftKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         toWorkspace();
@@ -262,6 +267,14 @@ export function Deck() {
             ))}
           <Dictation target={() => sp.current?.layout.focus} />
           <KeyHelp />
+          <PaneSearch
+            sessions={sp.sessions}
+            agents={agents}
+            onReveal={(id) => {
+              toWorkspace();
+              sp.actions.focus(id);
+            }}
+          />
           <FileDrop
             shellOf={(id) => {
               for (const g of sp.sessions) {

@@ -322,6 +322,128 @@
     }
   },
   {
+    "name": "file.editors",
+    "summary": "The code editors on this PC that a file:line link can open in",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Editor": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/Editor"
+      },
+      "title": "Array_of_Editor",
+      "type": "array"
+    }
+  },
+  {
+    "name": "file.open",
+    "summary": "Open a file at a line in your editor (Settings → General → Open files in)",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "A file (`file.resolve`'s answer).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "OpenInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "file.resolve",
+    "summary": "Which paths printed in a pane are files, resolved from its folder",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "description": "The pane's folder; relative paths resolve from it (else from your home folder).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paths": {
+          "description": "Paths as a pane printed them (no `:line`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "title": "ResolveInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title": "Array_of_Nullable_string",
+      "type": "array"
+    }
+  },
+  {
     "name": "folder.git",
     "summary": "The git repository and branch a folder is in, if any (the status bar)",
     "risk": "read",
@@ -2663,6 +2785,13 @@
           "description": "The window's X hides Gond Code to the tray, so its agents keep working; Quit is in\nthe tray menu. Off: X quits.",
           "type": "boolean"
         },
+        "editor": {
+          "description": "Where a `file:line` link in a pane opens: a `file.editors` id, `system` (the file's\ndefault app); none = the first editor found.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "keepTerminals": {
           "default": true,
           "description": "Quitting leaves the terminals (and the agents in them) running in the terminal host, to\ncome back when Gond Code opens; off, quitting closes them.",
@@ -2706,6 +2835,13 @@
               "default": null,
               "type": [
                 "boolean",
+                "null"
+              ]
+            },
+            "editor": {
+              "default": null,
+              "type": [
+                "string",
                 "null"
               ]
             },
@@ -2815,6 +2951,13 @@
           "default": true,
           "description": "The window's X hides Gond Code to the tray, so its agents keep working; Quit is in\nthe tray menu. Off: X quits.",
           "type": "boolean"
+        },
+        "editor": {
+          "description": "Where a `file:line` link in a pane opens: a `file.editors` id, `system` (the file's\ndefault app); none = the first editor found.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "keepTerminals": {
           "default": true,

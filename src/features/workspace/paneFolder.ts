@@ -22,3 +22,6 @@ const subscribe = (l: () => void) => {
 export function usePaneFolder(paneId: string | undefined) {
   return useSyncExternalStore(subscribe, () => (paneId ? folders.get(paneId) : undefined));
 }
+
+/** The folder `paneId`'s prompt shows now, outside React (a link resolves from it). */
+export const paneFolder = (paneId: string) => folders.get(paneId);

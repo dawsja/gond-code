@@ -24,7 +24,7 @@ refuse any caller but the window.
 | `sessions.get` | read | `{}` → the saved sessions (`{ sessions: { id, name, layout }[], current? }`, each layout a tree of right/down splits whose leaves are panes), or `null` before any. A `spaces.json` from before the rename is read until the next save |
 | `sessions.set` | write-local | `{ sessions }` → `null`: saves them to `sessions.json` beside the database, written whole then swapped in |
 | `settings.get` | read | `{}` → `Settings` |
-| `settings.set` | write-local | `{ patch }` → `Settings`: `patch` takes `tint`, `shell` (a `shell.list` id, `null` for the default), `closeToTray`, `keepTerminals` (quitting leaves the terminals running in the terminal host; default `true`) and `terminalFont` (`jetbrains-mono`, `hack` or `fira-code`); nothing else |
+| `settings.set` | write-local | `{ patch }` → `Settings`: `patch` takes `tint`, `shell` (a `shell.list` id, `null` for the default), `editor` (a `file.editors` id, `system` for the default app, `null` for the first editor found), `closeToTray`, `keepTerminals` (quitting leaves the terminals running in the terminal host; default `true`) and `terminalFont` (`jetbrains-mono`, `hack` or `fira-code`); nothing else |
 | `shell.list` | read | `{}` → `{ id, label, program, args }[]`: the shells a plain terminal can run on this PC: PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, each WSL distribution. Settings `shell` picks one by id; `pty.open` from the human starts it |
 
 ## Folders
@@ -41,6 +41,9 @@ refuse any caller but the window.
 | Command | Risk | Input → result |
 |---|---|---|
 | `clipboard.read` | read, **human only** | `{}` → `{ text?, image }`: what Ctrl+Shift+V pastes into a pane: the clipboard's text, and whether it holds a picture (an agent's pane then gets its image-paste key) |
+| `file.editors` | read | `{}` → `{ id, label }[]`: the code editors on this PC a `file:line` link can open in (VS Code, Cursor, Windsurf, Zed; whichever are installed) |
+| `file.open` | write-local, **human only** | `{ path, line?, column? }` → `null`: opens a file at its line in the editor picked in Settings (`editor`), else the first one found, else the file's default app. The only way into an editor: a `file:line` link a pane printed |
+| `file.resolve` | read | `{ paths, cwd? }` → `(string \| null)[]`: each path a pane printed, as the file it points at if it is one: relative to `cwd` (the pane's folder; else your home folder), `~` your home folder, `/c/…` and `/mnt/c/…` the Windows drive |
 | `pane.drop` | write-local, **human only** | `{ paths, shell? }` → `string`: the text to type for files and folders dropped on a pane, each path as `shell` writes it (`/c/…` in Git Bash, `/mnt/c/…` in WSL, quoted when needed) and followed by a space; a file in the temp folder is first copied to `drops/` under the local data folder (kept a week) |
 | `pane.screen.save` | write-local, **human only** | `{ paneId, screen, cwd? }` → `null`: keeps a shell pane's screen (as xterm serialises it) and folder in `screens/` beside the database, before a restart into an update |
 | `pane.screen.take` | write-local, **human only** | `{ paneId }` → `{ screen, cwd? } \| null`: the saved screen and folder, once (reading removes it) |

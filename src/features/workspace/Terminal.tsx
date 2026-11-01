@@ -13,7 +13,9 @@ import { fontStack, loadTerminalFont, onTerminalFont, terminalFont } from "@/lib
 import { errorText } from "@/lib/types";
 import { imagePasteKey } from "./imagePaste";
 import { setPaneAgent } from "./paneAgent";
-import { setPaneFolder } from "./paneFolder";
+import { fileLinks } from "./fileLinks";
+import { paneFolder, setPaneFolder } from "./paneFolder";
+import { searchLines, type Hit, type Line } from "./scrollbackSearch";
 import { promptFolder } from "./prompt";
 import { asks, setStatus, type Status } from "./status";
 
@@ -47,7 +49,7 @@ const THEME: ITheme = {
 };
 
 /** What a pane's keys and menu ask of the layout around it. */
-export type Shortcut = "new" | "right" | "down" | "zoom" | "close" | "dictate" | "keys";
+export type Shortcut = "new" | "right" | "down" | "zoom" | "close" | "dictate" | "keys" | "search";
 
 /** A running terminal's actions, for its right-click menu. */
 export type Handle = {
@@ -58,6 +60,10 @@ export type Handle = {
   focus: () => void;
   /** Types `text` in as if pasted (dictation): it waits there for you to send it. */
   insert: (text: string) => void;
+  /** Its scrollback's matches of `query` (search across panes), the newest first. */
+  search: (query: string, limit: number) => Hit[];
+  /** Scrolls to a match and selects it. */
+  reveal: (hit: Pick<Hit, "row" | "col" | "len">) => void;
 };
 
 /** Each mounted pane's terminal, by pane id. */
@@ -74,7 +80,27 @@ const shortcut = (e: KeyboardEvent): Shortcut | undefined => {
   if (k === "z") return "zoom";
   if (k === "w") return "close";
   if (k === "p") return "keys";
+  if (k === "f") return "search";
 };
+
+/** The terminal's lines as text, wrapped lines joined back into one, each with its first row. */
+function logicalLines(t: XTerm): Line[] {
+  const b = t.buffer.active;
+  const out: Line[] = [];
+  for (let y = 0; y < b.length;) {
+    const row = y;
+    let text = b.getLine(y)?.translateToString(true) ?? "";
+    // A wrapped row is full: pad it so columns line up with the row after.
+    while (b.getLine(y + 1)?.isWrapped) {
+      text =
+        text.padEnd((y - row + 1) * t.cols) + (b.getLine(y + 1)?.translateToString(true) ?? "");
+      y++;
+    }
+    out.push({ row, text });
+    y++;
+  }
+  return out;
+}
 
 /** `pty.attach`: a pane's terminal still running in the terminal host (Gond Code restarted,
  *  updated or crashed), with what it printed. */
@@ -136,6 +162,8 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
     t.loadAddon(new Unicode11Addon());
     t.unicode.activeVersion = "11";
     t.loadAddon(new WebLinksAddon((_, uri) => void openExternal(uri)));
+    // `file:line` opens in your editor; relative paths from the folder the pane is in.
+    t.registerLinkProvider(fileLinks(t, () => paneFolder(paneId)));
     term.current = t;
 
     // Text is pasted (bracketed, when the program asks); a picture the agent reads off the
@@ -197,6 +225,11 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
       hasSelection: () => t.hasSelection(),
       focus: () => t.focus(),
       insert: (text) => t.paste(text),
+      search: (query, limit) => searchLines(logicalLines(t), t.cols, query, limit),
+      reveal: ({ row, col, len }) => {
+        t.scrollToLine(Math.max(0, row - Math.floor(t.rows / 3)));
+        t.select(col, row, len);
+      },
     });
 
     // What the agent is doing, from its output: still printing (not just echoing your keys) is

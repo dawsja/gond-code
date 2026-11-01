@@ -28,6 +28,11 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   when it resets, amber when it's low and red when it's out, with a warning as it gets there.
 - **Agents from the terminal:** every pane is your default shell; type `claude`, `codex` or any
   installed agent to start it, and Gond shows it on the pane and in the sidebar.
+- **Search every pane (Ctrl+Shift+F):** what any terminal in any session printed, newest
+  first; choosing a match opens its session, scrolls to the line and selects it.
+- **`file:line` opens in your editor:** paths a pane prints (compiler errors, stack traces, an
+  agent's "edited src/foo.ts:12") are links when the file exists; a click opens it at the line
+  in VS Code, Cursor, Windsurf or Zed (Settings → General → Open files in).
 - **Drag and drop:** drop files, folders or screenshots on a pane to type their paths in, the
   way its shell writes them (Git Bash and WSL included). A screenshot or other file in the
   temp folder is copied somewhere lasting first, so the agent can still read it.
@@ -36,7 +41,7 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   pane picks its terminal back up with what it printed meanwhile. (Settings → General can close
   them on quit instead; the tray's "Quit and close all terminals" always does.)
 - **Fast terminals:** xterm.js on WebGL with full 24-bit colour; Rust runs the PTYs (ConPTY).
-- **Settings:** General (colour, default shell, terminal font, speech to text, close to tray, keep terminals running), Usage (plan
+- **Settings:** General (colour, default shell, open files in, terminal font, speech to text, close to tray, keep terminals running), Usage (plan
   limits), Agents (install, update, uninstall), GitHub (Git and GitHub CLI install and sign-in),
   Updates.
 - **Transcription** (speech to text), optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say

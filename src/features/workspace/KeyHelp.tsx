@@ -26,6 +26,8 @@ const GROUPS: { title: string; keys: { keys: string[]; does: string }[] }[] = [
       { keys: ["Ctrl", "Shift", "C"], does: "Copy" },
       { keys: ["Ctrl", "Shift", "V"], does: "Paste" },
       { keys: ["Ctrl", "C"], does: "Copy the selection; with none, stop the program" },
+      { keys: ["Ctrl", "Shift", "F"], does: "Search what every pane printed" },
+      { keys: ["Click"], does: "Open a file:line link in your editor" },
     ],
   },
   {

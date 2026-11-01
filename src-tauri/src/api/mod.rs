@@ -3,6 +3,7 @@
 //! on Linux.
 
 pub mod builtin;
+pub mod files;
 pub mod git;
 pub mod github;
 pub mod harness;
@@ -98,6 +99,7 @@ pub fn initial_state() -> serde_json::Value {
 pub fn registry() -> Registry<Services> {
     let mut r = Registry::new();
     builtin::register(&mut r);
+    files::register(&mut r);
     projects::register(&mut r);
     github::register(&mut r);
     git::register(&mut r);
