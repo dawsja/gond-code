@@ -24,7 +24,8 @@ import type { JobState } from "@/lib/setup";
 import { MOCK_JOB } from "@/features/setup/mock";
 import { useDeck } from "./useDeck";
 import { Dictation, dictate } from "@/features/workspace/Dictation";
-import { KeyHelp, showKeys } from "@/features/workspace/KeyHelp";
+import { KeyHelp, showKeys, type Command } from "@/features/workspace/KeyHelp";
+import { handles } from "@/features/workspace/Terminal";
 import { FileDrop } from "@/features/workspace/FileDrop";
 import { PaneSearch } from "@/features/workspace/PaneSearch";
 import { showSearch } from "@/features/workspace/scrollbackSearch";
@@ -162,6 +163,37 @@ export function Deck() {
     setGoneJob(liveJob?.id);
   }, [liveJob?.id]);
 
+  // The command list's commands (Ctrl+Shift+P): on the focused pane of the session you're in.
+  const runCommandOf = (c: Command) => {
+    switch (c) {
+      case "session":
+        toWorkspace();
+        return sp.addSession();
+      case "settings":
+        return onCommand("layout.focus", { panel: "settings", entityId: "general" });
+      case "updates":
+        onCommand("layout.focus", { panel: "settings", entityId: "updates" });
+        if (liveBackend() && isRegistered("app.update.check"))
+          void runCommand("app.update.check", {}).catch(() => undefined);
+        return;
+      case "search":
+        return showSearch();
+      case "dictate":
+        return dictate();
+      case "new":
+        toWorkspace();
+        return sp.openShell("right");
+    }
+    const pane = sp.current?.layout.focus;
+    if (!pane) return;
+    toWorkspace();
+    if (c === "copy") return handles.get(pane)?.copy();
+    if (c === "paste") return handles.get(pane)?.paste();
+    if (c === "rename") return sp.actions.rename(pane);
+    if (c === "restart") return sp.actions.restart(pane);
+    sp.actions.shortcut(pane, c);
+  };
+
   const projects = DEMO ? MOCK_PROJECTS : liveProjects;
   // The status bar follows the focused pane's folder.
   const focusedPane = sp.current?.layout.focus
@@ -266,7 +298,7 @@ export function Deck() {
               />
             ))}
           <Dictation target={() => sp.current?.layout.focus} />
-          <KeyHelp />
+          <KeyHelp run={runCommandOf} />
           <PaneSearch
             sessions={sp.sessions}
             agents={agents}
