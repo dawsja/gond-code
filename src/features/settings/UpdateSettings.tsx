@@ -11,6 +11,7 @@ import { isRegistered, liveBackend, runCommand, useAppState } from "@/lib/appSta
 import { notify } from "@/lib/notify";
 import { prepareRestart } from "@/lib/restart";
 import { errorText } from "@/lib/types";
+import { useAppName } from "@/lib/appName";
 import { ago, useStatuses } from "@/features/workspace/status";
 
 /** `/update` (src-tauri/src/updater.rs). */
@@ -21,6 +22,8 @@ export type UpdateState = {
   available?: { version: string; notes?: string; date?: string };
   percent?: number;
   error?: string;
+  /** "dev" for Gond Code Dev (a debug build; src-tauri/src/channel.rs), which never updates. */
+  channel?: "prod" | "dev";
 };
 
 export const useUpdate = () => useAppState((t) => t.update as UpdateState | undefined);
@@ -50,14 +53,33 @@ export function UpdateSettings({ version }: { version?: string }) {
   const busy = phase !== "idle";
   const working = Object.values(statuses).filter((s) => s.status === "working").length;
   const available = update?.available;
+  const name = useAppName();
+
+  if (update?.channel === "dev")
+    return (
+      <section aria-label="Updates" className="flex max-w-xl flex-col gap-5">
+        <header>
+          <h2 className="text-lg font-semibold">Updates</h2>
+          <p className="text-sm text-muted-foreground">{current ? `${name} ${current}` : name}</p>
+        </header>
+        <div className="flex items-start gap-3 rounded-2xl border border-edge bg-raised p-4">
+          <CircleAlertIcon className="mt-0.5 size-5 shrink-0 text-tone-warn" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <p className="font-medium">Dev builds don&apos;t update themselves</p>
+            <p className="text-xs text-muted-foreground">
+              Pull and run it again to update. Your installed Gond Code updates on its own, with its
+              own sessions and settings.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
 
   return (
     <section aria-label="Updates" className="flex max-w-xl flex-col gap-5">
       <header>
         <h2 className="text-lg font-semibold">Updates</h2>
-        <p className="text-sm text-muted-foreground">
-          {current ? `Gond Code ${current}` : "Gond Code"}
-        </p>
+        <p className="text-sm text-muted-foreground">{current ? `${name} ${current}` : name}</p>
       </header>
 
       <div className="flex flex-col gap-4 rounded-2xl border border-edge bg-raised p-4">

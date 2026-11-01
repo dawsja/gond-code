@@ -3,6 +3,8 @@ import { FolderIcon, GitBranchIcon } from "lucide-react";
 import { ProviderIcon } from "@/components/brand/provider-icon";
 import { Hint } from "@/components/hint";
 import { liveBackend, runCommand } from "@/lib/appState";
+import { useAppName } from "@/lib/appName";
+import { cn } from "@/lib/utils";
 import { usePaneFolder } from "./paneFolder";
 
 /** `folder.git`: a folder's name, and the repository and branch when it's in one. */
@@ -57,6 +59,7 @@ export function StatusBar({
 }) {
   const here = usePaneFolder(paneId) ?? path;
   const place = usePlace(here, mock);
+  const name = useAppName();
   return (
     <footer
       data-entity="status-bar"
@@ -93,7 +96,16 @@ export function StatusBar({
           </Hint>
         ) : null}
       </div>
-      {version && <span className="shrink-0 whitespace-nowrap">Gond Code {version}</span>}
+      {version && (
+        <span
+          className={cn(
+            "shrink-0 whitespace-nowrap",
+            name !== "Gond Code" && "font-medium text-tone-warn",
+          )}
+        >
+          {name} {version}
+        </span>
+      )}
     </footer>
   );
 }

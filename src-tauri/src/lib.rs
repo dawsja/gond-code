@@ -3,6 +3,7 @@ pub mod api;
 #[cfg(windows)]
 pub mod app_id;
 pub mod appdata;
+pub mod channel;
 pub mod clipboard;
 pub mod commands;
 pub mod credentials;
@@ -54,14 +55,10 @@ pub fn subcommand() -> Option<i32> {
     }
 }
 
-/// The bundle identifier from tauri.conf.json (the AppUserModelID).
+/// This build's bundle identifier (the AppUserModelID): tauri.conf.json's for Gond Code,
+/// `app.gond.code.dev` for Gond Code Dev (`channel`).
 pub fn tauri_identifier() -> String {
-    let conf: serde_json::Value =
-        serde_json::from_str(include_str!("../tauri.conf.json")).unwrap_or_default();
-    conf["identifier"]
-        .as_str()
-        .unwrap_or("app.gond.code")
-        .to_string()
+    channel::CHANNEL.identifier().to_string()
 }
 
 pub fn run() {
@@ -69,6 +66,9 @@ pub fn run() {
     // so the taskbar and notifications attach to this window even when uninstalled.
     #[cfg(windows)]
     app_id::set_app_id(&tauri_identifier());
+    // Gond Code Dev is its own app: identifier, name, title (see `channel`).
+    let mut context = tauri::generate_context!();
+    channel::apply(context.config_mut(), channel::CHANNEL);
     tauri::Builder::default()
         // Before setup: the page may ask for it while setup is still running.
         .manage(std::sync::Arc::new(window::InfoCell::default()))
@@ -115,6 +115,15 @@ pub fn run() {
             let store = store::Store::open(&path)?;
             app.state::<std::sync::Arc<window::InfoCell>>()
                 .set(window::setup(app.handle()));
+            // Dev's amber dot on the window's (and so the taskbar's) icon.
+            if channel::is_dev() {
+                if let (Some(w), Some(icon)) = (
+                    app.get_webview_window(window_label()),
+                    app.default_window_icon(),
+                ) {
+                    let _ = w.set_icon(channel::badge(icon));
+                }
+            }
             // A missing tray (some Linux desktops) isn't fatal.
             if let Ok(tray) = tray::setup(app.handle()) {
                 app.manage(tray);
@@ -127,7 +136,7 @@ pub fn run() {
             };
             // What accounts left behind (keys in Credential Manager, sign-in homes), once.
             std::thread::spawn(purge::forget_accounts);
-            // Looks for a newer Gond Code on start and every few hours.
+            // Looks for a newer Gond Code on start and every few hours (not in Gond Code Dev).
             updater::start(app.handle(), std::sync::Arc::new(api.services.clone()));
             commands::api::emit_patches(app.handle(), &api);
             app.manage(api);
@@ -141,7 +150,7 @@ pub fn run() {
             commands::api::state_get,
             commands::window::window_info,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building Gond Code")
         .run(|app, event| {
             // The agents' and shells' terminals die with the app rather than linger.

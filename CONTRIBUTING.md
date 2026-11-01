@@ -14,7 +14,8 @@ Setup and the dev loop are in [README.md](README.md); the orientation and testin
 - Child processes start through `crate::process::command`, so none opens a console window
   (`scripts/check-no-console.sh`).
 - New data goes in a folder under `%APPDATA%\GondCode` or `%LOCALAPPDATA%\GondCode`, never a
-  root of its own, so uninstall can remove it. Migrations are numbered SQL files in
+  root of its own, so uninstall can remove it. Reach them through `appdata::roaming()` and
+  `appdata::local()`, never a written-out path, so Gond Code Dev keeps its own (`GondCodeDev`). Migrations are numbered SQL files in
   `src-tauri/src/store/migrations`; the next free number is 0021.
 - Icons are generated from `docs/gond-code-1024.png` with `bun run icons`; CI checks they match.
 - No screenshots in CI.

@@ -42,7 +42,7 @@ You need [Bun](https://bun.sh) and Rust stable ([rustup](https://rustup.rs)). Us
 
 ```sh
 bun install
-bun run tauri dev     # the app, with hot reload
+bun run tauri dev     # Gond Code Dev, with hot reload (see below)
 bun run dev           # the UI alone in a browser, on mock data
 bun run typecheck     # tsc --noEmit
 bun run lint          # eslint, prettier --check, cargo fmt --check
@@ -52,6 +52,29 @@ bun run dist:win      # the NSIS installer, in src-tauri/target/release/bundle/n
 
 A local debug build: `bun x tauri build --debug --no-bundle`, then run
 `src-tauri\target\debug\gond-code.exe`.
+
+### Dev and prod side by side
+
+You can work on Gond Code from inside Gond Code. Every debug build is **Gond Code Dev**, a
+separate app from the Gond Code you installed:
+
+|            | Gond Code (prod)                                  | Gond Code Dev                                           |
+| ---------- | ------------------------------------------------- | ------------------------------------------------------- |
+| Built by   | a release build (`bun run dist:win`)              | any debug build (`bun run tauri dev`)                   |
+| Runs from  | `%LOCALAPPDATA%\Gond Code\gond-code.exe`          | `src-tauri\target\debug\gond-code.exe`                  |
+| Identifier | `app.gond.code`                                   | `app.gond.code.dev`                                     |
+| Data       | `%APPDATA%\GondCode`, `%LOCALAPPDATA%\GondCode`   | `%APPDATA%\GondCodeDev`, `%LOCALAPPDATA%\GondCodeDev`   |
+| Looks like | "Gond Code"                                       | "Gond Code Dev", with an amber dot on its icon          |
+| Updates    | itself, from Settings → Updates                   | never: pull and run it again                            |
+
+They don't share sessions, settings, the database, the speech model, the window position or the
+single-instance lock, so both run at once and Dev can't touch your real sessions. They do share
+the PC: the agents either one installs, updates or uninstalls, and the folders their terminals
+work in, are the same.
+
+The channel is fixed at compile time (`src-tauri/src/channel.rs`), so a release build is always
+prod. For an optimised Dev build, use `bun x tauri build --no-bundle --features dev`. Never
+bundle it: the installer would install over prod.
 
 On Windows, install the [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 ("Desktop development with C++") and Rust's MSVC toolchain (`rustup default stable-msvc`).

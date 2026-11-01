@@ -67,6 +67,7 @@ src/                       React app
   lib/commands.generated.json  the registry with schemas (checked by a test)
 src-tauri/src/             Rust
   main.rs lib.rs           builder, plugins, `gond-code path|purge-data` subcommands
+  channel.rs appdata.rs    Gond Code or Gond Code Dev; where each keeps its data
   api/                     registry.rs, state.rs and one file per area (harness, layout,
                            projects, pty, speech, usage, git, github, builtin)
   commands/                thin #[tauri::command] wrappers (command_run, state_get, window)
@@ -125,6 +126,18 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
   `gond-code purge-data` (the uninstaller's "Delete the application data") deletes exactly
   these roots and credentials; it never touches a project folder or an agent's own config.
 - Migrations are numbered SQL files in `store/migrations`, applied in order at startup.
+- Gond Code Dev (every debug build; `channel.rs`) keeps all of this under `GondCodeDev`
+  instead, so it never reads or writes prod's data.
+
+### Dev and prod
+`channel.rs` fixes the channel at compile time: a debug build (or `--features dev`) is Gond Code
+Dev, a release build is Gond Code. Before the app is built, `channel::apply` gives Dev its own
+identifier (`app.gond.code.dev`). The single-instance lock, the AppUserModelID, the WebView2
+profile and the saved window state all key on that identifier. Dev also gets its own product
+name and window title. `appdata::DIR` gives Dev its own data roots. The window and tray icons
+get an amber dot (`channel::badge`). `updater.rs` neither checks nor installs in Dev, and
+`/update.channel` tells the UI which app it is (the status bar and Settings → Updates show
+"Gond Code Dev"). Prod's identity is tauri.conf.json's and must never change.
 
 ## 7. Packaging and updates
 - `bun run dist:win` → `tauri build --bundles nsis`. The installer is per user. Its hooks

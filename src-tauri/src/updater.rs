@@ -9,6 +9,9 @@
 //! For testing an update locally: `GOND_UPDATE_ENDPOINT` replaces the endpoint (a local
 //! `latest.json`), and `GOND_UPDATE_AUTO=1` installs as soon as one is found. The signature
 //! check still applies, so only an installer signed with our key installs.
+//!
+//! Gond Code Dev (`channel`) never updates itself: it would install the released Gond Code over
+//! a dev build. `/update` says `channel: "dev"`, and check and install answer `invalid`.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -46,7 +49,7 @@ fn set(services: &Services, f: impl FnOnce(&mut Value)) {
     };
     services.state.commit(cause, |d| {
         if !d["update"].is_object() {
-            d["update"] = json!({ "current": env!("CARGO_PKG_VERSION"), "phase": "idle" });
+            d["update"] = initial();
         }
         f(&mut d["update"]);
     });
@@ -141,10 +144,22 @@ fn failed(services: &Services, e: String) {
     });
 }
 
-/// Starts the background checks. Called once from the app's setup.
+/// `/update` before anything has been looked for.
+fn initial() -> Value {
+    json!({
+        "current": env!("CARGO_PKG_VERSION"),
+        "phase": "idle",
+        "channel": crate::channel::CHANNEL.id(),
+    })
+}
+
+/// Starts the background checks. Called once from the app's setup. Gond Code Dev doesn't look.
 pub fn start(app: &AppHandle, services: Arc<Services>) {
     let _ = APP.set((app.clone(), services.clone()));
     set(&services, |_| {});
+    if crate::channel::is_dev() {
+        return;
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         let auto = std::env::var("GOND_UPDATE_AUTO").is_ok_and(|v| v == "1");
@@ -165,6 +180,11 @@ pub fn start(app: &AppHandle, services: Arc<Services>) {
 }
 
 fn running() -> AppResult<(AppHandle, Arc<Services>)> {
+    if crate::channel::is_dev() {
+        return Err(AppError::Invalid(
+            "Gond Code Dev doesn't update itself: pull and build it again".into(),
+        ));
+    }
     APP.get()
         .cloned()
         .ok_or_else(|| AppError::Invalid("updates run in the Gond Code app".into()))
@@ -183,9 +203,7 @@ pub fn register(r: &mut Registry<Services>) {
                 .state
                 .get("/update")
                 .map(|(_, v)| v)
-                .unwrap_or_else(
-                    || json!({ "current": env!("CARGO_PKG_VERSION"), "phase": "idle" }),
-                ))
+                .unwrap_or_else(initial))
         },
     );
     r.add(

@@ -19,11 +19,12 @@ fn show(app: &AppHandle) {
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<Tray> {
-    let open = MenuItem::with_id(app, "show", "Show Gond Code", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Gond Code", true, None::<&str>)?;
+    let name = crate::channel::CHANNEL.name();
+    let open = MenuItem::with_id(app, "show", format!("Show {name}"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
     let mut builder = TrayIconBuilder::with_id("gond")
-        .tooltip("Gond Code")
+        .tooltip(name)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, e| match e.id().as_ref() {
@@ -41,9 +42,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<Tray> {
                 show(tray.app_handle());
             }
         });
-    // The bundle's icon: the official Gond mark (`bun run icons`), never the mascot.
+    // The bundle's icon: the official Gond mark (`bun run icons`), never the mascot; Gond Code
+    // Dev's carries an amber dot.
     if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
+        builder = builder.icon(if crate::channel::is_dev() {
+            crate::channel::badge(icon)
+        } else {
+            icon.clone()
+        });
     }
     Ok(Tray {
         _icon: builder.build(app)?,

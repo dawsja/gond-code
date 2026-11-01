@@ -9,12 +9,9 @@
 
 use std::path::PathBuf;
 
-/// The folder name under the OS data dirs.
-pub const DIR: &str = if cfg!(windows) {
-    "GondCode"
-} else {
-    "gond-code"
-};
+/// The folder name under the OS data dirs: `GondCode`, or `GondCodeDev` for Gond Code Dev
+/// (`channel`), so a dev build never reads or writes your real sessions and settings.
+pub const DIR: &str = crate::channel::CHANNEL.data_dir();
 
 /// Credential Manager target names older Gond Code versions wrote (`GondCode/<harness>/<account>`,
 /// `GondCode/mcp/<name>`); `purge::forget_accounts` removes them at startup.

@@ -14,9 +14,9 @@ refuse any caller but the window.
 
 | Command | Risk | Input → result |
 |---|---|---|
-| `app.update.check` | **outward**, **human only** | `{}` → `null`: looks for a newer version now; the answer lands in `/update` |
-| `app.update.install` | **outward**, **human only** | `{}` → `null`: downloads the newer version with its progress in `/update`, verifies its signature, then restarts into it; the sessions and panes come back as saved |
-| `app.update.status` | read | `{}` → `{ current, phase, checkedAt?, available?: { version, notes?, date? }, percent?, error? }`: this version, the newer one if any, and how a check or download is going (also at `/update`) |
+| `app.update.check` | **outward**, **human only** | `{}` → `null`: looks for a newer version now; the answer lands in `/update` (`invalid` in Gond Code Dev) |
+| `app.update.install` | **outward**, **human only** | `{}` → `null`: downloads the newer version with its progress in `/update`, verifies its signature, then restarts into it; the sessions and panes come back as saved (`invalid` in Gond Code Dev) |
+| `app.update.status` | read | `{}` → `{ current, phase, channel, checkedAt?, available?: { version, notes?, date? }, percent?, error? }`: this version (`channel` is `prod`, or `dev` for Gond Code Dev, which never updates), the newer one if any, and how a check or download is going (also at `/update`) |
 | `app.version` | read | `{}` → `string` |
 | `folder.open` | read | `{ projectId }` → `null`: opens the project's folder in File Explorer |
 | `folder.git` | read | `{ path }` → `{ folder, repo?, branch? }`: the git repository and branch a folder is in (the status bar) |
