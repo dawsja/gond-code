@@ -291,6 +291,7 @@ function PaneView({
           <Terminal
             key={`${pane.id}:${restart}`}
             paneId={pane.id}
+            fresh={restart > 0}
             open={open}
             active={focused && visible}
             onFocus={() => actions.focus(pane.id)}

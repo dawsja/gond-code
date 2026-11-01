@@ -35,6 +35,9 @@ sha2 = "=0.10.9"
 toml = "=0.9.8"
 tempfile = "=3.27.0"
 portable-pty = "=0.9.0"
+# The terminal host's pipe (named pipes on Windows, a Unix socket elsewhere): already in the
+# tree through Tauri.
+tokio = { version = "=1.54.1", features = ["net", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
 tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-opener = "=2.7.2"
 tauri-plugin-single-instance = "=2.5.5"
@@ -66,10 +69,13 @@ windows-sys = { version = "=0.61.2", features = [
   "Win32_Security_Credentials",
   "Win32_Storage_FileSystem",
   "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Console",
   "Win32_System_DataExchange",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_JobObjects",
   "Win32_System_Memory",
+  "Win32_System_Pipes",
   "Win32_System_Threading",
   "Win32_UI_Controls",
   "Win32_UI_HiDpi",

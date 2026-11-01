@@ -8,6 +8,9 @@ use crate::pty::PtySink;
 struct Data<'a> {
     pty_id: &'a str,
     data: String,
+    /// The terminal's output length after `data`: a pane that attached skips what its
+    /// replay already drew.
+    end: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -22,8 +25,8 @@ struct Exit<'a> {
 pub struct EventSink(pub AppHandle);
 
 impl PtySink for EventSink {
-    fn data(&self, pty_id: &str, data: String) {
-        let _ = self.0.emit("pty:data", Data { pty_id, data });
+    fn data(&self, pty_id: &str, data: String, end: u64) {
+        let _ = self.0.emit("pty:data", Data { pty_id, data, end });
     }
     fn exit(&self, pty_id: &str, code: Option<u32>) {
         let _ = self.0.emit("pty:exit", Exit { pty_id, code });

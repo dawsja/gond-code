@@ -33,17 +33,47 @@ runs nothing on an agent's behalf.
 2. Every pane opens with `pty.open`: the pane's own shell, else the one picked in Settings
    (`shells.rs`), in the pane's folder or the home folder. The pane keeps the shell id it ran,
    so it reopens the same shell.
-3. `pty/` runs it in a ConPTY and streams output as `pty:data`; `Terminal.tsx` draws it.
+3. `pty/` runs it in a ConPTY, in the terminal host (below), and streams output as `pty:data`;
+   `Terminal.tsx` draws it. The pane's id is the terminal's key: a pane first asks
+   `pty.attach` for a terminal still running under its id, and only opens a new one if there
+   is none.
 4. Every 2 s the pane asks `pty.agent` which agent runs under its shell (`agents/running.rs`,
    by program name in the shell's process tree). While one does, the pane shows it, reads
    Working / Needs you / Done from the screen (`status.ts`), and the sidebar lists it.
+
+### The terminal host
+The terminals live in a background process so they outlive the app (`pty/host.rs`,
+`pty/client.rs`, `pty/hub.rs`, `pty/proto.rs`).
+- It's this exe run as `gond-code pty-host`, from a copy in `%LOCALAPPDATA%\GondCode\host\<build>`
+  named `gond-code-host.exe` (Dev: `gond-code-dev-host.exe`). The copy lets the installer
+  replace `gond-code.exe` and a dev build rebuild while it runs; its own name keeps the
+  installer's "close Gond Code" from matching it. A short-lived launcher (`pty-host detach`)
+  starts it, so it's nobody's child and a process-tree kill passes it by; it breaks away from
+  any job that allows it. It turns Ctrl+C handling back on, which its shells inherit.
+- It listens on a named pipe only this Windows user (and SYSTEM) can open, named for the
+  channel, the user's SID and the protocol version
+  (`\\.\pipe\app.gond.code-pty-<sid>-v1`); the app checks the pipe's server is the host
+  exe from that folder before it trusts it. Elsewhere it's a Unix socket in the data folder.
+- One JSON message per line: requests with ids and their replies, and the output of every
+  terminal (`data` with its byte offset `end`, `exit`). A newer app with a different protocol
+  starts its own host; bump `proto::PROTOCOL` for any change an older host wouldn't understand.
+- Each terminal keeps its last 2 MiB of raw output. `pty.attach` returns it with its `end`; the
+  pane draws it and skips `pty:data` up to that `end`. Output while no window is connected only
+  goes to that buffer.
+- `pty.prune` (after the sessions load) closes terminals whose pane no longer exists.
+- With no terminals and no window for 30 s, the host ends. `gond-code pty-host stop` closes
+  everything and ends it; the uninstaller runs it (never an update).
+- If the host can't be reached, `Ptys` runs terminals in the app as before, and `/ptyHost` is
+  `false`. It logs to `host\host.log`.
+- Quitting detaches (Settings `keepTerminals`, default on) or closes them all.
 
 ### Restart to update
 `src/lib/restart.ts` lets each part register a save; Restart to update waits for all of them
 (4 seconds at most), then calls `app.update.install`. The sessions are saved, and each shell
 pane saves its serialized screen and the folder read from its prompt (`prompt.ts`) with
-`pane.screen.save`. When the pane opens again, `pane.screen.take` returns them once and the
-shell starts in that folder.
+`pane.screen.save`. With the terminal host the panes simply attach again, agents still
+working; the saved screen is the fallback for a host that's gone. Then `pane.screen.take`
+returns it once and the shell starts in that folder.
 
 ## 3. Repo layout
 

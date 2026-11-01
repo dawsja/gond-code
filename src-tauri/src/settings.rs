@@ -37,6 +37,10 @@ pub struct Settings {
     /// the tray menu. Off: X quits.
     #[serde(default = "yes")]
     pub close_to_tray: bool,
+    /// Quitting leaves the terminals (and the agents in them) running in the terminal host, to
+    /// come back when Gond Code opens; off, quitting closes them.
+    #[serde(default = "yes")]
+    pub keep_terminals: bool,
     /// A plain terminal's shell (`shells::list` ids: `pwsh`, `cmd`, `wsl:Ubuntu`…); none =
     /// PowerShell 7, else Windows PowerShell, else Command Prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -56,6 +60,8 @@ pub struct Patch {
     pub tint: Option<Tint>,
     #[serde(default)]
     pub close_to_tray: Option<bool>,
+    #[serde(default)]
+    pub keep_terminals: Option<bool>,
     #[serde(default, deserialize_with = "nullable")]
     pub shell: Option<Option<String>>,
     #[serde(default)]
@@ -81,6 +87,9 @@ impl Patch {
         if let Some(on) = self.close_to_tray {
             m.insert("closeToTray".into(), Value::from(on));
         }
+        if let Some(on) = self.keep_terminals {
+            m.insert("keepTerminals".into(), Value::from(on));
+        }
         if let Some(f) = self.terminal_font {
             m.insert(
                 "terminalFont".into(),
@@ -103,6 +112,7 @@ impl Default for Settings {
         Settings {
             tint: Tint::Blue,
             close_to_tray: true,
+            keep_terminals: true,
             shell: None,
             terminal_font: TerminalFont::default(),
         }
@@ -110,7 +120,13 @@ impl Default for Settings {
 }
 
 /// Every key `Settings` has, as the UI spells it.
-const KEYS: &[&str] = &["tint", "closeToTray", "shell", "terminalFont"];
+const KEYS: &[&str] = &[
+    "tint",
+    "closeToTray",
+    "keepTerminals",
+    "shell",
+    "terminalFont",
+];
 
 fn as_object(s: &Settings) -> Map<String, Value> {
     match serde_json::to_value(s) {
@@ -178,7 +194,12 @@ mod tests {
         assert_eq!(s, Settings::default());
         assert_eq!(
             serde_json::to_value(&s).unwrap(),
-            json!({ "tint": "blue", "closeToTray": true, "terminalFont": "jetbrains-mono" })
+            json!({
+                "tint": "blue",
+                "closeToTray": true,
+                "keepTerminals": true,
+                "terminalFont": "jetbrains-mono"
+            })
         );
     }
 
@@ -188,9 +209,10 @@ mod tests {
         set(&store, patch(json!({ "shell": "cmd" }))).unwrap();
         let s = set(
             &store,
-            patch(json!({ "tint": "green", "closeToTray": false, "terminalFont": "hack" })),
+            patch(json!({ "tint": "green", "closeToTray": false, "terminalFont": "hack", "keepTerminals": false })),
         )
         .unwrap();
+        assert!(!s.keep_terminals);
         assert_eq!(s.terminal_font, TerminalFont::Hack);
         assert_eq!(s.shell.as_deref(), Some("cmd"));
         assert_eq!(s.tint, Tint::Green);

@@ -33,7 +33,9 @@ export interface Commands {
 
 /** Event name → payload. Mirrors the events Rust emits. */
 export interface Events {
-  "pty:data": { ptyId: string; data: string };
+  /** `end`: the terminal's output length after `data` (a pane that attached skips what its
+   *  replay already drew). */
+  "pty:data": { ptyId: string; data: string; end?: number };
   "pty:exit": { ptyId: string; code?: number };
 }
 

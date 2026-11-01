@@ -50,8 +50,15 @@ export function useSessions({ projects }: { projects: Project[] }) {
     if (loaded) return;
     runCommand<unknown>("sessions.get", {}).then(
       (v) => {
-        if (v && typeof v === "object" && Object.keys(v).length) setSaved(fromSaved(v));
+        const read = v && typeof v === "object" && Object.keys(v).length ? fromSaved(v) : saved;
+        setSaved(read);
         setLoaded(true);
+        // Terminals still running for panes that are gone (closed while the app couldn't save
+        // them) are closed; every pane that exists finds its own again.
+        if (isRegistered("pty.prune"))
+          void runCommand("pty.prune", {
+            keep: read.sessions.flatMap((g) => panes(g.layout.root).map((p) => p.id)),
+          }).catch(() => undefined);
       },
       () => setLoaded(true),
     );
@@ -279,6 +286,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
     (p: Pane) =>
       async ({ cols, rows, cwd }: { cols: number; rows: number; cwd?: string }) => {
         const opened = await runCommand<{ ptyId: string; shell?: string }>("pty.open", {
+          key: p.id,
           ...(p.projectId ? { projectId: p.projectId } : {}),
           ...(p.shell ? { shell: p.shell } : {}),
           ...(cwd ? { cwd } : {}),

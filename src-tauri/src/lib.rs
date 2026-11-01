@@ -51,6 +51,9 @@ pub fn subcommand() -> Option<i32> {
         Some("path") => Some(pathenv::run(&args[2..])),
         // `gond-code purge-data`: the uninstaller's "Delete the application data".
         Some("purge-data") => Some(purge::run(&args[2..])),
+        // `gond-code pty-host [stop]`: the terminal host the app starts (from a copy of this
+        // exe), or stopping it (the uninstaller).
+        Some("pty-host") => Some(pty::host::main(&args[2..])),
         _ => None,
     }
 }
@@ -128,14 +131,29 @@ pub fn run() {
             if let Ok(tray) = tray::setup(app.handle()) {
                 app.manage(tray);
             }
-            let sink = commands::pty::EventSink(app.handle().clone());
-            let ptys = pty::PtyManager::new(std::sync::Arc::new(sink));
+            // The terminals live in the terminal host, so they outlive the app; it connects
+            // (or starts one) in the background, and falls back to running them here.
+            let sink = std::sync::Arc::new(commands::pty::EventSink(app.handle().clone()));
+            let ptys = std::sync::Arc::new(pty::Ptys::with_host(
+                sink.clone(),
+                pty::client::HostClient::for_app(sink),
+            ));
             let api = commands::api::Api {
                 registry: api::registry(),
                 services: api::Services::new(store.clone())?.with_runtime(ptys.clone()),
             };
             // What accounts left behind (keys in Credential Manager, sign-in homes), once.
             std::thread::spawn(purge::forget_accounts);
+            {
+                let (ptys, state) = (ptys.clone(), api.services.state.clone());
+                std::thread::spawn(move || {
+                    let in_host = ptys.warm();
+                    let cause = api::state::Cause::Runtime {
+                        runtime: "pty".into(),
+                    };
+                    state.commit(cause, |d| d["ptyHost"] = serde_json::json!(in_host));
+                });
+            }
             // Looks for a newer Gond Code on start and every few hours (not in Gond Code Dev).
             updater::start(app.handle(), std::sync::Arc::new(api.services.clone()));
             commands::api::emit_patches(app.handle(), &api);
@@ -153,9 +171,19 @@ pub fn run() {
         .build(context)
         .expect("error while building Gond Code")
         .run(|app, event| {
-            // The agents' and shells' terminals die with the app rather than linger.
+            // The terminals keep running in the host (Settings → General), to come back when
+            // Gond Code opens again; or they close with it.
             if let tauri::RunEvent::Exit = event {
-                app.state::<pty::PtyManager>().close_all();
+                let keep = app
+                    .try_state::<commands::api::Api>()
+                    .and_then(|a| settings::get(&a.services.store).ok())
+                    .is_none_or(|s| s.keep_terminals);
+                let ptys = app.state::<std::sync::Arc<pty::Ptys>>();
+                if keep {
+                    ptys.detach();
+                } else {
+                    ptys.close_all();
+                }
             }
         });
 }

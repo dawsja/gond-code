@@ -77,6 +77,7 @@ const agents: AgentInfo[] = [
 let settings: Settings = {
   tint: "blue",
   closeToTray: true,
+  keepTerminals: true,
   terminalFont: "jetbrains-mono",
 };
 

@@ -9,7 +9,7 @@ use serde::Serialize;
 
 const CAP_BYTES: usize = 1024 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Serialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyRead {
     pub text: String,

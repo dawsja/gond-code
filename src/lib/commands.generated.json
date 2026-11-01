@@ -2175,6 +2175,77 @@
     }
   },
   {
+    "name": "pty.attach",
+    "summary": "A pane's terminal still running from before (Gond Code restarted, updated or crashed), with what it last printed",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "The pane's id (`pty.open`'s `key`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "AttachInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Attached": {
+          "description": "A pane's terminal found again, with what it printed (its last 2 MiB, raw) to draw before\nwhat comes next.",
+          "properties": {
+            "end": {
+              "description": "The output length (bytes) the replay goes up to; `pty:data` past it is new.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "exited": {
+              "description": "The program has ended; its pane says so.",
+              "type": "boolean"
+            },
+            "pid": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "ptyId": {
+              "type": "string"
+            },
+            "replay": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ptyId",
+            "replay",
+            "end",
+            "exited"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Attached"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nullable_Attached"
+    }
+  },
+  {
     "name": "pty.close",
     "summary": "Close a terminal",
     "risk": "write-local",
@@ -2220,6 +2291,13 @@
         },
         "cwd": {
           "description": "Start in this folder instead (a shell coming back after an update, where it was).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "description": "The pane this terminal is for: it outlives the app, and `pty.attach` finds it again by\nthis key. A terminal already under the key is closed first (the pane restarted).",
           "type": [
             "string",
             "null"
@@ -2272,6 +2350,37 @@
       ],
       "title": "Opened",
       "type": "object"
+    }
+  },
+  {
+    "name": "pty.prune",
+    "summary": "Close the terminals of panes that no longer exist",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "keep": {
+          "description": "Every pane that exists; the others' terminals are closed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "keep"
+      ],
+      "title": "PruneInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "uint",
+      "minimum": 0,
+      "title": "uint",
+      "type": "integer"
     }
   },
   {
@@ -2518,6 +2627,11 @@
           "description": "The window's X hides Gond Code to the tray, so its agents keep working; Quit is in\nthe tray menu. Off: X quits.",
           "type": "boolean"
         },
+        "keepTerminals": {
+          "default": true,
+          "description": "Quitting leaves the terminals (and the agents in them) running in the terminal host, to\ncome back when Gond Code opens; off, quitting closes them.",
+          "type": "boolean"
+        },
         "shell": {
           "description": "A plain terminal's shell (`shells::list` ids: `pwsh`, `cmd`, `wsl:Ubuntu`…); none =\nPowerShell 7, else Windows PowerShell, else Command Prompt.",
           "type": [
@@ -2553,6 +2667,13 @@
           "description": "What `settings.set` takes: every key typed, nothing else (the exported schema has\n`additionalProperties: false`, so a stray key fails the UI's contract test too).\n`null` clears an optional key.",
           "properties": {
             "closeToTray": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "keepTerminals": {
               "default": null,
               "type": [
                 "boolean",
@@ -2657,6 +2778,11 @@
         "closeToTray": {
           "default": true,
           "description": "The window's X hides Gond Code to the tray, so its agents keep working; Quit is in\nthe tray menu. Off: X quits.",
+          "type": "boolean"
+        },
+        "keepTerminals": {
+          "default": true,
+          "description": "Quitting leaves the terminals (and the agents in them) running in the terminal host, to\ncome back when Gond Code opens; off, quitting closes them.",
           "type": "boolean"
         },
         "shell": {

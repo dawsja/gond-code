@@ -1,5 +1,10 @@
 //! Terminal sessions over portable-pty (ConPTY on Windows). Tauri-free: output
 //! goes to a `PtySink`, so the manager is tested on Linux without a window.
+//!
+//! In the app the terminals live in the terminal host (`host.rs`), a background process the
+//! window connects to, so they outlive the app; `Ptys` (`hub.rs`) is what the app holds. A
+//! terminal opened for a pane carries the pane's id as its key, so a pane coming back after
+//! the app restarts finds its terminal (`attach`) and replays what it last printed.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -9,10 +14,16 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
+use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
+pub mod client;
+pub mod host;
+pub mod hub;
+pub mod proto;
 pub mod scrollback;
+pub use hub::Ptys;
 pub use scrollback::{PtyRead, Scrollback};
 
 /// `pty.read` timeout: default and ceiling.
@@ -23,11 +34,119 @@ pub const READ_TIMEOUT_MAX: Duration = Duration::from_secs(120);
 const BATCH: Duration = Duration::from_millis(16);
 /// Flush early once this much output is waiting.
 const MAX_BATCH_BYTES: usize = 64 * 1024;
+/// How much of a terminal's raw output is kept to replay into a pane that attaches later.
+const REPLAY_CAP: usize = 2 * 1024 * 1024;
 
-/// Where session output goes (Tauri events in the app, a buffer in tests).
+/// Where session output goes (Tauri events in the app, the connected window from the
+/// terminal host, a buffer in tests). `end` is the terminal's output length in bytes after
+/// `data`: a pane that attaches drops what its replay already holds.
 pub trait PtySink: Send + Sync + 'static {
-    fn data(&self, pty_id: &str, data: String);
+    fn data(&self, pty_id: &str, data: String, end: u64);
     fn exit(&self, pty_id: &str, code: Option<u32>);
+}
+
+/// What a terminal runs: the program, its arguments, its folder and its whole environment.
+/// The app builds it, so a terminal the host starts gets the app's environment of the moment
+/// (today's PATH included), not the host's from whenever it started.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Spawn {
+    pub program: PathBuf,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    /// The full environment; empty = the environment of whoever runs it.
+    #[serde(default)]
+    pub env: Vec<(String, String)>,
+}
+
+impl Spawn {
+    /// `program` in `cwd`, with this process's environment and the registry's PATH as it is now.
+    pub fn new(program: impl Into<PathBuf>, cwd: impl Into<PathBuf>) -> Self {
+        let mut env: Vec<(String, String)> = std::env::vars()
+            .filter(|(k, _)| !k.eq_ignore_ascii_case("PATH"))
+            .collect();
+        if let Some(path) = crate::process::fresh_path().or_else(|| std::env::var_os("PATH")) {
+            env.push(("PATH".into(), path.to_string_lossy().into_owned()));
+        }
+        Spawn {
+            program: program.into(),
+            args: vec![],
+            cwd: cwd.into(),
+            env,
+        }
+    }
+
+    pub fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    fn command(&self) -> CommandBuilder {
+        let mut cmd = CommandBuilder::new(&self.program);
+        cmd.args(&self.args);
+        cmd.cwd(&self.cwd);
+        if !self.env.is_empty() {
+            cmd.env_clear();
+            for (k, v) in &self.env {
+                cmd.env(k, v);
+            }
+        }
+        cmd
+    }
+}
+
+/// A terminal just started.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Opened {
+    pub pty_id: String,
+    pub pid: Option<u32>,
+}
+
+/// A pane's terminal found again, with what it printed (its last 2 MiB, raw) to draw before
+/// what comes next.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Attached {
+    pub pty_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    pub replay: String,
+    /// The output length (bytes) the replay goes up to; `pty:data` past it is new.
+    pub end: u64,
+    /// The program has ended; its pane says so.
+    pub exited: bool,
+}
+
+/// A terminal's raw output: the last `REPLAY_CAP` bytes, starting on a new line where it can.
+#[derive(Default)]
+struct Replay {
+    buf: String,
+    end: u64,
+}
+
+impl Replay {
+    fn push(&mut self, chunk: &str) {
+        self.buf.push_str(chunk);
+        self.end += chunk.len() as u64;
+        if self.buf.len() > REPLAY_CAP {
+            let over = self.buf.len() - REPLAY_CAP;
+            // A new line, so the replay doesn't start inside an escape sequence.
+            let cut = self.buf[ceil_boundary(&self.buf, over)..]
+                .find('\n')
+                .filter(|i| *i < 64 * 1024)
+                .map(|i| ceil_boundary(&self.buf, over) + i + 1)
+                .unwrap_or_else(|| ceil_boundary(&self.buf, over));
+            self.buf.drain(..cut);
+        }
+    }
+}
+
+fn ceil_boundary(s: &str, i: usize) -> usize {
+    (i..=s.len())
+        .find(|i| s.is_char_boundary(*i))
+        .unwrap_or(s.len())
 }
 
 struct Session {
@@ -78,8 +197,17 @@ fn replies(cursor: Cursor, answered: usize, queries: usize) -> usize {
     }
 }
 
-/// By ptyId: (threadId, scrollback).
-type Scrolls = Arc<Mutex<HashMap<String, (String, Arc<Scrollback>)>>>;
+/// What's kept of a terminal until it's closed, running or not.
+struct Kept {
+    owner: String,
+    key: Option<String>,
+    scroll: Arc<Scrollback>,
+    replay: Arc<Mutex<Replay>>,
+    pid: Option<u32>,
+}
+
+/// By ptyId.
+type Scrolls = Arc<Mutex<HashMap<String, Kept>>>;
 
 #[derive(Clone)]
 pub struct PtyManager {
@@ -130,38 +258,10 @@ impl PtyManager {
 
     /// Opens the user's shell in `cwd`. Returns the new ptyId.
     pub fn open(&self, thread_id: &str, cwd: &Path, cols: u16, rows: u16) -> AppResult<String> {
-        self.open_shell(thread_id, cwd, cols, rows, Cursor::Terminal)
-    }
-
-    /// `open` for a caller with no xterm.js attached at the start (an agent over MCP,
-    /// ): Gond answers ConPTY's startup cursor query, or the shell's output never
-    /// comes. Later queries are left to whatever terminal the human attaches.
-    pub fn open_headless(
-        &self,
-        thread_id: &str,
-        cwd: &Path,
-        cols: u16,
-        rows: u16,
-    ) -> AppResult<String> {
-        self.open_shell(thread_id, cwd, cols, rows, Cursor::Startup)
-    }
-
-    fn open_shell(
-        &self,
-        thread_id: &str,
-        cwd: &Path,
-        cols: u16,
-        rows: u16,
-        cursor: Cursor,
-    ) -> AppResult<String> {
-        let mut cmd = CommandBuilder::new(default_shell());
-        cmd.cwd(cwd);
-        cmd.env("TERM", "xterm-256color");
-        // The registry's PATH as it is now, so tools installed since startup work in new terminals.
-        if let Some(path) = crate::process::fresh_path() {
-            cmd.env("PATH", path);
-        }
-        self.open_inner(thread_id, cmd, cols, rows, cursor)
+        let spawn = Spawn::new(default_shell(), cwd);
+        Ok(self
+            .spawn(thread_id, None, &spawn, cols, rows, false)?
+            .pty_id)
     }
 
     pub fn open_command(
@@ -171,12 +271,81 @@ impl PtyManager {
         cols: u16,
         rows: u16,
     ) -> AppResult<String> {
-        self.open_inner(thread_id, cmd, cols, rows, Cursor::Terminal)
+        self.open_inner(thread_id, None, cmd, cols, rows, Cursor::Terminal)
+    }
+
+    /// Runs `spawn` for `owner`. With a `key` (a pane's id) the terminal can be found again
+    /// with `attach`; one already under that key is closed first (its pane restarted).
+    /// `headless`: no xterm.js listens from the start (an agent over the API), so Gond
+    /// answers ConPTY's startup cursor query, or the shell's output never comes.
+    pub fn spawn(
+        &self,
+        owner: &str,
+        key: Option<&str>,
+        spawn: &Spawn,
+        cols: u16,
+        rows: u16,
+        headless: bool,
+    ) -> AppResult<Opened> {
+        if let Some(old) = key.and_then(|k| self.keyed(k)) {
+            let _ = self.close(&old);
+        }
+        let cursor = if headless {
+            Cursor::Startup
+        } else {
+            Cursor::Terminal
+        };
+        let id = self.open_inner(owner, key, spawn.command(), cols, rows, cursor)?;
+        Ok(Opened {
+            pid: self.pid(&id),
+            pty_id: id,
+        })
+    }
+
+    /// The terminal kept under `key`, running or ended.
+    fn keyed(&self, key: &str) -> Option<String> {
+        self.scrolls()
+            .iter()
+            .find(|(_, k)| k.key.as_deref() == Some(key))
+            .map(|(id, _)| id.clone())
+    }
+
+    /// The terminal under `key` (a pane's id) with its output so far, if there is one.
+    pub fn attach(&self, key: &str) -> Option<Attached> {
+        let scrolls = self.scrolls();
+        let (id, kept) = scrolls
+            .iter()
+            .find(|(_, k)| k.key.as_deref() == Some(key))?;
+        // Under the replay's lock: output can't slip between the snapshot and `end`.
+        let r = kept.replay.lock().unwrap_or_else(|e| e.into_inner());
+        Some(Attached {
+            pty_id: id.clone(),
+            pid: kept.pid,
+            replay: r.buf.clone(),
+            end: r.end,
+            exited: !self.is_live(id),
+        })
+    }
+
+    /// Closes every keyed terminal whose key isn't in `keep`: panes that are gone (closed
+    /// while the app couldn't save them). Returns how many.
+    pub fn prune(&self, keep: &[String]) -> usize {
+        let gone: Vec<String> = self
+            .scrolls()
+            .iter()
+            .filter(|(_, k)| k.key.as_ref().is_some_and(|key| !keep.contains(key)))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &gone {
+            let _ = self.close(id);
+        }
+        gone.len()
     }
 
     fn open_inner(
         &self,
         thread_id: &str,
+        key: Option<&str>,
         mut cmd: CommandBuilder,
         cols: u16,
         rows: u16,
@@ -202,10 +371,17 @@ impl PtyManager {
 
         let (done_tx, done_rx) = mpsc::channel();
         let scroll = Arc::new(Scrollback::default());
-        self.scrolls
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id.clone(), (thread_id.to_string(), scroll.clone()));
+        let replay = Arc::new(Mutex::new(Replay::default()));
+        self.scrolls().insert(
+            id.clone(),
+            Kept {
+                owner: thread_id.to_string(),
+                key: key.map(str::to_string),
+                scroll: scroll.clone(),
+                replay: replay.clone(),
+                pid: child.process_id(),
+            },
+        );
         let (sink, rid, rscroll) = (self.sink.clone(), id.clone(), scroll.clone());
         let reply = (cursor != Cursor::Terminal).then(|| writer.clone());
         std::thread::spawn(move || {
@@ -221,7 +397,11 @@ impl PtyManager {
                     }
                 }
                 rscroll.push(&chunk);
-                sink.data(&rid, chunk)
+                // Sent under the replay's lock, so `attach` sees each chunk in exactly one of
+                // its replay and what follows it.
+                let mut r = replay.lock().unwrap_or_else(|e| e.into_inner());
+                r.push(&chunk);
+                sink.data(&rid, chunk, r.end)
             });
             let _ = done_tx.send(());
         });
@@ -282,11 +462,9 @@ impl PtyManager {
             .transpose()
             .map_err(|e| AppError::Invalid(format!("waitFor: {e}")))?;
         let scroll = self
-            .scrolls
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .scrolls()
             .get(pty_id)
-            .map(|(_, s)| s.clone())
+            .map(|k| k.scroll.clone())
             .ok_or_else(|| not_found(pty_id))?;
         let timeout = timeout.unwrap_or(READ_TIMEOUT).min(READ_TIMEOUT_MAX);
         Ok(scroll.read(since, re.as_ref(), timeout))
@@ -307,13 +485,14 @@ impl PtyManager {
         self.lock().contains_key(pty_id)
     }
 
+    /// Whether this manager holds `pty_id`, running or ended.
+    pub fn holds(&self, pty_id: &str) -> bool {
+        self.scrolls().contains_key(pty_id)
+    }
+
     /// Kills the shell; `pty:exit` follows from its waiter.
     pub fn close(&self, pty_id: &str) -> AppResult<()> {
-        let scroll = self
-            .scrolls
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(pty_id);
+        let scroll = self.scrolls().remove(pty_id);
         match self.lock().remove(pty_id) {
             Some(mut s) => {
                 let _ = s.killer.kill();
@@ -327,19 +506,13 @@ impl PtyManager {
 
     /// Closes every session of a thread (on archive).
     pub fn close_thread(&self, thread_id: &str) {
-        self.scrolls
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .retain(|_, (t, _)| t != thread_id);
+        self.scrolls().retain(|_, k| k.owner != thread_id);
         self.close_where(|s| s.thread_id == thread_id);
     }
 
     /// Closes everything (on app exit).
     pub fn close_all(&self) {
-        self.scrolls
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+        self.scrolls().clear();
         self.close_where(|_| true);
     }
 
@@ -367,6 +540,10 @@ impl PtyManager {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Session>> {
         self.sessions.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn scrolls(&self) -> std::sync::MutexGuard<'_, HashMap<String, Kept>> {
+        self.scrolls.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -439,34 +616,43 @@ fn utf8_boundary(b: &[u8]) -> usize {
     b.len()
 }
 
+/// A shell for tests on either OS: `sh` on Unix, `cmd` on Windows; `script` runs and the
+/// shell stays open.
 #[cfg(test)]
-mod tests {
+pub(crate) fn test_shell(cwd: &Path) -> Spawn {
+    if cfg!(windows) {
+        Spawn::new("cmd.exe", cwd).args(["/q", "/k"])
+    } else {
+        Spawn::new("/bin/sh", cwd)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
     use super::*;
 
-    // The PTY tests drive /bin/sh, so they and their helpers are Unix only.
-    #[cfg(unix)]
     #[derive(Default)]
-    struct Recorder {
-        out: Mutex<String>,
-        exits: Mutex<Vec<(String, Option<u32>)>>,
+    pub(crate) struct Recorder {
+        pub out: Mutex<String>,
+        pub ends: Mutex<Vec<u64>>,
+        pub exits: Mutex<Vec<(String, Option<u32>)>>,
     }
 
-    #[cfg(unix)]
     impl PtySink for Recorder {
-        fn data(&self, _: &str, data: String) {
+        fn data(&self, _: &str, data: String, end: u64) {
             self.out.lock().unwrap().push_str(&data);
+            self.ends.lock().unwrap().push(end);
         }
         fn exit(&self, id: &str, code: Option<u32>) {
             self.exits.lock().unwrap().push((id.into(), code));
         }
     }
 
-    #[cfg(unix)]
-    fn wait_for(what: &str, mut f: impl FnMut() -> bool) {
+    pub(crate) fn wait_for(what: &str, mut f: impl FnMut() -> bool) {
         let start = Instant::now();
         while !f() {
             assert!(
-                start.elapsed() < Duration::from_secs(10),
+                start.elapsed() < Duration::from_secs(20),
                 "timed out waiting for {what}"
             );
             std::thread::sleep(Duration::from_millis(20));
@@ -481,6 +667,18 @@ mod tests {
         assert_eq!(utf8_boundary(&[b'a', e[0], e[1]]), 3);
         let snow = "☃".as_bytes(); // 3 bytes
         assert_eq!(utf8_boundary(&snow[..2]), 0);
+    }
+
+    #[test]
+    fn replay_keeps_the_end_and_starts_on_a_line() {
+        let mut r = Replay::default();
+        let line = format!("{}\n", "x".repeat(1023));
+        for _ in 0..(REPLAY_CAP / 1024 + 10) {
+            r.push(&line);
+        }
+        assert!(r.buf.len() <= REPLAY_CAP);
+        assert!(r.buf.starts_with('x') && r.buf.ends_with('\n'));
+        assert_eq!(r.end, (REPLAY_CAP / 1024 + 10) as u64 * 1024);
     }
 
     #[cfg(unix)]
@@ -526,6 +724,46 @@ mod tests {
             mgr.read(&id, None, None, None).unwrap_err().code(),
             "not_found"
         );
+    }
+
+    /// A pane coming back finds its terminal by key with what it printed; output after the
+    /// replay's `end` is what's new; a restart replaces it; prune closes the orphans.
+    #[test]
+    fn keyed_terminals_attach_replay_and_prune() {
+        let rec = Arc::new(Recorder::default());
+        let mgr = PtyManager::new(rec.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let shell = test_shell(dir.path());
+        let a = mgr
+            .spawn("home", Some("pane-a"), &shell, 80, 24, true)
+            .unwrap();
+        let b = mgr
+            .spawn("home", Some("pane-b"), &shell, 80, 24, true)
+            .unwrap();
+        assert!(a.pid.is_some());
+        mgr.write(&a.pty_id, "echo gond-attach\r").unwrap();
+        wait_for("echo", || {
+            mgr.attach("pane-a")
+                .is_some_and(|x| x.replay.matches("gond-attach").count() >= 2)
+        });
+        let at = mgr.attach("pane-a").unwrap();
+        assert_eq!(at.pty_id, a.pty_id);
+        assert!(!at.exited);
+        assert!(at.end >= at.replay.len() as u64);
+        assert!(mgr.attach("pane-z").is_none());
+
+        // The pane restarted: a new terminal under the same key, the old one closed.
+        let a2 = mgr
+            .spawn("home", Some("pane-a"), &shell, 80, 24, true)
+            .unwrap();
+        assert_ne!(a2.pty_id, a.pty_id);
+        assert!(!mgr.holds(&a.pty_id));
+        assert_eq!(mgr.attach("pane-a").unwrap().pty_id, a2.pty_id);
+
+        assert_eq!(mgr.prune(&["pane-a".into()]), 1);
+        assert!(!mgr.holds(&b.pty_id));
+        assert!(mgr.holds(&a2.pty_id));
+        mgr.close_all();
     }
 
     #[cfg(unix)]
@@ -578,7 +816,9 @@ mod tests {
         let mgr = PtyManager::new(Arc::new(Recorder::default()));
         let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.args(["-c", "stty raw -echo; printf '\\033[6n'; dd bs=1 count=6 2>/dev/null | od -c | head -1; echo; echo done"]);
-        let id = mgr.open_inner("t1", cmd, 80, 24, Cursor::Startup).unwrap();
+        let id = mgr
+            .open_inner("t1", None, cmd, 80, 24, Cursor::Startup)
+            .unwrap();
         let out = mgr
             .read(&id, None, Some("done"), Some(Duration::from_secs(10)))
             .unwrap();

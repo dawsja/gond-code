@@ -9,7 +9,8 @@
 //                                                whose text is exactly <text>
 // bun scripts/dev-cdp.ts type <text>             types into the focused element (a pane: click
 //                                                `.xterm-screen` first); \n presses Enter
-// bun scripts/dev-cdp.ts key <Key>               presses one key: Enter, Escape, Tab, ArrowDown…
+// bun scripts/dev-cdp.ts key <Key>               presses one key: Enter, Escape, Tab, ArrowDown…,
+//                                                Ctrl+C (any Ctrl+<letter>)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -88,8 +89,27 @@ const KEYS: Record<string, [string, number, string?]> = {
   ArrowRight: ["ArrowRight", 39],
 };
 const key = async (name: string) => {
+  // Ctrl+<letter> (Ctrl+C stops what runs in a pane): modifiers 2 is Ctrl.
+  const ctrl = /^Ctrl\+([A-Za-z])$/.exec(name);
+  if (ctrl) {
+    const letter = ctrl[1].toLowerCase();
+    const base = {
+      key: letter,
+      code: `Key${letter.toUpperCase()}`,
+      windowsVirtualKeyCode: letter.toUpperCase().charCodeAt(0),
+      modifiers: 2,
+    };
+    await send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+    await send("Input.dispatchKeyEvent", {
+      type: "char",
+      text: String.fromCharCode(letter.charCodeAt(0) - 96),
+      ...base,
+    });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+    return;
+  }
   const k = KEYS[name];
-  if (!k) throw new Error(`Unknown key ${name} (${Object.keys(KEYS).join(", ")})`);
+  if (!k) throw new Error(`Unknown key ${name} (${Object.keys(KEYS).join(", ")}, Ctrl+<letter>)`);
   const [code, vk, text] = k;
   const base = { key: code, code, windowsVirtualKeyCode: vk };
   await send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });

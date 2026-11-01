@@ -172,6 +172,24 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
       <Field label="Transcription">
         <SpeechSetting />
       </Field>
+      <Field label="Quitting">
+        <label className="flex items-start gap-3 text-sm">
+          <Switch
+            checked={settings.keepTerminals !== false}
+            onCheckedChange={(on) => onChange({ keepTerminals: on })}
+            data-command="settings.set"
+            data-arg="keepTerminals"
+            aria-label="Keep terminals running"
+          />
+          <span className="grid gap-1">
+            <span>Keep terminals running</span>
+            <span className="text-xs text-muted-foreground">
+              Agents keep working when Gond Code quits, updates or crashes, and are back in their
+              panes when it opens. The tray&apos;s Quit and close all terminals stops them.
+            </span>
+          </span>
+        </label>
+      </Field>
       <Field label="Closing the window">
         <label className="flex items-start gap-3 text-sm">
           <Switch

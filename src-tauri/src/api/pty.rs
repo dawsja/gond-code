@@ -24,6 +24,9 @@ pub struct OpenInput {
     pub shell: Option<String>,
     /// Start in this folder instead (a shell coming back after an update, where it was).
     pub cwd: Option<String>,
+    /// The pane this terminal is for: it outlives the app, and `pty.attach` finds it again by
+    /// this key. A terminal already under the key is closed first (the pane restarted).
+    pub key: Option<String>,
     /// Default 120.
     pub cols: Option<u16>,
     /// Default 32.
@@ -65,6 +68,20 @@ pub struct ResizeInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PtyInput {
     pub pty_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttachInput {
+    /// The pane's id (`pty.open`'s `key`).
+    pub key: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PruneInput {
+    /// Every pane that exists; the others' terminals are closed.
+    pub keep: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -160,20 +177,14 @@ pub fn register(r: &mut Registry<Services>) {
                 })
                 .or_else(|| crate::shells::list().into_iter().next());
             let ran = shell.as_ref().filter(|_| human).map(|sh| sh.id.clone());
-            let pty_id = if let (true, Some(sh)) = (human, shell) {
-                let mut cmd = portable_pty::CommandBuilder::new(&sh.program);
-                cmd.args(&sh.args);
-                cmd.cwd(&cwd);
-                cmd.env("TERM", "xterm-256color");
-                if let Some(path) = crate::process::fresh_path() {
-                    cmd.env("PATH", path);
-                }
-                s.ptys.open_command(&owner, cmd, cols, rows)?
-            } else if human {
-                s.ptys.open(&owner, &cwd, cols, rows)?
-            } else {
-                s.ptys.open_headless(&owner, &cwd, cols, rows)?
+            let spawn = match (human, shell) {
+                (true, Some(sh)) => crate::pty::Spawn::new(&sh.program, &cwd).args(sh.args),
+                _ => crate::pty::Spawn::new(crate::pty::default_shell(), &cwd),
             };
+            let pty_id = s
+                .ptys
+                .spawn(&owner, i.key.as_deref(), &spawn, cols, rows, !human)?
+                .pty_id;
             let mut entry = json!({
                 "id": pty_id, "owner": owner, "cols": cols, "rows": rows,
                 "status": "open", "openedBy": call.actor,
@@ -188,6 +199,32 @@ pub fn register(r: &mut Registry<Services>) {
             });
             Ok(Opened { pty_id, shell: ran })
         },
+    );
+    r.add(
+        Def::new(
+            "pty.attach",
+            "A pane's terminal still running from before (Gond Code restarted, updated or crashed), with what it last printed",
+            Risk::Read,
+        ),
+        |call, i: AttachInput| -> AppResult<Option<crate::pty::Attached>> {
+            let found = call.ctx.ptys.attach(&i.key)?;
+            if let Some(a) = found.as_ref().filter(|a| !a.exited) {
+                let id = a.pty_id.clone();
+                let entry = json!({ "id": id, "status": "open", "key": i.key });
+                call.ctx.state.commit(cause(call, "pty.attach"), move |d| {
+                    d["terminals"][&id] = entry
+                });
+            }
+            Ok(found)
+        },
+    );
+    r.add(
+        Def::new(
+            "pty.prune",
+            "Close the terminals of panes that no longer exist",
+            Risk::WriteLocal,
+        ),
+        |call, i: PruneInput| -> AppResult<usize> { Ok(call.ctx.ptys.prune(&i.keep)) },
     );
     r.add(
         Def::new(

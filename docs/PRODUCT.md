@@ -25,9 +25,12 @@ every agent by what it's doing.
 - **No setup screen.** A new or empty session opens a terminal in the default shell from
   Settings, in the last folder you used (your home folder before any). Each terminal remembers
   its shell; closing a session's last terminal opens the same shell again.
-- **Resume.** After Restart to update, panes come back as their shells, with their screen, in
-  the folder they were in; you start the agent again with its own resume (`claude --continue`,
-  `codex resume`).
+- **Agents outlive the app.** The terminals run in the terminal host, a background process, so
+  quitting, Restart to update or a crash leaves each shell and the agent in it working. When
+  Gond Code opens, every pane picks its terminal back up and replays what it printed while you
+  were away. Settings → General → Quitting can close them on quit instead; the tray's "Quit and
+  close all terminals" always does. Only a restart of the PC ends them: then panes come back as
+  their shells, with their last screen, in the folder they were in.
 - **Terminals.** xterm.js on the WebGL renderer with full 24-bit colour; Rust runs the PTYs
   (ConPTY).
 - **Keys.** Ctrl+T new terminal; Ctrl+Shift+→ / ↓ split right / down; Ctrl+Shift+Z zoom;

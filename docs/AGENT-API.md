@@ -24,7 +24,7 @@ refuse any caller but the window.
 | `sessions.get` | read | `{}` → the saved sessions (`{ sessions: { id, name, layout }[], current? }`, each layout a tree of right/down splits whose leaves are panes), or `null` before any. A `spaces.json` from before the rename is read until the next save |
 | `sessions.set` | write-local | `{ sessions }` → `null`: saves them to `sessions.json` beside the database, written whole then swapped in |
 | `settings.get` | read | `{}` → `Settings` |
-| `settings.set` | write-local | `{ patch }` → `Settings`: `patch` takes `tint`, `shell` (a `shell.list` id, `null` for the default), `closeToTray` and `terminalFont` (`jetbrains-mono`, `hack` or `fira-code`); nothing else |
+| `settings.set` | write-local | `{ patch }` → `Settings`: `patch` takes `tint`, `shell` (a `shell.list` id, `null` for the default), `closeToTray`, `keepTerminals` (quitting leaves the terminals running in the terminal host; default `true`) and `terminalFont` (`jetbrains-mono`, `hack` or `fira-code`); nothing else |
 | `shell.list` | read | `{}` → `{ id, label, program, args }[]`: the shells a plain terminal can run on this PC: PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, each WSL distribution. Settings `shell` picks one by id; `pty.open` from the human starts it |
 
 ## Folders
@@ -43,9 +43,11 @@ refuse any caller but the window.
 | `clipboard.read` | read, **human only** | `{}` → `{ text?, image }`: what Ctrl+Shift+V pastes into a pane: the clipboard's text, and whether it holds a picture (an agent's pane then gets its image-paste key) |
 | `pane.screen.save` | write-local, **human only** | `{ paneId, screen, cwd? }` → `null`: keeps a shell pane's screen (as xterm serialises it) and folder in `screens/` beside the database, before a restart into an update |
 | `pane.screen.take` | write-local, **human only** | `{ paneId }` → `{ screen, cwd? } \| null`: the saved screen and folder, once (reading removes it) |
+| `pty.attach` | read | `{ key }` → `{ ptyId, pid?, replay, end, exited } \| null`: the terminal opened for pane `key` that is still in the terminal host (Gond Code restarted, updated or crashed), with its last 2 MiB of raw output to draw; `pty:data` with `end` at or below this `end` is already in the replay |
 | `pty.agent` | read | `{ ptyId }` → `string \| null`: the agent running in the terminal, one you typed into its shell (`claude`, `codex`…), by its program under the shell; `null` for none |
 | `pty.close` | write-local | `{ ptyId }` → `null` |
-| `pty.open` | write-local | `{ projectId?, shell?, cwd?, cols?, rows? }` (default 120×32) → `{ ptyId, shell? }`: a terminal in the project's folder, else your home folder; `shell` is a `shell.list` id (else Settings' pick), `cwd` a folder to start in instead; the answer names the shell it ran |
+| `pty.open` | write-local | `{ key?, projectId?, shell?, cwd?, cols?, rows? }` (default 120×32) → `{ ptyId, shell? }`: a terminal in the project's folder, else your home folder; `shell` is a `shell.list` id (else Settings' pick), `cwd` a folder to start in instead; the answer names the shell it ran. `key` is the pane's id: the terminal runs in the terminal host, outlives the app and is found again with `pty.attach`; one already under that key is closed first |
+| `pty.prune` | write-local | `{ keep: paneId[] }` → `number`: closes the terminals of panes not in `keep` (gone while the app couldn't save them) |
 | `pty.read` | read | `{ ptyId, since?: offset, waitFor?: regex, timeoutMs? }` → `{ text, offset, truncated, exited, exitCode?, matched? }` |
 | `pty.resize` | write-local | `{ ptyId, cols, rows }` → `null` |
 | `pty.write` | write-local | `{ ptyId, data }` → `null` |

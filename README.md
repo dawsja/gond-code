@@ -27,9 +27,12 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   Done, Idle.
 - **Agents from the terminal:** every pane is your default shell; type `claude`, `codex` or any
   installed agent to start it, and Gond shows it on the pane and in the sidebar.
-- **Panes come back** after a restart or an update in the same shell and folder.
+- **Agents outlive the app:** the terminals run in a background terminal host, so quitting,
+  updating or a crash leaves every shell and agent working. When Gond Code opens again, each
+  pane picks its terminal back up with what it printed meanwhile. (Settings → General can close
+  them on quit instead; the tray's "Quit and close all terminals" always does.)
 - **Fast terminals:** xterm.js on WebGL with full 24-bit colour; Rust runs the PTYs (ConPTY).
-- **Settings:** General (colour, default shell, speech to text, close to tray), Usage (plan
+- **Settings:** General (colour, default shell, terminal font, speech to text, close to tray, keep terminals running), Usage (plan
   limits), Agents (install, update, uninstall), GitHub (Git and GitHub CLI install and sign-in),
   Updates.
 - **Transcription** (speech to text), optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say

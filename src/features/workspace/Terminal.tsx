@@ -76,8 +76,14 @@ const shortcut = (e: KeyboardEvent): Shortcut | undefined => {
   if (k === "p") return "keys";
 };
 
+/** `pty.attach`: a pane's terminal still running in the terminal host (Gond Code restarted,
+ *  updated or crashed), with what it printed. */
+type Attached = { ptyId: string; replay: string; end: number; exited: boolean };
+
 type Props = {
   paneId: string;
+  /** Start a new shell even if the pane's old one still runs (Restart). */
+  fresh?: boolean;
   /** Starts the pane's shell (pty.open) and answers its pty; a shell coming back after an
    *  update starts in the folder it was in (`cwd`). */
   open: (size: { cols: number; rows: number; cwd?: string }) => Promise<{ ptyId: string }>;
@@ -91,12 +97,12 @@ type Props = {
  * It runs a shell; an agent you start in it (`claude`, `codex`…) is found under that shell and
  * watched for Working / Needs you / Done while it runs.
  */
-export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
+export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm>(null);
-  const live = useRef({ open, onShortcut, onFocus, active });
+  const live = useRef({ open, onShortcut, onFocus, active, fresh });
   useEffect(() => {
-    live.current = { open, onShortcut, onFocus, active };
+    live.current = { open, onShortcut, onFocus, active, fresh };
   });
 
   useEffect(() => {
@@ -105,7 +111,9 @@ export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
     let ptyId: string | null = null;
     // The agent running under the shell (pty.agent), if any.
     let agent: string | undefined;
-    const early: { ptyId: string; data: string }[] = [];
+    const early: { ptyId: string; data: string; end?: number }[] = [];
+    // What an attached terminal's replay already drew: output up to here is skipped.
+    let drawn = 0;
     const t = new XTerm({
       fontFamily: fontStack(terminalFont()),
       fontSize: 13,
@@ -272,6 +280,7 @@ export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
     const stopData = on("pty:data", ({ payload }) => {
       if (ptyId === null) return void early.push(payload);
       if (payload.ptyId !== ptyId) return;
+      if (payload.end !== undefined && payload.end <= drawn) return;
       t.write(payload.data);
       // Your own typing comes back as output: that isn't the agent working.
       if (Date.now() - lastKey > 250) lastOut = Date.now();
@@ -330,15 +339,38 @@ export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
         if (ptyId) callOrRun("pty_write", "pty.write", { ptyId, data }).catch(() => undefined);
       });
       try {
-        const back = shellsOnly()
-          ? await runCommand<{ screen: string; cwd?: string } | null>("pane.screen.take", {
-              paneId,
-            }).catch(() => null)
-          : null;
-        if (back) t.write(`${back.screen}\r\n\x1b[2m[Restored after the update]\x1b[0m\r\n`);
-        ({ ptyId } = await live.current.open({ cols: t.cols, rows: t.rows, cwd: back?.cwd }));
-        if (disposed) return void callOrRun("pty_close", "pty.close", { ptyId });
-        early.filter((e) => e.ptyId === ptyId).forEach((e) => t.write(e.data));
+        // The pane's terminal may still be running in the terminal host: Gond Code restarted,
+        // updated or crashed while its shell (and the agent in it) carried on.
+        const found =
+          !live.current.fresh && liveBackend() && isRegistered("pty.attach")
+            ? await runCommand<Attached | null>("pty.attach", { key: paneId }).catch(() => null)
+            : null;
+        if (disposed) return;
+        if (found) {
+          ({ ptyId } = found);
+          drawn = found.end;
+          t.write(found.replay);
+          // A screen saved for an update is out of date: the terminal itself is here.
+          if (shellsOnly()) void runCommand("pane.screen.take", { paneId }).catch(() => undefined);
+          if (found.exited) {
+            set("exited");
+            t.write("\r\n\x1b[2m[The process ended. Restart it from the pane's menu.]\x1b[0m\r\n");
+          } else {
+            refit();
+          }
+        } else {
+          const back = shellsOnly()
+            ? await runCommand<{ screen: string; cwd?: string } | null>("pane.screen.take", {
+                paneId,
+              }).catch(() => null)
+            : null;
+          if (back) t.write(`${back.screen}\r\n\x1b[2m[Restored after the update]\x1b[0m\r\n`);
+          ({ ptyId } = await live.current.open({ cols: t.cols, rows: t.rows, cwd: back?.cwd }));
+          if (disposed) return void callOrRun("pty_close", "pty.close", { ptyId });
+        }
+        early
+          .filter((e) => e.ptyId === ptyId && (e.end === undefined || e.end > drawn))
+          .forEach((e) => t.write(e.data));
         if (live.current.active) t.focus();
       } catch (e) {
         t.write(`\x1b[31mCouldn't start: ${errorText(e)}\x1b[0m\r\n`);

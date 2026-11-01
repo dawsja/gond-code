@@ -54,6 +54,8 @@ export function UpdateSettings({ version }: { version?: string }) {
   const working = Object.values(statuses).filter((s) => s.status === "working").length;
   const available = update?.available;
   const name = useAppName();
+  // The terminals run in the terminal host: the agents carry on through the restart.
+  const kept = useAppState((t) => t.ptyHost === true);
 
   if (update?.channel === "dev")
     return (
@@ -129,8 +131,10 @@ export function UpdateSettings({ version }: { version?: string }) {
                 </Button>
                 {working > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {working === 1 ? "An agent is" : `${working} agents are`} working: a reply in
-                    progress stops, then the conversation resumes.
+                    {working === 1 ? "An agent is" : `${working} agents are`} working:{" "}
+                    {kept
+                      ? "it keeps working while Gond Code restarts."
+                      : "a reply in progress stops, then the conversation resumes."}
                   </p>
                 )}
               </div>

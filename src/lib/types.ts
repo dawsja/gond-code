@@ -69,6 +69,8 @@ export type Settings = {
   tint: Tint;
   /** The window's X hides Gond Code to the tray, agents still working. Default true. */
   closeToTray?: boolean;
+  /** Quitting leaves the terminals (and their agents) running, to come back. Default true. */
+  keepTerminals?: boolean;
   /** A plain terminal's shell (shell.list id: "pwsh", "cmd", "wsl:Ubuntu"…); none = PowerShell. */
   shell?: string | null;
   /** The terminals' font (not the app's). Default JetBrains Mono. */

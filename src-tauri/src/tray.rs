@@ -22,7 +22,15 @@ pub fn setup(app: &AppHandle) -> tauri::Result<Tray> {
     let name = crate::channel::CHANNEL.name();
     let open = MenuItem::with_id(app, "show", format!("Show {name}"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", format!("Quit {name}"), true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quit])?;
+    // Quitting leaves the terminals running (Settings → General); this closes them too.
+    let quit_all = MenuItem::with_id(
+        app,
+        "quit-all",
+        "Quit and close all terminals",
+        true,
+        None::<&str>,
+    )?;
+    let menu = Menu::with_items(app, &[&open, &quit, &quit_all])?;
     let mut builder = TrayIconBuilder::with_id("gond")
         .tooltip(name)
         .menu(&menu)
@@ -30,6 +38,12 @@ pub fn setup(app: &AppHandle) -> tauri::Result<Tray> {
         .on_menu_event(|app, e| match e.id().as_ref() {
             "show" => show(app),
             "quit" => app.exit(0),
+            "quit-all" => {
+                if let Some(ptys) = app.try_state::<std::sync::Arc<crate::pty::Ptys>>() {
+                    ptys.close_all();
+                }
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, e| {

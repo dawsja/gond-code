@@ -38,6 +38,12 @@ app every debug build is (`src-tauri/src/channel.rs`; README, "Dev and prod side
 - **Never stop or restart prod.** Prod runs from `%LOCALAPPDATA%\Gond Code\gond-code.exe`. Never
   run `Stop-Process -Name gond-code`, `taskkill /im gond-code.exe` or anything else that matches
   by name: both apps share it, and killing prod kills your own terminal.
+- **Dev's terminals outlive Dev,** like prod's: they run in Dev's terminal host,
+  `gond-code-dev-host.exe` (prod's is `gond-code-host.exe`; never stop that one). Restarting Dev
+  keeps the host and its terminals, so a change to the host's own code (`src-tauri/src/pty/`)
+  only runs once the old host is gone. Stop Dev's host (it closes Dev's terminals) with
+  `src-tauri\target\debug\gond-code.exe pty-host stop`; the next Dev pane starts a new one. Bump
+  `proto::PROTOCOL` when you change the protocol: an app then never reaches an older host.
 - **Never touch prod's data:** `%APPDATA%\GondCode` and `%LOCALAPPDATA%\GondCode`. Dev's data is
   in `%APPDATA%\GondCodeDev` and `%LOCALAPPDATA%\GondCodeDev`. Delete those to reset Dev.
 - **Don't run a release build to try something.** A release build is prod: same identity and

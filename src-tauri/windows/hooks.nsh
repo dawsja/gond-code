@@ -50,6 +50,14 @@ Var GondPurge
   ${If} $UpdateMode <> 1
     RMDir /r "$LOCALAPPDATA\GondCode\speech"
   ${EndIf}
+  ; The terminal host keeps terminals running after the app closes, and through an update.
+  ; Uninstalling closes them and removes the host's copy of the exe; an update leaves it be.
+  ${If} $UpdateMode <> 1
+    nsExec::ExecToLog '"$INSTDIR\${MAINBINARYNAME}.exe" pty-host stop'
+    Pop $0
+    Sleep 500
+    RMDir /r "$LOCALAPPDATA\GondCode\host"
+  ${EndIf}
   !insertmacro GOND_REMOVE_OLD_BIN
 !macroend
 

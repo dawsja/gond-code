@@ -23,7 +23,9 @@ pub use state::StateTree;
 pub struct Services {
     pub state: StateTree,
     pub store: crate::store::Store,
-    pub ptys: crate::pty::PtyManager,
+    /// The terminals: in the terminal host when the app runs (they outlive it), in-process
+    /// in tests.
+    pub ptys: std::sync::Arc<crate::pty::Ptys>,
     /// The GitHub CLI and the browser sign-in in flight.
     pub github: crate::github::Github,
     /// Git's global config file; `None` is the user's own (tests point it at a temp file).
@@ -33,7 +35,7 @@ pub struct Services {
 /// A terminal sink that drops everything: the runtime before `with_runtime`, and in tests.
 pub struct NullSink;
 impl crate::pty::PtySink for NullSink {
-    fn data(&self, _: &str, _: String) {}
+    fn data(&self, _: &str, _: String, _: u64) {}
     fn exit(&self, _: &str, _: Option<u32>) {}
 }
 
@@ -44,7 +46,7 @@ impl Services {
         let state = StateTree::new(initial_state());
         let s = Services {
             state,
-            ptys: crate::pty::PtyManager::new(std::sync::Arc::new(NullSink)),
+            ptys: std::sync::Arc::new(crate::pty::Ptys::local(std::sync::Arc::new(NullSink))),
             github: crate::github::Github::default(),
             git_global: None,
             store,
@@ -58,7 +60,7 @@ impl Services {
 
 impl Services {
     /// Uses the app's real terminals (the ones Tauri manages).
-    pub fn with_runtime(mut self, ptys: crate::pty::PtyManager) -> Self {
+    pub fn with_runtime(mut self, ptys: std::sync::Arc<crate::pty::Ptys>) -> Self {
         self.ptys = ptys;
         self
     }
