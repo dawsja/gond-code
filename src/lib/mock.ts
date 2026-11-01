@@ -77,6 +77,7 @@ const agents: AgentInfo[] = [
 let settings: Settings = {
   tint: "blue",
   closeToTray: true,
+  terminalFont: "jetbrains-mono",
 };
 
 type Listener = (payload: unknown) => void;

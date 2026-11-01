@@ -15,8 +15,9 @@ white `>` and `|` (`docs/gond-code.svg` for the UI, `docs/gond-code-1024.png` fo
 (`docs/gond.svg`) means Gond itself.
 
 ## Fonts and shape
-- **Inter Variable** for UI, **JetBrains Mono Variable** for terminals and code
-  (`@fontsource-variable/*`). Base letter-spacing −0.02em.
+- **Inter Variable** for UI, **JetBrains Mono Variable** for code
+  (`@fontsource-variable/*`). Terminals use a Nerd Font shipped in `src/assets/fonts`
+  (JetBrains Mono by default, Hack or Fira Code), picked in Settings → General. Base letter-spacing −0.02em.
 - `--radius` 0.5rem for controls; cards 16–24px; pills full. Nested corners are concentric
   (DESIGN.md, Identity).
 

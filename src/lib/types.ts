@@ -63,10 +63,14 @@ export type AgentInfo = {
 };
 
 export type Tint = "blue" | "green" | "purple" | "pink" | "amber" | "orange" | "red";
+/** The terminals' font: a Nerd Font the app ships. */
+export type TerminalFont = "jetbrains-mono" | "hack" | "fira-code";
 export type Settings = {
   tint: Tint;
   /** The window's X hides Gond Code to the tray, agents still working. Default true. */
   closeToTray?: boolean;
   /** A plain terminal's shell (shell.list id: "pwsh", "cmd", "wsl:Ubuntu"…); none = PowerShell. */
   shell?: string | null;
+  /** The terminals' font (not the app's). Default JetBrains Mono. */
+  terminalFont?: TerminalFont;
 };

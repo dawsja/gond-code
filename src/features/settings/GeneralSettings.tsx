@@ -11,9 +11,10 @@ import {
 import { isRegistered, liveBackend, runCommand } from "@/lib/appState";
 import { Switch } from "@/components/ui/switch";
 import { TINTS } from "@/lib/theme";
+import { fontStack, TERMINAL_FONTS } from "@/lib/terminalFont";
 import { SpeechSetting } from "@/features/speech/SpeechSetting";
 import { cn } from "@/lib/utils";
-import type { Settings, Tint } from "@/lib/types";
+import type { Settings, TerminalFont, Tint } from "@/lib/types";
 
 // Each tint's own colour, for its swatch (the page's --tint only knows the chosen one).
 const SWATCH: Record<Tint, string> = {
@@ -88,15 +89,56 @@ function ShellPicker({
   );
 }
 
-/** Settings → General: the tint, the default shell, speech to text and closing the window. */
+/** The terminals' font: one of the three Nerd Fonts the app ships, each shown in itself. */
+function FontPicker({
+  value,
+  onChange,
+}: {
+  value?: TerminalFont;
+  onChange: (font: TerminalFont) => void;
+}) {
+  const on = TERMINAL_FONTS.find((f) => f.id === value) ?? TERMINAL_FONTS[0];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Terminal font: ${on.label}`}
+        data-command="settings.set"
+        data-arg="terminalFont"
+        className="flex h-9 w-full max-w-72 items-center gap-2 rounded-[10px] border border-edge bg-raised px-2.5 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-tint data-[state=open]:border-tint-edge"
+      >
+        <span className="min-w-0 flex-1 truncate" style={{ fontFamily: fontStack(on.id) }}>
+          {on.label}
+        </span>
+        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 rounded-2xl p-1.5 flex flex-col gap-0.5">
+        {TERMINAL_FONTS.map((f) => (
+          <DropdownMenuItem
+            key={f.id}
+            onSelect={() => onChange(f.id)}
+            className={cn("gap-2.5 rounded-xl px-2 py-1.5", f.id === on.id && "bg-tint-wash")}
+          >
+            <span className="min-w-0 flex-1 truncate" style={{ fontFamily: fontStack(f.id) }}>
+              {f.label}
+            </span>
+            {f.id === on.id && <CheckIcon className="size-3.5 shrink-0 text-tint-ink" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Settings → General: the tint, the default shell, the terminal font, speech to text and
+ *  closing the window. */
 export function GeneralSettings({ settings, onChange, version }: Props) {
   return (
     <section aria-label="General" className="flex max-w-xl flex-col gap-5">
       <header>
         <h2 className="text-lg font-semibold">General</h2>
         <p className="text-sm text-muted-foreground">
-          How Gond Code looks and works: its colour, the shell new terminals open in, transcription
-          and what closing the window does.
+          How Gond Code looks and works: its colour, the shell new terminals open in and their font,
+          transcription and what closing the window does.
         </p>
       </header>
       <Field label="Colour">
@@ -118,6 +160,12 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
       </Field>
       <Field label="Default shell">
         <ShellPicker value={settings.shell} onChange={(shell) => onChange({ shell })} />
+      </Field>
+      <Field label="Terminal font">
+        <FontPicker
+          value={settings.terminalFont}
+          onChange={(terminalFont) => onChange({ terminalFont })}
+        />
       </Field>
       <Field label="Transcription">
         <SpeechSetting />

@@ -10,6 +10,7 @@ import { SettingsSpace, type SettingsSection } from "@/features/settings/Setting
 import { HarnessManager } from "@/features/harness/HarnessManager";
 import { useHarnessChecks } from "@/features/harness/useHarnessChecks";
 import { applyTint } from "@/lib/theme";
+import { setTerminalFont } from "@/lib/terminalFont";
 import type { Project, Settings } from "@/lib/types";
 import { MOCK_PROJECTS } from "@/lib/projects";
 import { UsageSettings } from "@/features/usage/UsageSettings";
@@ -47,6 +48,7 @@ function useSettings() {
     callOrRun("app_version", "app.version", {}).then(setVersion, () => undefined);
   }, []);
   useEffect(() => applyTint(settings.tint), [settings.tint]);
+  useEffect(() => setTerminalFont(settings.terminalFont), [settings.terminalFont]);
   const change = (patch: Partial<Settings>) => {
     setSettings((s) => ({ ...s, ...patch }));
     callOrRun("settings_set", "settings.set", { patch }).then(setSettings);

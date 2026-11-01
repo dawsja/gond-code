@@ -2488,6 +2488,15 @@
     },
     "outputSchema": {
       "$defs": {
+        "TerminalFont": {
+          "description": "The terminals' font: one of the Nerd Fonts the app ships, nothing custom.",
+          "enum": [
+            "jetbrains-mono",
+            "hack",
+            "fira-code"
+          ],
+          "type": "string"
+        },
         "Tint": {
           "enum": [
             "blue",
@@ -2515,6 +2524,11 @@
             "string",
             "null"
           ]
+        },
+        "terminalFont": {
+          "$ref": "#/$defs/TerminalFont",
+          "default": "jetbrains-mono",
+          "description": "The terminals' font (not the app's)."
         },
         "tint": {
           "$ref": "#/$defs/Tint"
@@ -2552,6 +2566,17 @@
                 "null"
               ]
             },
+            "terminalFont": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TerminalFont"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
             "tint": {
               "anyOf": [
                 {
@@ -2565,6 +2590,15 @@
             }
           },
           "type": "object"
+        },
+        "TerminalFont": {
+          "description": "The terminals' font: one of the Nerd Fonts the app ships, nothing custom.",
+          "enum": [
+            "jetbrains-mono",
+            "hack",
+            "fira-code"
+          ],
+          "type": "string"
         },
         "Tint": {
           "enum": [
@@ -2595,6 +2629,15 @@
     },
     "outputSchema": {
       "$defs": {
+        "TerminalFont": {
+          "description": "The terminals' font: one of the Nerd Fonts the app ships, nothing custom.",
+          "enum": [
+            "jetbrains-mono",
+            "hack",
+            "fira-code"
+          ],
+          "type": "string"
+        },
         "Tint": {
           "enum": [
             "blue",
@@ -2622,6 +2665,11 @@
             "string",
             "null"
           ]
+        },
+        "terminalFont": {
+          "$ref": "#/$defs/TerminalFont",
+          "default": "jetbrains-mono",
+          "description": "The terminals' font (not the app's)."
         },
         "tint": {
           "$ref": "#/$defs/Tint"

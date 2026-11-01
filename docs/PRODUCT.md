@@ -38,7 +38,8 @@ every agent by what it's doing.
   in Settings. The text is typed into the focused pane for you to send.
 - **Settings.**
   - **General:** colour, default shell (PowerShell, Command Prompt, Git Bash, WSL; whichever are
-    on the PC), speech to text, close to tray.
+    on the PC), terminal font (JetBrains Mono, Hack or Fira Code Nerd Font; nothing custom), speech
+    to text, close to tray.
   - **Usage:** each installed agent's plan limits, as the agent reports them for its own sign-in
     (session, weekly, monthly windows). Gond does not count spend.
   - **Agents:** install, update and uninstall each agent CLI. A running install can be

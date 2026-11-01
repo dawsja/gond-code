@@ -1,0 +1,77 @@
+/*
+ * The terminals' fonts: the Nerd Font builds (v3.4.0) of JetBrains Mono, Hack and Fira Code,
+ * shipped with the app so prompts' icons draw. Only the one in use is downloaded. Licences sit
+ * beside the files in src/assets/fonts. Fira Code has no italic; the browser slants it.
+ */
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMonoNerdFont-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMonoNerdFont-Bold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMonoNerdFont-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/jetbrains-mono/JetBrainsMonoNerdFont-BoldItalic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Hack Nerd Font";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/hack/HackNerdFont-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Hack Nerd Font";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/hack/HackNerdFont-Bold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Hack Nerd Font";
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/hack/HackNerdFont-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Hack Nerd Font";
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/hack/HackNerdFont-BoldItalic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "FiraCode Nerd Font";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/fira-code/FiraCodeNerdFont-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "FiraCode Nerd Font";
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url("../assets/fonts/fira-code/FiraCodeNerdFont-Bold.woff2") format("woff2");
+}

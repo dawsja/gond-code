@@ -12,7 +12,8 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Palette:** dark only, near-black surfaces (THEME.md). Gond's Material-200 tones
   (`--tone-ok/warn/bad/info`) carry state. **One tint** (the person's colour, blue by default)
   marks focus, the focused pane and primary buttons.
-- **Fonts:** Inter Variable for UI, JetBrains Mono for terminals, ids and paths. Body 12–13.5px,
+- **Fonts:** Inter Variable for UI, JetBrains Mono for ids and paths; terminals in a Nerd Font
+  (JetBrains Mono by default, or Hack or Fira Code). Body 12–13.5px,
   meta 11.5px. Base letter-spacing −0.02em.
 - **Shape:** cards 16–24px radius, panes 10px, inputs `rounded-xl`, buttons and badges full
   pills. Borders 1px; no drop shadows.
@@ -72,7 +73,7 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Header** (32px, 12px text): the running agent's brand icon (or a terminal glyph), the
   pane's name (Rename edits it in place; else the agent's name, or "Terminal"), then while an
   agent runs its status (dot and word; amber for Needs you) and a close ×. Focused: a light tint wash; else `#070707`.
-- **Terminal:** xterm.js on the WebGL renderer, JetBrains Mono, a palette in Gond's tones (true
+- **Terminal:** xterm.js on the WebGL renderer, the chosen Nerd Font, a palette in Gond's tones (true
   black ground, saturated ANSI colours, readable brights, 24-bit colour passed through).
 - **Keys:** Ctrl+T new terminal beside the pane; Ctrl+Shift+→ split right; Ctrl+Shift+↓ split down; Ctrl+Shift+Z
   zoom; Ctrl+Shift+W close; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
@@ -99,7 +100,8 @@ a session's last terminal opens a fresh one in the same shell.
 
 A section nav (General, Usage, Agents, Plugins, Updates) and the section; below 1100px the nav becomes a
 row of tabs.
-- **General:** Colour (tint swatches), Default shell, Transcription (speech to text: download with progress, or
+- **General:** Colour (tint swatches), Default shell, Terminal font (JetBrains Mono, Hack or Fira Code
+  Nerd Font, each shown in itself; no custom font), Transcription (speech to text: download with progress, or
   why this CPU can't), Closing the window (keep running in the tray).
 - **Usage:** a card per installed agent: its plan windows as bars that fill as the plan is used (green, then
   amber, then red), with what's left and when it resets. No costs.

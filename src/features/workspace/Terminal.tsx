@@ -9,6 +9,7 @@ import "@xterm/xterm/css/xterm.css";
 import { callOrRun, isRegistered, liveBackend, runCommand } from "@/lib/appState";
 import { on, openExternal } from "@/lib/ipc";
 import { onBeforeRestart } from "@/lib/restart";
+import { fontStack, loadTerminalFont, onTerminalFont, terminalFont } from "@/lib/terminalFont";
 import { errorText } from "@/lib/types";
 import { imagePasteKey } from "./imagePaste";
 import { setPaneAgent } from "./paneAgent";
@@ -106,7 +107,7 @@ export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
     let agent: string | undefined;
     const early: { ptyId: string; data: string }[] = [];
     const t = new XTerm({
-      fontFamily: '"JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace',
+      fontFamily: fontStack(terminalFont()),
       fontSize: 13,
       lineHeight: 1.2,
       fontWeight: 400,
@@ -281,20 +282,34 @@ export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
       t.write("\r\n\x1b[2m[The process ended. Restart it from the pane's menu.]\x1b[0m\r\n");
     });
 
-    const resize = new ResizeObserver(() => {
+    const refit = () => {
       if (!el.clientWidth || !el.clientHeight) return;
       fit.fit();
       if (ptyId)
         callOrRun("pty_resize", "pty.resize", { ptyId, cols: t.cols, rows: t.rows }).catch(
           () => undefined,
         );
+    };
+    const resize = new ResizeObserver(refit);
+
+    // Another terminal font (Settings → General) swaps in once it has loaded; the cells change
+    // size with it, so the pty is told the new rows and columns.
+    let opened = false;
+    const stopFont = onTerminalFont(() => {
+      const font = terminalFont();
+      void loadTerminalFont(font).then(() => {
+        if (disposed || font !== terminalFont()) return;
+        t.options.fontFamily = fontStack(font);
+        if (opened) refit();
+      });
     });
 
     // Draws once the terminal font is in (or straight away where fonts can't be waited on).
-    const font = document.fonts?.load('13px "JetBrains Mono Variable"') ?? Promise.resolve();
-    font.finally(async () => {
+    loadTerminalFont(terminalFont()).finally(async () => {
       if (disposed) return;
+      t.options.fontFamily = fontStack(terminalFont());
       t.open(el);
+      opened = true;
       // The GPU renderer, as Alacritty draws: a glyph atlas on the GPU. If the GPU context is
       // lost it falls back to the DOM renderer rather than going blank.
       try {
@@ -334,6 +349,7 @@ export function Terminal({ paneId, open, active, onFocus, onShortcut }: Props) {
     return () => {
       disposed = true;
       stopSaving();
+      stopFont();
       window.clearInterval(tick);
       setPaneFolder(paneId, undefined);
       setPaneAgent(paneId, undefined);

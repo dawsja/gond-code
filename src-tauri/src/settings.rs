@@ -19,6 +19,16 @@ pub enum Tint {
     Red,
 }
 
+/// The terminals' font: one of the Nerd Fonts the app ships, nothing custom.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TerminalFont {
+    #[default]
+    JetbrainsMono,
+    Hack,
+    FiraCode,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
@@ -31,6 +41,9 @@ pub struct Settings {
     /// PowerShell 7, else Windows PowerShell, else Command Prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
+    /// The terminals' font (not the app's).
+    #[serde(default)]
+    pub terminal_font: TerminalFont,
 }
 
 /// What `settings.set` takes: every key typed, nothing else (the exported schema has
@@ -45,6 +58,8 @@ pub struct Patch {
     pub close_to_tray: Option<bool>,
     #[serde(default, deserialize_with = "nullable")]
     pub shell: Option<Option<String>>,
+    #[serde(default)]
+    pub terminal_font: Option<TerminalFont>,
 }
 
 /// A present key, which may be `null` (clear it): `Some(None)`.
@@ -66,6 +81,12 @@ impl Patch {
         if let Some(on) = self.close_to_tray {
             m.insert("closeToTray".into(), Value::from(on));
         }
+        if let Some(f) = self.terminal_font {
+            m.insert(
+                "terminalFont".into(),
+                serde_json::to_value(f).unwrap_or_default(),
+            );
+        }
         if let Some(shell) = self.shell {
             m.insert("shell".into(), shell.map_or(Value::Null, Value::from));
         }
@@ -83,12 +104,13 @@ impl Default for Settings {
             tint: Tint::Blue,
             close_to_tray: true,
             shell: None,
+            terminal_font: TerminalFont::default(),
         }
     }
 }
 
 /// Every key `Settings` has, as the UI spells it.
-const KEYS: &[&str] = &["tint", "closeToTray", "shell"];
+const KEYS: &[&str] = &["tint", "closeToTray", "shell", "terminalFont"];
 
 fn as_object(s: &Settings) -> Map<String, Value> {
     match serde_json::to_value(s) {
@@ -156,7 +178,7 @@ mod tests {
         assert_eq!(s, Settings::default());
         assert_eq!(
             serde_json::to_value(&s).unwrap(),
-            json!({ "tint": "blue", "closeToTray": true })
+            json!({ "tint": "blue", "closeToTray": true, "terminalFont": "jetbrains-mono" })
         );
     }
 
@@ -166,9 +188,10 @@ mod tests {
         set(&store, patch(json!({ "shell": "cmd" }))).unwrap();
         let s = set(
             &store,
-            patch(json!({ "tint": "green", "closeToTray": false })),
+            patch(json!({ "tint": "green", "closeToTray": false, "terminalFont": "hack" })),
         )
         .unwrap();
+        assert_eq!(s.terminal_font, TerminalFont::Hack);
         assert_eq!(s.shell.as_deref(), Some("cmd"));
         assert_eq!(s.tint, Tint::Green);
         assert!(!s.close_to_tray);
@@ -189,6 +212,7 @@ mod tests {
             json!({ "tint": "teal" }),
             json!({ "tint": null }),
             json!({ "shell": 3 }),
+            json!({ "terminalFont": "comic-sans" }),
         ] {
             let err = set(&store, patch(bad.clone())).unwrap_err();
             assert_eq!(err.code(), "invalid", "{bad}");
