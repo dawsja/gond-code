@@ -7,6 +7,7 @@ pub mod channel;
 pub mod clipboard;
 pub mod commands;
 pub mod credentials;
+pub mod drop;
 pub mod error;
 pub mod fallback;
 pub mod git;

@@ -41,6 +41,7 @@ refuse any caller but the window.
 | Command | Risk | Input → result |
 |---|---|---|
 | `clipboard.read` | read, **human only** | `{}` → `{ text?, image }`: what Ctrl+Shift+V pastes into a pane: the clipboard's text, and whether it holds a picture (an agent's pane then gets its image-paste key) |
+| `pane.drop` | write-local, **human only** | `{ paths, shell? }` → `string`: the text to type for files and folders dropped on a pane, each path as `shell` writes it (`/c/…` in Git Bash, `/mnt/c/…` in WSL, quoted when needed) and followed by a space; a file in the temp folder is first copied to `drops/` under the local data folder (kept a week) |
 | `pane.screen.save` | write-local, **human only** | `{ paneId, screen, cwd? }` → `null`: keeps a shell pane's screen (as xterm serialises it) and folder in `screens/` beside the database, before a restart into an update |
 | `pane.screen.take` | write-local, **human only** | `{ paneId }` → `{ screen, cwd? } \| null`: the saved screen and folder, once (reading removes it) |
 | `pty.attach` | read | `{ key }` → `{ ptyId, pid?, replay, end, exited } \| null`: the terminal opened for pane `key` that is still in the terminal host (Gond Code restarted, updated or crashed), with its last 2 MiB of raw output to draw; `pty:data` with `end` at or below this `end` is already in the replay |

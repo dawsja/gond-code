@@ -28,6 +28,9 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   when it resets, amber when it's low and red when it's out, with a warning as it gets there.
 - **Agents from the terminal:** every pane is your default shell; type `claude`, `codex` or any
   installed agent to start it, and Gond shows it on the pane and in the sidebar.
+- **Drag and drop:** drop files, folders or screenshots on a pane to type their paths in, the
+  way its shell writes them (Git Bash and WSL included). A screenshot or other file in the
+  temp folder is copied somewhere lasting first, so the agent can still read it.
 - **Agents outlive the app:** the terminals run in a background terminal host, so quitting,
   updating or a crash leaves every shell and agent working. When Gond Code opens again, each
   pane picks its terminal back up with what it printed meanwhile. (Settings → General can close

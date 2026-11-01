@@ -105,6 +105,8 @@ src-tauri/src/             Rust
   pty/                     PtyManager, scrollback
   projects.rs              folders
   clipboard.rs             the clipboard for a paste into a pane
+  drop.rs                  files dropped on a pane: paths as its shell writes them, temp
+                           files copied to `drops/` (`pane.drop`; `FileDrop.tsx` listens)
   harness.rs install.rs    install/update plans; the background install engine
   fallback.rs releases.rs  installs without winget; latest versions
   uninstall.rs             removing an agent (keep or delete its data)

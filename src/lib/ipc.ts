@@ -94,3 +94,26 @@ export async function openExternal(url: string) {
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }
+
+/** Files dragged over the window and dropped (`type` "over" while they move, then "drop" or
+ *  "leave"), with their paths and where they are, in CSS pixels. */
+export type FileDrag = { type: "over" | "drop" | "leave"; paths: string[]; x: number; y: number };
+
+/** Tauri's own drag and drop: real paths, which a browser drop never has. Nothing in the mock. */
+export async function onFileDrag(cb: (e: FileDrag) => void): Promise<UnlistenFn> {
+  if (mockBackend()) return () => undefined;
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  // The paths come with "enter"; "over" only moves.
+  let paths: string[] = [];
+  return getCurrentWebview().onDragDropEvent(({ payload: p }) => {
+    if (p.type === "leave") return cb({ type: "leave", paths: [], x: 0, y: 0 });
+    if (p.type === "enter" || p.type === "drop") paths = p.paths;
+    const r = window.devicePixelRatio || 1;
+    cb({
+      type: p.type === "drop" ? "drop" : "over",
+      paths,
+      x: p.position.x / r,
+      y: p.position.y / r,
+    });
+  });
+}

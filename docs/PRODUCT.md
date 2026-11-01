@@ -20,6 +20,12 @@ every agent by what it's doing.
   a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
   or down, resize, zoom, rename and restart. The right-click menu has Copy, Paste, Select all,
   Split right, Split down, Rename, Restart, Open folder, Zoom and Close.
+- **Drag and drop.** Files and folders dragged over a pane light it up ("Drop to insert the
+  path"); dropping types their paths in, as a paste would, the way the pane's shell writes a
+  path (`/c/…` in Git Bash, `/mnt/c/…` in WSL, quoted when needed). An agent there reads them;
+  a picture's path is how the agents attach one. A file in the temp folder (a screenshot
+  dragged from the Snipping Tool, a file dragged out of a zip or a mail) is copied to Gond's
+  data folder first and kept a week, so it's still there when the agent reads it.
 - **Status bar.** A thin bar under the panes: on the left, where the focused pane is (the git
   repository and branch, or a plain folder, following a shell's `cd`); on the right, Gond Code's
   version.

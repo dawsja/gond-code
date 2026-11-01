@@ -25,6 +25,7 @@ import { MOCK_JOB } from "@/features/setup/mock";
 import { useDeck } from "./useDeck";
 import { Dictation, dictate } from "@/features/workspace/Dictation";
 import { KeyHelp, showKeys } from "@/features/workspace/KeyHelp";
+import { FileDrop } from "@/features/workspace/FileDrop";
 import { AutoShell } from "@/features/workspace/AutoShell";
 import { SessionsSidebar } from "@/features/workspace/SessionsSidebar";
 import { useStatuses } from "@/features/workspace/status";
@@ -261,6 +262,15 @@ export function Deck() {
             ))}
           <Dictation target={() => sp.current?.layout.focus} />
           <KeyHelp />
+          <FileDrop
+            shellOf={(id) => {
+              for (const g of sp.sessions) {
+                const p = find(g.layout.root, id);
+                if (p) return p.shell;
+              }
+            }}
+            onDropped={sp.actions.focus}
+          />
           <StatusBar
             paneId={focusedPane?.id}
             path={focusedProject?.path}

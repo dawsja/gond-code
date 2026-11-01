@@ -25,6 +25,7 @@ import { ProviderIcon } from "@/components/brand/provider-icon";
 import type { AgentInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { panes, type Node, type Pane, type Layout } from "./layout";
+import { useDropTarget } from "./dropTarget";
 import { usePaneAgents } from "./paneAgent";
 import { STATUS_LABEL, type PaneStatus, type Status } from "./status";
 import { handles, Terminal, type Shortcut } from "./Terminal";
@@ -221,6 +222,9 @@ function PaneView({
 }) {
   // The agent you started in its shell, while it runs.
   const running = usePaneAgents()[pane.id];
+  // Files being dragged over this pane: dropping types their paths in.
+  const drop = useDropTarget();
+  const dropping = drop?.paneId === pane.id;
   const agent = agents.find((a) => a.id === running);
   const name = pane.title ?? agent?.name ?? running ?? "Terminal";
   const h = () => handles.get(pane.id);
@@ -232,10 +236,20 @@ function PaneView({
           data-entity="pane"
           data-id={pane.id}
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-edge bg-black",
+            "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-edge bg-black",
             focused && "border-tint-edge",
           )}
         >
+          {dropping && (
+            <div
+              data-slot="drop"
+              className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[10px] border-2 border-tint bg-tint/10"
+            >
+              <span className="rounded-full border border-tint-edge bg-black/85 px-3.5 py-1.5 text-[12.5px] font-medium">
+                {drop.count > 1 ? `Drop to insert ${drop.count} paths` : "Drop to insert the path"}
+              </span>
+            </div>
+          )}
           <header
             onMouseDown={() => actions.focus(pane.id)}
             className={cn(

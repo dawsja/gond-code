@@ -79,6 +79,15 @@ pub struct AttachInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DropInput {
+    /// The dropped files and folders.
+    pub paths: Vec<String>,
+    /// The pane's shell (`shell.list` id): how it writes a path.
+    pub shell: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PruneInput {
     /// Every pane that exists; the others' terminals are closed.
     pub keep: Vec<String>,
@@ -243,6 +252,26 @@ pub fn register(r: &mut Registry<Services>) {
                 });
             }
             Ok(found)
+        },
+    );
+    r.add(
+        Def::new(
+            "pane.drop",
+            "The text to type for files and folders dropped on a pane, as its shell writes a path; a file in the temp folder is copied somewhere lasting first",
+            Risk::WriteLocal,
+        )
+        .human_only(),
+        |_, i: DropInput| -> AppResult<String> {
+            let drops = crate::appdata::local()
+                .ok_or_else(|| AppError::Invalid("no app data folder".into()))?
+                .join("drops");
+            let paths: Vec<std::path::PathBuf> = i.paths.iter().map(Into::into).collect();
+            Ok(crate::drop::text(
+                &paths,
+                i.shell.as_deref(),
+                &std::env::temp_dir(),
+                &drops,
+            ))
         },
     );
     r.add(

@@ -86,6 +86,9 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Right-click menu:** Copy, Paste, Select all, Split right, Split down, Rename, Restart
   terminal, Open folder, Zoom pane, Close pane.
 - Dividers between panes drag to resize; a double-click evens the split.
+- **Drag and drop:** files dragged over a pane put a 2px tint border and a faint tint wash on it,
+  with a pill in the middle ("Drop to insert the path" / "Drop to insert 3 paths"); dropping
+  types the paths in and focuses the pane.
 
 ## 4. Starting an agent
 

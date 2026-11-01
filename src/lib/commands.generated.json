@@ -1706,6 +1706,42 @@
     }
   },
   {
+    "name": "pane.drop",
+    "summary": "The text to type for files and folders dropped on a pane, as its shell writes a path; a file in the temp folder is copied somewhere lasting first",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "description": "The dropped files and folders.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "shell": {
+          "description": "The pane's shell (`shell.list` id): how it writes a path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "title": "DropInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "string",
+      "type": "string"
+    }
+  },
+  {
     "name": "pane.screen.save",
     "summary": "Keep a shell pane's screen and folder until it opens again",
     "risk": "write-local",
