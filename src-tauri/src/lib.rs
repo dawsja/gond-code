@@ -125,6 +125,8 @@ pub fn run() {
                 registry: api::registry(),
                 services: api::Services::new(store.clone())?.with_runtime(ptys.clone()),
             };
+            // What accounts left behind (keys in Credential Manager, sign-in homes), once.
+            std::thread::spawn(purge::forget_accounts);
             // Looks for a newer Gond Code on start and every few hours.
             updater::start(app.handle(), std::sync::Arc::new(api.services.clone()));
             commands::api::emit_patches(app.handle(), &api);

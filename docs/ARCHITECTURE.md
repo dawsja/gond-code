@@ -117,10 +117,10 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
 ## 6. Where data lives
 - `%APPDATA%\GondCode` (`appdata::roaming()`): `gond-code.db` (SQLite, WAL), `sessions.json`,
   and `screens\` (shell screens saved for an update, removed once read).
-- `%LOCALAPPDATA%\GondCode` (`appdata::local()`): the speech model (and sign-in homes left by
-  older versions).
-- Gond keeps no secrets. Older versions kept account keys in Credential Manager under
-  `GondCode/`; `purge-data` still removes them.
+- `%LOCALAPPDATA%\GondCode` (`appdata::local()`): the speech model.
+- Gond keeps no secrets. What older versions' accounts left (keys under `GondCode/` in
+  Credential Manager, sign-in homes in `%LOCALAPPDATA%\GondCode\accounts`) is removed at
+  startup (`purge::forget_accounts`); migration 21 dropped their tables.
 - New data gets a folder under one of these roots, never a root of its own.
   `gond-code purge-data` (the uninstaller's "Delete the application data") deletes exactly
   these roots and credentials; it never touches a project folder or an agent's own config.

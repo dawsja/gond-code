@@ -83,6 +83,27 @@ fn delete_credential(_: &str) -> bool {
     true
 }
 
+/// Removes what Gond's accounts left behind, now that agents use their own sign-ins: every
+/// `GondCode/` credential (account keys and tokens) and the sign-in homes under
+/// `%LOCALAPPDATA%\GondCodeccounts`. Run at startup; nothing to do once they're gone.
+pub fn forget_accounts() {
+    for name in credentials() {
+        if name.starts_with(appdata::CREDENTIAL_PREFIX) {
+            delete_credential(&name);
+        }
+    }
+    if let Some(homes) = appdata::local().map(|d| d.join("accounts")) {
+        accounts_folder_gone(&homes);
+    }
+}
+
+/// Deletes `homes` when it's a real folder (never through a link).
+fn accounts_folder_gone(homes: &Path) {
+    if std::fs::symlink_metadata(homes).is_ok_and(|m| m.is_dir()) {
+        let _ = std::fs::remove_dir_all(homes);
+    }
+}
+
 pub fn run(args: &[String]) -> i32 {
     let dry = args.iter().any(|a| a == "--dry-run");
     let data_dirs: Vec<PathBuf> = [dirs::data_dir(), dirs::data_local_dir()]
@@ -159,6 +180,18 @@ mod tests {
         let link = data.path().join(appdata::DIR);
         std::os::unix::fs::symlink(target.path(), &link).unwrap();
         assert!(refuse(&link, &[data.path().to_path_buf()]).is_some());
+    }
+
+    /// The old sign-in homes go, and a second run has nothing to do.
+    #[test]
+    fn the_old_accounts_folder_goes() {
+        let local = tempfile::tempdir().unwrap();
+        let homes = local.path().join("accounts");
+        std::fs::create_dir_all(homes.join("claude/A1")).unwrap();
+        std::fs::write(homes.join("claude/A1/.credentials.json"), "{}").unwrap();
+        accounts_folder_gone(&homes);
+        assert!(!homes.exists());
+        accounts_folder_gone(&homes); // already gone: nothing to do
     }
 
     #[test]

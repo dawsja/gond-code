@@ -1,6 +1,6 @@
 //! Where Gond Code keeps its own data: every file the app writes lives under
-//! one of these two roots, and every secret under the `GondCode/` prefix in Windows
-//! Credential Manager. A new kind of data gets a folder under a root (`local.join(..)`),
+//! one of these two roots (older versions also kept secrets under the `GondCode/` prefix in
+//! Windows Credential Manager). A new kind of data gets a folder under a root (`local.join(..)`),
 //! never a root of its own, so `gond-code purge-data` (the uninstaller's "Delete the
 //! application data") removes it too.
 //!
@@ -16,8 +16,8 @@ pub const DIR: &str = if cfg!(windows) {
     "gond-code"
 };
 
-/// Credential Manager target names Gond Code owns (`GondCode/<harness>/<account>`,
-/// `GondCode/mcp/<name>`).
+/// Credential Manager target names older Gond Code versions wrote (`GondCode/<harness>/<account>`,
+/// `GondCode/mcp/<name>`); `purge::forget_accounts` removes them at startup.
 pub const CREDENTIAL_PREFIX: &str = "GondCode/";
 
 /// `%APPDATA%\GondCode` (the XDG data dir elsewhere).

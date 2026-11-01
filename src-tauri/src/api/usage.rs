@@ -26,13 +26,17 @@ pub struct NoInput {}
 /// One reading at a time.
 static REFRESHING: AtomicBool = AtomicBool::new(false);
 
+/// The kept readings, one per agent; ones an account kept (by its id) are dropped.
 fn load(store: &Store) -> BTreeMap<String, Value> {
-    store
+    let all: BTreeMap<String, Value> = store
         .with(repo::all)
         .ok()
         .and_then(|all| all.into_iter().find(|(k, _)| k == KEY))
         .and_then(|(_, v)| serde_json::from_value(v).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    all.into_iter()
+        .filter(|(k, _)| k.starts_with("default:"))
+        .collect()
 }
 
 /// Puts `key`'s windows in the tree, beside its spend, and keeps them.
@@ -152,6 +156,16 @@ mod tests {
     fn readings_survive_a_restart() {
         let s = Services::default();
         let w = UsageWindow::from_used("weekly", 0.08, Some(1_793_696_400), None);
+        // One an account kept, by its id, from before accounts went.
+        let old = json!({ "01OLD": { "harness": "claude", "windows": [] } });
+        let mut all: BTreeMap<String, Value> = serde_json::from_value(old).unwrap();
+        all.insert(
+            "default:codex".into(),
+            json!({ "harness": "codex", "windows": [] }),
+        );
+        s.store
+            .with(|c| repo::set(c, KEY, &serde_json::to_value(&all).unwrap()))
+            .unwrap();
         record(&s.state, &s.store, "default:claude", "claude", &[w]);
         let later = Services {
             state: StateTree::new(serde_json::json!({})),
@@ -164,5 +178,10 @@ mod tests {
             .unwrap()
             .1;
         assert_eq!(v, 92.0);
+        assert!(later.state.get("/usage/default:codex").is_some());
+        assert!(
+            later.state.get("/usage/01OLD").is_none(),
+            "an account's reading is gone"
+        );
     }
 }

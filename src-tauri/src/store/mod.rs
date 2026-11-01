@@ -41,6 +41,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         20,
         include_str!("migrations/0020_thread_permission_mode.sql"),
     ),
+    (21, include_str!("migrations/0021_drop_unused_tables.sql")),
 ];
 
 /// Cheap to clone: clones share one connection.
@@ -138,23 +139,21 @@ mod tests {
     fn a_lower_migration_landing_later_still_runs() {
         let mut conn = Connection::open_in_memory().unwrap();
         migrate(&mut conn).unwrap();
-        // Pretend an older build applied everything but 7.
-        conn.execute("DELETE FROM schema_version WHERE version = 7", [])
+        // Pretend an older build applied everything but 4.
+        conn.execute("DELETE FROM schema_version WHERE version = 4", [])
             .unwrap();
-        conn.execute_batch(
-            "ALTER TABLE threads DROP COLUMN model; ALTER TABLE threads DROP COLUMN thinking;",
-        )
-        .unwrap();
+        conn.execute_batch("ALTER TABLE custom_agents DROP COLUMN prompt_via;")
+            .unwrap();
         migrate(&mut conn).unwrap();
         let n: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM schema_version WHERE version = 7",
+                "SELECT COUNT(*) FROM schema_version WHERE version = 4",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
         assert_eq!(n, 1);
-        conn.execute_batch("SELECT model, thinking FROM threads")
+        conn.execute_batch("SELECT prompt_via FROM custom_agents")
             .unwrap();
     }
 
@@ -190,6 +189,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(policy, r#"{"byRisk":{"read":"auto"}}"#);
+    }
+
+    /// Only what's still read is left: projects, custom agents and settings.
+    #[test]
+    fn only_the_tables_in_use_remain() {
+        let store = Store::open_in_memory().unwrap();
+        let tables: Vec<String> = store
+            .with(|c| {
+                Ok(
+                    c.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")?
+                        .query_map([], |r| r.get(0))?
+                        .collect::<Result<_, _>>()?,
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            tables,
+            ["custom_agents", "projects", "schema_version", "settings"]
+        );
     }
 
     #[test]
