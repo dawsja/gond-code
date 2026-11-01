@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Brand check: the logo files match their pinned hashes, and every app icon in
 # src-tauri/icons is exactly what `bun run icons` makes from docs/gond-code-1024.png (Gond Code's
-# own mark: a black rounded square on white with a white > and |, never the cog).
+# own mark: a black rounded square with a white > and |, never the cog).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -16,8 +16,9 @@ The design language and the screens as they are now. Palette, fonts and tokens:
   meta 11.5px. Base letter-spacing −0.02em.
 - **Shape:** cards 16–24px radius, panes 10px, inputs `rounded-xl`, buttons and badges full
   pills. Borders 1px; no drop shadows.
-- **The Gond Code mark** is the file exactly: a black rounded square on white, with
-  the Gond bot's eyes as a terminal prompt, a white `>` and `|` (`docs/gond-code.svg` for the UI, `docs/gond-code-1024.png` for Windows icons). Never recoloured, tinted, outlined or inverted. Gond's cog (`docs/gond.svg`)
+- **The Gond Code mark** is the file exactly: a black rounded square with a faint
+  light edge and the Gond bot's eyes as a terminal prompt, a white `>` and `|`, on a
+  transparent background (`docs/gond-code.svg` for the UI, `docs/gond-code-1024.png` for Windows icons). Never recoloured, tinted, outlined or inverted. Gond's cog (`docs/gond.svg`)
   means Gond itself, not this app. The mark is in the tray, the installer, the app icon and
   Windows' title bar.
 - **Brand icons:** every agent and model shows its real mark (`@lobehub/icons`, MIT; Pi's own
