@@ -3,6 +3,7 @@ import {
   CheckIcon,
   CircleAlertIcon,
   CircleIcon,
+  GaugeIcon,
   LoaderIcon,
   PencilIcon,
   PlusIcon,
@@ -21,6 +22,9 @@ import { AppUpdate } from "@/features/shell/AppUpdate";
 import { useAppState } from "@/lib/appState";
 import { notify } from "@/lib/notify";
 import type { AgentInfo, Project } from "@/lib/types";
+import { Tooltip as TooltipPrimitive } from "radix-ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PlanWindows } from "@/features/usage/PlanWindows";
 import { tightest, usageKey, type PlanUsage } from "@/lib/usage";
 import { cn } from "@/lib/utils";
 import { panes, type Session, type Pane } from "./layout";
@@ -31,8 +35,51 @@ import { Hint } from "@/components/hint";
 /** Plan warnings already shown: once per agent, window, reset and level. */
 const warned = new Set<string>();
 
-/** An agent's plan on its row: the window it runs out of first, coloured as it gets close. */
-const PLAN_TONE = { ok: "text-muted-foreground", low: "text-tone-warn", out: "text-tone-bad" };
+/** An agent's usage icon, coloured by the window it runs out of first as it gets close. */
+const PLAN_TONE = { ok: "text-faint", low: "text-tone-warn", out: "text-tone-bad" };
+
+/**
+ * The usage icon after an agent's name. Hovering it shows every window of the agent's plan, as
+ * many as it has, each with its bar and when it resets.
+ */
+function UsageIcon({
+  agent,
+  usage,
+  level,
+}: {
+  agent: string;
+  usage: PlanUsage;
+  level: keyof typeof PLAN_TONE;
+}) {
+  const windows = usage.windows ?? [];
+  return (
+    <TooltipPrimitive.Provider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            data-slot="usage"
+            aria-label={`${agent} usage`}
+            className={cn(
+              "grid size-4 shrink-0 place-items-center rounded hover:text-foreground",
+              PLAN_TONE[level],
+            )}
+          >
+            <GaugeIcon className="size-3.5" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="right"
+          align="start"
+          sideOffset={8}
+          className="block w-72 max-w-none rounded-xl border border-edge bg-card p-3.5 text-foreground shadow-[0_16px_40px_rgba(0,0,0,.6)] [&>span:last-child]:hidden"
+        >
+          <p className="pb-3 text-[12.5px] font-medium">{agent} usage</p>
+          <PlanWindows windows={windows} />
+        </TooltipContent>
+      </Tooltip>
+    </TooltipPrimitive.Provider>
+  );
+}
 
 /** Agents by what they're doing, the ones that want you first. */
 const ORDER: Status[] = ["needs", "working", "done", "idle", "exited"];
@@ -122,10 +169,6 @@ export function SessionsSidebar({
   // Each running agent's plan (Settings → Usage's readings, kept current while it runs).
   const usage = useAppState((t) => t.usage as Record<string, PlanUsage> | undefined);
   const planOf = (agentId: string) => tightest(usage?.[usageKey(agentId)], new Date(now));
-  const planText = (p: NonNullable<ReturnType<typeof planOf>>) =>
-    [p.level === "out" ? `${p.label} limit reached` : `${p.label} ${p.left}% left`, p.resetsShort]
-      .filter(Boolean)
-      .join(" · ");
   // A warning when a running agent's plan gets low, and when it runs out: once each.
   const runningIds = [...new Set(all.map((a) => a.agentId))].sort().join(",");
   useEffect(() => {
@@ -245,50 +288,32 @@ export function SessionsSidebar({
                   const on = !settings && current === session.id && focusedPane === pane.id;
                   const plan = planOf(agentId);
                   return (
-                    <Hint
+                    <button
                       key={pane.id}
-                      text={[
-                        nameOf(pane, agentId),
-                        agent?.name ?? agentId,
-                        session.name,
-                        plan && planText(plan),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      type="button"
+                      data-entity="pane"
+                      data-id={pane.id}
+                      onClick={() => onSelectPane(pane.id)}
+                      className={cn(row, on && "bg-hover")}
                     >
-                      <button
-                        type="button"
-                        data-entity="pane"
-                        data-id={pane.id}
-                        onClick={() => onSelectPane(pane.id)}
-                        className={cn(
-                          row,
-                          plan && "h-auto min-h-8 flex-col items-stretch gap-0.5 py-1.5",
-                          on && "bg-hover",
-                        )}
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <ProviderIcon id={agent?.provider ?? agentId} size={15} />
-                          <span className="min-w-0 flex-1 truncate">{nameOf(pane, agentId)}</span>
-                          <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
-                            {ago(st.since, now)}
-                          </span>
-                          <StatusIcon status={st.status} />
+                      <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <ProviderIcon id={agent?.provider ?? agentId} size={15} />
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="min-w-0 truncate">{nameOf(pane, agentId)}</span>
+                          {plan && (
+                            <UsageIcon
+                              agent={agent?.name ?? agentId}
+                              usage={usage![usageKey(agentId)]!}
+                              level={plan.level}
+                            />
+                          )}
                         </span>
-                        {/* The plan under the name, the row's full width. */}
-                        {plan && (
-                          <span
-                            data-slot="plan"
-                            className={cn(
-                              "truncate pl-[25px] text-[11px] leading-tight",
-                              PLAN_TONE[plan.level],
-                            )}
-                          >
-                            {planText(plan)}
-                          </span>
-                        )}
-                      </button>
-                    </Hint>
+                        <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                          {ago(st.since, now)}
+                        </span>
+                        <StatusIcon status={st.status} />
+                      </span>
+                    </button>
                   );
                 })}
               </div>

@@ -11,17 +11,18 @@ every agent by what it's doing.
 - **Agents.** The sidebar lists every agent pane in every session, grouped by status: **Needs
   you**, **Working**, **Done**, **Idle** (and Exited), with how long it has been in that status.
   Gond reads the status from each terminal's output, as you would: output still coming means
-  working, a question on screen ("Do you want to…", "[y/n]") means it needs you. Under its name,
-  an agent with a plan shows the window it will run out of first ("Weekly 80% left · resets Tue
-  3 AM"), amber at 10% or less and red when it's used up, and Gond warns once as it gets low and
-  once when it runs out. While one runs, Gond reads its plan when it starts and every 5 minutes.
+  working, a question on screen ("Do you want to…", "[y/n]") means it needs you. After its name,
+  an agent with a plan has a usage icon, amber when a window is at 10% or less and red when one
+  is used up; hovering it shows every limit of the plan with its bar and when it resets. Gond
+  warns once as it gets low and once when it runs out. While one runs, Gond reads its plan when it starts and every 5 minutes.
 - **Panes.** Each pane is a terminal in your default shell. You start an agent by typing it
   there (Claude Code, Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or
   a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
-  or down, resize, zoom, rename and restart. The right-click menu has Copy, Paste, Select all,
+  or down, resize, zoom, rename and restart. Drag a pane by its header onto another: the middle
+  swaps the two, an edge puts it beside that pane on that side (Esc cancels). The right-click menu has Copy, Paste, Select all,
   Split right, Split down, Rename, Restart, Open folder, Zoom and Close.
 - **Search every pane (Ctrl+Shift+F).** A search box over what every terminal in every session
-  printed (its scrollback, replays included), newest first, grouped by pane and session.
+  printed (its scrollback, history drawn back after a restart included), newest first, grouped by pane and session.
   Choosing a match opens its session, focuses the pane, scrolls to the line and selects it.
 - **`file:line` links.** A path a pane prints (`src/pty/host.rs:199:16`, `main.c(12,5)`,
   `./docs/PRODUCT.md`) is a link when it is a real file, from the folder the pane is in. A
@@ -44,8 +45,8 @@ every agent by what it's doing.
   its shell; closing a session's last terminal opens the same shell again.
 - **Agents outlive the app.** The terminals run in the terminal host, a background process, so
   quitting, Restart to update or a crash leaves each shell and the agent in it working. When
-  Gond Code opens, every pane picks its terminal back up and replays what it printed while you
-  were away. Settings → General → Quitting can close them on quit instead; the tray's "Quit and
+  Gond Code opens, every pane picks its terminal back up exactly as it is now, with its history
+  and what it printed while you were away. Settings → General → Quitting can close them on quit instead; the tray's "Quit and
   close all terminals" always does. Only a restart of the PC ends them.
 - **Resume after a restart of the PC.** While any of the eight agents runs in a pane, Gond keeps
   which conversation it is having (from the agent's own session store, or its command line when

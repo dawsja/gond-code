@@ -60,11 +60,12 @@ The design language and the screens as they are now. Palette, fonts and tokens:
     says "No agents running." Each group heading is the status in its
     tone with a count. Each row: brand icon, the pane's name, how long it has held that status
     ("2m"), a status icon (amber alert, spinning loader in tint ink, green check, grey dot, red
-    x). An agent with a plan gets a second line under it, the row's width: its tightest window
-    ("Weekly 80% left · resets Tue 3 AM", or "… limit reached"), 11px, muted, amber at 10% or
-    less left, red when used up; a toast warns once as it gets low and once when it runs out.
-    Clicking a row opens its session and focuses the pane. A tooltip names pane · agent ·
-    session · plan.
+    x). An agent with a plan gets a gauge icon right after its name: faint, amber when its
+    tightest window is at 10% or less left, red when one is used up. Hovering the icon opens a
+    card to its right, "<Agent> usage" over every window the plan has (as many as it reports),
+    each as Settings → Usage draws it: name, % used, when it resets, its bar. The row itself
+    has no tooltip. A toast warns once as a plan gets low and once when it runs out. Clicking a
+    row opens its session and focuses the pane.
   - At the foot: the app update button when a newer Gond Code is ready, then Settings.
 - **Workspace:** the current session's panes. Every session's panes stay mounted (hidden when
   another is showing), so agents keep running.
@@ -88,6 +89,9 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Right-click menu:** Copy, Paste, Select all, Split right, Split down, Rename, Restart
   terminal, Open folder, Zoom pane, Close pane.
 - Dividers between panes drag to resize; a double-click evens the split.
+- A pane's header drags it. Over another pane, the part it would take is shaded in the accent:
+  all of it to swap (the middle), half of it to go beside it (a quarter in from an edge). A pill
+  under the pointer names the pane and where it goes; the pane being moved dims. Esc cancels.
 - **Search every pane (Ctrl+Shift+F):** a dialog like the shortcut list, 720px: a search field
   with the match count, then matches grouped by pane (brand icon, name · session, count), each
   a mono line with the match on a tint mark; ↑↓ move, Enter goes there, Esc closes.

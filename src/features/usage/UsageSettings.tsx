@@ -1,23 +1,11 @@
 import { ProviderIcon } from "@/components/brand/provider-icon";
 import { useAppState } from "@/lib/appState";
 import type { Harness } from "@/lib/harnesses";
-import { limitedUntil, PLAN_AGENTS, usageKey, windowLine, type PlanUsage } from "@/lib/usage";
-import { cn } from "@/lib/utils";
+import { limitedUntil, PLAN_AGENTS, usageKey, type PlanUsage } from "@/lib/usage";
 import { DEMO } from "@/features/deck/live";
 import { MOCK_USAGE } from "@/features/harness/mock";
 import { Hint } from "@/components/hint";
-
-/** A bar that fills as the plan is used: green, then amber, then red. */
-function Bar({ used }: { used: number }) {
-  const v = Math.max(0, Math.min(100, used));
-  const left = 100 - v;
-  const tone = left > 40 ? "bg-tone-ok" : left > 15 ? "bg-tone-warn" : "bg-tone-bad";
-  return (
-    <span className="block h-1.5 overflow-hidden rounded-full bg-hover">
-      <span className={cn("block h-full rounded-full", tone)} style={{ width: `${v}%` }} />
-    </span>
-  );
-}
+import { PlanWindows } from "./PlanWindows";
 
 /**
  * Settings → Usage: each installed agent's plan, as its own sign-in reports it: each window
@@ -65,19 +53,7 @@ export function UsageSettings({ harnesses }: { harnesses: Harness[] }) {
                   </span>
                 )}
               </div>
-              {windows.map((w) => {
-                const line = windowLine(w);
-                return (
-                  <div key={`${w.name}-${w.label ?? ""}`} className="flex flex-col gap-1">
-                    <p className="flex items-baseline gap-2 text-[12.5px]">
-                      <span className="font-medium">{line.label}</span>
-                      <span className="text-muted-foreground">{line.text}</span>
-                      {line.resets && <span className="ml-auto text-faint">{line.resets}</span>}
-                    </p>
-                    <Bar used={line.used} />
-                  </div>
-                );
-              })}
+              {windows.length > 0 && <PlanWindows windows={windows} />}
               {windows.length === 0 && (
                 <p className="text-[12.5px] text-faint">
                   Nothing reported yet. It shows once you're signed in to {h.label}.

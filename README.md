@@ -21,11 +21,12 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
 
 ## What's in it
 
-- **Sessions** of split terminal panes: split right or down, resize, zoom, rename, restart.
+- **Sessions** of split terminal panes: split right or down, resize, zoom, rename, restart, and
+  drag a pane by its header to swap it with another or put it beside one.
   Sessions are saved, so the app reopens as you left it.
 - **Agents in the sidebar**, grouped by status read from each terminal: Needs you, Working,
-  Done, Idle. Each one shows its plan: the window it runs out of first, with what's left and
-  when it resets, amber when it's low and red when it's out, with a warning as it gets there.
+  Done, Idle. Each has a usage icon after its name, amber when it's low and red when it's out;
+  hover it for every limit of its plan, what's used and when it resets.
 - **Agents from the terminal:** every pane is your default shell; type `claude`, `codex` or any
   installed agent to start it, and Gond shows it on the pane and in the sidebar.
 - **Search every pane (Ctrl+Shift+F):** what any terminal in any session printed, newest
