@@ -460,7 +460,7 @@ fn start(args: &[&str]) -> std::io::Result<()> {
 /// `exe args`, detached from the console and from any job that lets it go; in the exe's
 /// folder, with no input or output.
 fn command(exe: &std::path::Path, args: &[&str]) -> std::io::Result<std::process::Command> {
-    let mut cmd = std::process::Command::new(exe);
+    let mut cmd = crate::process::command(exe);
     cmd.args(args)
         .current_dir(exe.parent().unwrap_or(std::path::Path::new(".")))
         .stdin(std::process::Stdio::null())
@@ -476,7 +476,7 @@ fn command(exe: &std::path::Path, args: &[&str]) -> std::io::Result<std::process
         let base = DETACHED_PROCESS;
         // A job that doesn't allow breaking away refuses; then the host lives in it.
         let can_break_away = {
-            let mut probe = std::process::Command::new("cmd.exe");
+            let mut probe = crate::process::command("cmd.exe");
             probe
                 .args(["/c", "exit"])
                 .creation_flags(base | CREATE_BREAKAWAY_FROM_JOB)
