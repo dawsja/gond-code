@@ -11,7 +11,13 @@ export type Pane = {
   shell?: string;
   /** Your name for it (Rename); else the running agent's name, or "Terminal". */
   title?: string;
+  /** The agent running in it and how to pick its conversation back up (agent.resume), kept
+   *  while it runs: if the PC restarts, the pane's new shell resumes it. */
+  resume?: Resume;
 };
+
+/** How a pane's agent comes back: its conversation, and the command that resumes it. */
+export type Resume = { agent: string; session?: string; command: string; cwd?: string };
 
 /** Two panes or splits: side by side ("right") or stacked ("down"); `ratio` is the first's share. */
 export type Split = {
@@ -136,8 +142,15 @@ export function fromSaved(v: unknown): Saved {
  */
 function shells(n: Node): Node {
   if (n.kind === "split") return { ...n, a: shells(n.a), b: shells(n.b) };
-  const { kind, id, projectId, shell, title } = n;
-  return { kind, id, projectId, ...(shell && { shell }), ...(title && { title }) };
+  const { kind, id, projectId, shell, title, resume } = n;
+  return {
+    kind,
+    id,
+    projectId,
+    ...(shell && { shell }),
+    ...(title && { title }),
+    ...(resume?.command && { resume }),
+  };
 }
 
 const KEY = "gond.sessions";

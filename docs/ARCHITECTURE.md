@@ -85,6 +85,16 @@ The terminals live in a background process so they outlive the app (`pty/host.rs
   `false`. It logs to `host\host.log`.
 - Quitting detaches (Settings `keepTerminals`, default on) or closes them all.
 
+### Resume after a restart of the PC
+While an agent runs in a pane, the pane asks `agent.resume` when it starts and every 20 s:
+Rust finds the agent under the pane's shell, reads the folder it really runs in from its process
+(`agents/cwd.rs`: the PEB on Windows, `/proc` on Linux), and its conversation from its own files
+(`agents/resume.rs`: Claude Code's `projects/<folder>/<id>.jsonl`, Codex's
+`sessions/…/rollout-…-<id>.jsonl`), not one another pane has. The pane keeps
+`{ agent, session, command, cwd }` as `resume` in `sessions.json`. A pane that opens without its
+terminal (`pty.attach` finds none) starts its shell in `cwd` and types `command` once the prompt
+shows. Quitting the agent, or Restart, clears it.
+
 ### Restart to update
 `src/lib/restart.ts` lets each part register a save; Restart to update waits for all of them
 (4 seconds at most), then calls `app.update.install`. The sessions are saved, and each shell

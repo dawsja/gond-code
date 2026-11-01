@@ -218,6 +218,91 @@
     }
   },
   {
+    "name": "agent.resume",
+    "summary": "How to pick a pane's agent conversation back up after a restart: its session, read from the agent's own files, and the command that resumes it",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "description": "The folder, if the agent's own can't be read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ptyId": {
+          "description": "The pane's terminal: the agent and the folder it runs in are read from its processes.",
+          "type": "string"
+        },
+        "since": {
+          "description": "When the pane saw the agent start, in milliseconds since 1970 (0: any time).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "taken": {
+          "default": [],
+          "description": "Conversations other panes have.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ptyId",
+        "since"
+      ],
+      "title": "ResumeInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Resume": {
+          "description": "How to resume a pane's agent.",
+          "properties": {
+            "agent": {
+              "description": "The agent (`claude`, `codex`).",
+              "type": "string"
+            },
+            "command": {
+              "description": "What to type in the pane's shell, in `cwd`.",
+              "type": "string"
+            },
+            "cwd": {
+              "description": "The folder it runs in: its conversation is that folder's.",
+              "type": "string"
+            },
+            "session": {
+              "description": "Its conversation.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "session",
+            "command",
+            "cwd"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Resume"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nullable_Resume"
+    }
+  },
+  {
     "name": "app.update.check",
     "summary": "Look for a newer Gond Code now; the answer lands in /update",
     "risk": "outward",

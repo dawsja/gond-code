@@ -110,6 +110,10 @@ type Props = {
   paneId: string;
   /** Start a new shell even if the pane's old one still runs (Restart). */
   fresh?: boolean;
+  /** The agent that ran here, to resume if its terminal is gone (the PC restarted). */
+  resume?: { command: string; cwd?: string };
+  /** The agent in the pane started or still runs (with the folder it runs in), or ended. */
+  onAgentRun?: (run?: { ptyId: string; since: number; cwd?: string }) => void;
   /** Starts the pane's shell (pty.open) and answers its pty; a shell coming back after an
    *  update starts in the folder it was in (`cwd`). */
   open: (size: { cols: number; rows: number; cwd?: string }) => Promise<{ ptyId: string }>;
@@ -123,12 +127,21 @@ type Props = {
  * It runs a shell; an agent you start in it (`claude`, `codex`…) is found under that shell and
  * watched for Working / Needs you / Done while it runs.
  */
-export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: Props) {
+export function Terminal({
+  paneId,
+  fresh,
+  resume,
+  onAgentRun,
+  open,
+  active,
+  onFocus,
+  onShortcut,
+}: Props) {
   const box = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm>(null);
-  const live = useRef({ open, onShortcut, onFocus, active, fresh });
+  const live = useRef({ open, onShortcut, onFocus, active, fresh, resume, onAgentRun });
   useEffect(() => {
-    live.current = { open, onShortcut, onFocus, active, fresh };
+    live.current = { open, onShortcut, onFocus, active, fresh, resume, onAgentRun };
   });
 
   useEffect(() => {
@@ -258,6 +271,14 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
     // Which agent runs under the shell, looked for every 2 s: it starts and stops as you type.
     let asking = false;
     let ticks = 0;
+    // When the agent was first seen: its conversation is one its files show since then. One
+    // found running after the app came back may have started any time before.
+    let agentSince = 0;
+    let attached = false;
+    const reportAgent = () =>
+      live.current.onAgentRun?.(
+        agent && ptyId ? { ptyId, since: agentSince, cwd: paneFolder(paneId) } : undefined,
+      );
     const lookForAgent = () => {
       if (!ptyId || asking || !liveBackend() || !isRegistered("pty.agent")) return;
       asking = true;
@@ -265,10 +286,14 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
         .then((found) => {
           const next = found ?? undefined;
           if (disposed || next === agent) return;
+          const had = agent;
           agent = next;
           setPaneAgent(paneId, agent);
           busySince = 0;
           set("idle");
+          if (agent) agentSince = attached && !had ? 0 : Date.now();
+          // It started (keep how to resume it) or ended (nothing to resume).
+          if (agent || had) reportAgent();
         })
         .catch(() => undefined)
         .finally(() => (asking = false));
@@ -284,6 +309,8 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
     const tick = window.setInterval(() => {
       if (state === "exited") return;
       if (ticks++ % 4 === 0) lookForAgent();
+      // Every 20 s while an agent runs: its conversation may have changed (a /clear, a new one).
+      if (agent && ticks % 40 === 0) reportAgent();
       // A shell can cd anywhere: the status bar follows the folder its prompt shows.
       if (!agent) {
         const folder = promptFolder(lines());
@@ -381,6 +408,7 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
         if (disposed) return;
         if (found) {
           ({ ptyId } = found);
+          attached = true;
           drawn = found.end;
           t.write(found.replay);
           // A screen saved for an update is out of date: the terminal itself is here.
@@ -417,8 +445,31 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
               }).catch(() => null)
             : null;
           if (back) t.write(`${back.screen}\r\n\x1b[2m[Restored after the update]\x1b[0m\r\n`);
-          ({ ptyId } = await live.current.open({ cols: t.cols, rows: t.rows, cwd: back?.cwd }));
+          // An agent was running here and its terminal is gone (the PC restarted): the new
+          // shell starts where it ran and picks its conversation back up.
+          const resume = live.current.fresh ? undefined : live.current.resume;
+          ({ ptyId } = await live.current.open({
+            cols: t.cols,
+            rows: t.rows,
+            cwd: resume?.cwd ?? back?.cwd,
+          }));
           if (disposed) return void callOrRun("pty_close", "pty.close", { ptyId });
+          if (resume) {
+            const id = ptyId;
+            const started = Date.now();
+            // Once the shell shows its prompt (8 s at most), as if you typed it.
+            const typeIt = () => {
+              if (disposed) return;
+              if (!promptFolder(lines()) && Date.now() - started < 8000)
+                return void window.setTimeout(typeIt, 250);
+              t.write("\x1b[2m[Resuming the agent that was running here]\x1b[0m\r\n");
+              void callOrRun("pty_write", "pty.write", {
+                ptyId: id,
+                data: `${resume.command}\r`,
+              }).catch(() => undefined);
+            };
+            window.setTimeout(typeIt, 300);
+          }
         }
         early
           .filter((e) => e.ptyId === ptyId && (e.end === undefined || e.end > drawn))

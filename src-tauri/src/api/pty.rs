@@ -79,6 +79,20 @@ pub struct AttachInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResumeInput {
+    /// The pane's terminal: the agent and the folder it runs in are read from its processes.
+    pub pty_id: String,
+    /// When the pane saw the agent start, in milliseconds since 1970 (0: any time).
+    pub since: u64,
+    /// The folder, if the agent's own can't be read.
+    pub cwd: Option<String>,
+    /// Conversations other panes have.
+    #[serde(default)]
+    pub taken: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DropInput {
     /// The dropped files and folders.
     pub paths: Vec<String>,
@@ -252,6 +266,40 @@ pub fn register(r: &mut Registry<Services>) {
                 });
             }
             Ok(found)
+        },
+    );
+    r.add(
+        Def::new(
+            "agent.resume",
+            "How to pick a pane's agent conversation back up after a restart: its session, read from the agent's own files, and the command that resumes it",
+            Risk::Read,
+        ),
+        |call, i: ResumeInput| -> AppResult<Option<crate::agents::resume::Resume>> {
+            let Some(shell) = call.ctx.ptys.pid(&i.pty_id) else {
+                return Ok(None);
+            };
+            let procs = crate::agents::running::snapshot();
+            let Some((agent, pid)) = crate::agents::running::agent_process_under(
+                shell,
+                &procs,
+                &known_agents(&call.ctx.store),
+            ) else {
+                return Ok(None);
+            };
+            // Where the agent really runs, else where the pane thinks.
+            let Some(cwd) = crate::agents::cwd::of(pid).or(i.cwd.map(Into::into)) else {
+                return Ok(None);
+            };
+            // A little before the pane saw it: the agent may have written first.
+            let since = std::time::UNIX_EPOCH
+                + std::time::Duration::from_millis(i.since.saturating_sub(10_000));
+            Ok(crate::agents::resume::find(
+                &agent,
+                &cwd,
+                since,
+                &i.taken,
+                &crate::agents::resume::Homes::user(),
+            ))
         },
     );
     r.add(

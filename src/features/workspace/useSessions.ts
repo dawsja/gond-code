@@ -18,6 +18,7 @@ import {
   type Pane,
   type Saved,
   type Layout,
+  type Resume,
 } from "./layout";
 import { dictate } from "./Dictation";
 import { showKeys } from "./KeyHelp";
@@ -257,7 +258,46 @@ export function useSessions({ projects }: { projects: Project[] }) {
       focus,
       shortcut,
       rename: (paneId: string) => setRenaming(paneId),
-      restart: (paneId: string) => setRestarts((r) => ({ ...r, [paneId]: (r[paneId] ?? 0) + 1 })),
+      // A restart starts a plain shell: whatever ran there isn't picked back up.
+      restart: (paneId: string) => {
+        const at = paneOf(paneId);
+        if (at?.pane.resume)
+          change(
+            (s) => ({ ...s, root: update(s.root, paneId, { resume: undefined }) }),
+            at.session,
+          );
+        setRestarts((r) => ({ ...r, [paneId]: (r[paneId] ?? 0) + 1 }));
+      },
+      /**
+       * The agent in a pane started or is still running (`run`), or has ended (none): keeps how
+       * to resume its conversation, for when the PC restarts under it.
+       */
+      agentRun: (paneId: string, run?: { ptyId: string; since: number; cwd?: string }) => {
+        const at = paneOf(paneId);
+        if (!at) return;
+        const set = (resume: Resume | undefined) =>
+          change((s) => ({ ...s, root: update(s.root, paneId, { resume }) }), at.session);
+        if (!run) return void (at.pane.resume && set(undefined));
+        if (!liveBackend() || !isRegistered("agent.resume")) return;
+        // Conversations other panes have aren't this one's.
+        const taken = savedRef.current.sessions
+          .flatMap((g) => panes(g.layout.root))
+          .filter((p) => p.id !== paneId && p.resume?.session)
+          .map((p) => p.resume!.session!);
+        runCommand<Resume | null>("agent.resume", {
+          ptyId: run.ptyId,
+          since: run.since,
+          ...(run.cwd ? { cwd: run.cwd } : {}),
+          taken,
+        }).then(
+          // No conversation yet: whatever was kept stays (the agent may still be starting).
+          (r) => {
+            const now = paneOf(paneId)?.pane.resume;
+            if (r && (now?.command !== r.command || now?.cwd !== r.cwd)) set(r);
+          },
+          () => undefined,
+        );
+      },
       openFolder: (pid: string) =>
         void runCommand("folder.open", { projectId: pid }).catch((e) =>
           notify.error("Couldn't open the folder", { description: errorText(e) }),

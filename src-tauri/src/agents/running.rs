@@ -30,6 +30,15 @@ fn is(exe: &str, command: &str) -> bool {
 /// The first agent (nearest the shell) among `root`'s descendants, as its id from
 /// `agents` (id, command). An agent's own helpers below it don't count over it.
 pub fn agent_under(root: u32, procs: &[Proc], agents: &[(String, String)]) -> Option<String> {
+    agent_process_under(root, procs, agents).map(|(id, _)| id)
+}
+
+/// `agent_under`, with the agent's process id.
+pub fn agent_process_under(
+    root: u32,
+    procs: &[Proc],
+    agents: &[(String, String)],
+) -> Option<(String, u32)> {
     let mut level = vec![root];
     let mut seen = std::collections::HashSet::from([root]);
     while !level.is_empty() {
@@ -39,7 +48,7 @@ pub fn agent_under(root: u32, procs: &[Proc], agents: &[(String, String)]) -> Op
                 continue;
             }
             if let Some((id, _)) = agents.iter().find(|(_, c)| is(&p.exe, c)) {
-                return Some(id.clone());
+                return Some((id.clone(), p.pid));
             }
             next.push(p.pid);
         }

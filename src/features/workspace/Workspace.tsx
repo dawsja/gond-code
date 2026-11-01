@@ -80,6 +80,7 @@ export type PaneActions = {
   restart: (paneId: string) => void;
   openFolder: (projectId: string) => void;
   resize: (splitId: string, ratio: number) => void;
+  agentRun: (paneId: string, run?: { ptyId: string; since: number; cwd?: string }) => void;
 };
 
 /** One folder's panes: split right and down, drag a divider to resize, right-click for the rest. */
@@ -306,6 +307,8 @@ function PaneView({
             key={`${pane.id}:${restart}`}
             paneId={pane.id}
             fresh={restart > 0}
+            resume={pane.resume}
+            onAgentRun={(run) => actions.agentRun(pane.id, run)}
             open={open}
             active={focused && visible}
             onFocus={() => actions.focus(pane.id)}

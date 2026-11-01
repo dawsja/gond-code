@@ -1,7 +1,9 @@
 //! Agent CLIs: the built-in ones and your custom ones, how to find them (`detect`), and
 //! which one runs in a terminal (`running`).
 
+pub mod cwd;
 pub mod detect;
+pub mod resume;
 pub mod running;
 
 use serde::{Deserialize, Serialize};

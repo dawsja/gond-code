@@ -36,6 +36,10 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
 - **Drag and drop:** drop files, folders or screenshots on a pane to type their paths in, the
   way its shell writes them (Git Bash and WSL included). A screenshot or other file in the
   temp folder is copied somewhere lasting first, so the agent can still read it.
+- **Agents come back after a restart of the PC:** a pane that was running Claude Code or Codex
+  opens its shell in the folder the agent ran in and resumes its conversation
+  (`claude --resume <id>`, `codex resume <id>`). Gond reads which conversation from the agents'
+  own session files; it installs nothing into them.
 - **Agents outlive the app:** the terminals run in a background terminal host, so quitting,
   updating or a crash leaves every shell and agent working. When Gond Code opens again, each
   pane picks its terminal back up with what it printed meanwhile. (Settings → General can close
@@ -46,7 +50,8 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   Updates.
 - **Transcription** (speech to text), optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say
   into the focused pane.
-- **Ctrl+Shift+P** lists every keyboard shortcut.
+- **Ctrl+Shift+P** is the command list: find a command (split, zoom, close, copy, paste, search,
+  new session, settings…) and run it on the focused pane, or read its key.
 
 ## Build from source
 

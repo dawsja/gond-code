@@ -46,14 +46,22 @@ every agent by what it's doing.
   quitting, Restart to update or a crash leaves each shell and the agent in it working. When
   Gond Code opens, every pane picks its terminal back up and replays what it printed while you
   were away. Settings → General → Quitting can close them on quit instead; the tray's "Quit and
-  close all terminals" always does. Only a restart of the PC ends them: then panes come back as
+  close all terminals" always does. Only a restart of the PC ends them.
+- **Resume after a restart of the PC.** While Claude Code or Codex runs in a pane, Gond keeps
+  which conversation it is having (from the agent's own session files, in the folder the agent
+  really runs in, read from its process) with the pane's saved layout. When the pane comes back
+  without its terminal, its new shell starts in that folder and types the resume command
+  (`claude --resume <id>`, `codex resume <id>`). An agent you quit yourself, a pane you
+  restart, or an agent with no conversation yet isn't resumed. Other agents' panes come back as
   their shells, with their last screen, in the folder they were in.
 - **Terminals.** xterm.js on the WebGL renderer with full 24-bit colour; Rust runs the PTYs
   (ConPTY).
 - **Keys.** Ctrl+T new terminal; Ctrl+Shift+→ / ↓ split right / down; Ctrl+Shift+Z zoom;
   Ctrl+Shift+W close pane; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
-  selection); Ctrl+Shift+Space speech to text, Esc cancels it. Ctrl+Shift+P opens a searchable
-  list of them.
+  selection); Ctrl+Shift+Space speech to text, Esc cancels it. Ctrl+Shift+P opens the command
+  list: type to find a command, ↑↓ and Enter (or a click) run it on the focused pane. It also
+  has New session, Rename and Restart the pane, Settings and Check for updates; rows that only
+  explain a key (Ctrl+C, a link click, Esc) are shown dimmed.
 - **Transcription** (optional, speech to text). A local NVIDIA Parakeet model, downloaded when you turn it on
   in Settings. The text is typed into the focused pane for you to send.
 - **Settings.**

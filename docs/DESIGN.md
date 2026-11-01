@@ -81,8 +81,10 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 - **Keys:** Ctrl+T new terminal beside the pane; Ctrl+Shift+→ split right; Ctrl+Shift+↓ split down; Ctrl+Shift+Z
   zoom; Ctrl+Shift+W close; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
   selection, else stops the program); Ctrl+Shift+Space dictation, Esc cancels it.
-- **Shortcut list (Ctrl+Shift+P):** a command-menu-style dialog (`KeyHelp.tsx`) with a search
-  field and the keys grouped as Panes, Terminal, Speech and Help. It only lists them.
+- **Command list (Ctrl+Shift+P):** a command-menu dialog (`KeyHelp.tsx`) with a search field
+  and the commands grouped as Panes, Terminal, Speech and Gond Code, each with its keys. ↑↓ move
+  between the ones that run (the chosen one on `--hover`, an Enter mark when it has no keys),
+  Enter or a click runs it on the focused pane; a row that only explains a key is muted.
 - **Right-click menu:** Copy, Paste, Select all, Split right, Split down, Rename, Restart
   terminal, Open folder, Zoom pane, Close pane.
 - Dividers between panes drag to resize; a double-click evens the split.
