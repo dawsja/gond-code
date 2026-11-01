@@ -293,8 +293,11 @@ pub fn register(r: &mut Registry<Services>) {
             // A little before the pane saw it: the agent may have written first.
             let since = std::time::UNIX_EPOCH
                 + std::time::Duration::from_millis(i.since.saturating_sub(10_000));
+            let args = crate::agents::cwd::args(pid).unwrap_or_default();
             Ok(crate::agents::resume::find(
                 &agent,
+                Some(pid),
+                &args,
                 &cwd,
                 since,
                 &i.taken,

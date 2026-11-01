@@ -88,9 +88,15 @@ The terminals live in a background process so they outlive the app (`pty/host.rs
 ### Resume after a restart of the PC
 While an agent runs in a pane, the pane asks `agent.resume` when it starts and every 20 s:
 Rust finds the agent under the pane's shell, reads the folder it really runs in from its process
-(`agents/cwd.rs`: the PEB on Windows, `/proc` on Linux), and its conversation from its own files
-(`agents/resume.rs`: Claude Code's `projects/<folder>/<id>.jsonl`, Codex's
-`sessions/…/rollout-…-<id>.jsonl`), not one another pane has. The pane keeps
+(`agents/cwd.rs`: the PEB on Windows, `/proc` on Linux), and its conversation (`agents/resume.rs`).
+An agent started on one (`--resume <id>`, `--session <id>`…) names it on its command line, read
+the same way. Otherwise it's the newest in the agent's own store, in its folder, changed since it
+started, that another pane doesn't have: Claude Code's `projects/<folder>/<id>.jsonl`, Codex's
+`sessions/…/rollout-…-<id>.jsonl`, Copilot's `session-state/<id>/workspace.yaml` (or exactly the
+one whose `inuse.<pid>.lock` names the process), Cursor's `chats/<hash>/<id>/meta.json`, Grok's
+`sessions/<folder>/<id>/summary.json`, opencode's `opencode.db` (`session` table), Pi's
+`sessions/--<folder>--/<time>_<id>.jsonl` and Antigravity's `conversation_summaries.db`. Each
+format was read off a real install. The pane keeps
 `{ agent, session, command, cwd }` as `resume` in `sessions.json`. A pane that opens without its
 terminal (`pty.attach` finds none) starts its shell in `cwd` and types `command` once the prompt
 shows. Quitting the agent, or Restart, clears it.

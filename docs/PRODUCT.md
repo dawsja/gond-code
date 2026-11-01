@@ -47,13 +47,15 @@ every agent by what it's doing.
   Gond Code opens, every pane picks its terminal back up and replays what it printed while you
   were away. Settings → General → Quitting can close them on quit instead; the tray's "Quit and
   close all terminals" always does. Only a restart of the PC ends them.
-- **Resume after a restart of the PC.** While Claude Code or Codex runs in a pane, Gond keeps
-  which conversation it is having (from the agent's own session files, in the folder the agent
-  really runs in, read from its process) with the pane's saved layout. When the pane comes back
-  without its terminal, its new shell starts in that folder and types the resume command
-  (`claude --resume <id>`, `codex resume <id>`). An agent you quit yourself, a pane you
-  restart, or an agent with no conversation yet isn't resumed. Other agents' panes come back as
-  their shells, with their last screen, in the folder they were in.
+- **Resume after a restart of the PC.** While any of the eight agents runs in a pane, Gond keeps
+  which conversation it is having (from the agent's own session store, or its command line when
+  it was started on one, in the folder the agent really runs in, read from its process) with the
+  pane's saved layout. When the pane comes back without its terminal, its new shell starts in
+  that folder and types the agent's resume command (`claude --resume <id>`, `codex resume <id>`,
+  `agy --conversation <id>`, `grok --resume <id>`, `opencode --session <id>`,
+  `pi --session <id>`, `copilot --resume=<id>`, `cursor-agent --resume <id>`). An agent you quit
+  yourself, a pane you restart, or an agent with no conversation yet isn't resumed. A custom
+  agent's pane comes back as its shell, with its last screen, in the folder it was in.
 - **Terminals.** xterm.js on the WebGL renderer with full 24-bit colour; Rust runs the PTYs
   (ConPTY).
 - **Keys.** Ctrl+T new terminal; Ctrl+Shift+→ / ↓ split right / down; Ctrl+Shift+Z zoom;

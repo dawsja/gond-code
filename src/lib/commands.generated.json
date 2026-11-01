@@ -265,7 +265,7 @@
           "description": "How to resume a pane's agent.",
           "properties": {
             "agent": {
-              "description": "The agent (`claude`, `codex`).",
+              "description": "The agent (`claude`, `codex`…).",
               "type": "string"
             },
             "command": {

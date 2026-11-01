@@ -38,7 +38,9 @@ re-read from the registry after an install, so a new agent shows without a resta
 under its shell, found in the shell's process tree by the program's name (`claude.exe`, or a
 winget package's `codex-x86_64-pc-windows-msvc.exe`). The pane then shows the agent and watches
 its status, the sidebar lists it, and Ctrl+Shift+V with a picture sends the agent its own
-image-paste key. An agent that runs as a script (`node.exe` for an npm install) isn't seen.
+image-paste key. An agent that runs as a script is seen when its runtime runs from the agent's
+own install folder (Cursor's `cursor-agent` is `…\cursor-agent\versions\…\node.exe`); a plain
+`node.exe` from an npm install isn't.
 
 ## 3. Install, update, uninstall
 - **Plans are data** (`harness.rs`): winget first where it exists, then the vendor's script,

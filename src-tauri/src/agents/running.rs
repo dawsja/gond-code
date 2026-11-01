@@ -1,7 +1,9 @@
 //! Which agent you started in a terminal: every pane is a shell, and typing `claude` or
 //! `codex` there runs the agent's CLI under it. Found from the shell's process tree, by the
 //! program's name, so the pane can show the agent and watch it (Working, Needs you, Done).
-//! An agent run through a script runtime (`node.exe` for an npm install) isn't recognised.
+//! An agent run through a script runtime is recognised when the runtime runs from the agent's
+//! own install folder (Cursor's `cursor-agent` is `…\cursor-agent\versions\…\node.exe`); a
+//! plain `node.exe` from an npm install isn't.
 
 /// A running process: its id, its parent's, and its program's file name (`codex.exe`).
 #[derive(Debug, Clone)]
@@ -27,6 +29,41 @@ fn is(exe: &str, command: &str) -> bool {
     stem == command || (stem.starts_with(&format!("{command}-")) && stem.contains("-pc-windows-"))
 }
 
+/// Whether `p` is a script runtime (`node.exe`, `bun.exe`) running from agent `command`'s own
+/// install folder: a folder named for the command on the runtime's path.
+fn runs_from_install(p: &Proc, command: &str) -> bool {
+    let exe = p.exe.to_lowercase();
+    if !matches!(exe.as_str(), "node.exe" | "bun.exe" | "node" | "bun") {
+        return false;
+    }
+    let name = std::path::Path::new(command)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if name.is_empty() {
+        return false;
+    }
+    image_of(p.pid).is_some_and(|path| {
+        path.to_string_lossy()
+            .to_lowercase()
+            .split(['\\', '/'])
+            .any(|segment| segment == name)
+    })
+}
+
+/// The full path of process `pid`'s program.
+fn image_of(pid: u32) -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    return crate::pty::host::win::image_of(pid);
+    #[cfg(target_os = "linux")]
+    return std::fs::read_link(format!("/proc/{pid}/exe")).ok();
+    #[allow(unreachable_code)]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// The first agent (nearest the shell) among `root`'s descendants, as its id from
 /// `agents` (id, command). An agent's own helpers below it don't count over it.
 pub fn agent_under(root: u32, procs: &[Proc], agents: &[(String, String)]) -> Option<String> {
@@ -47,7 +84,10 @@ pub fn agent_process_under(
             if !seen.insert(p.pid) {
                 continue;
             }
-            if let Some((id, _)) = agents.iter().find(|(_, c)| is(&p.exe, c)) {
+            if let Some((id, _)) = agents
+                .iter()
+                .find(|(_, c)| is(&p.exe, c) || runs_from_install(p, c))
+            {
                 return Some((id.clone(), p.pid));
             }
             next.push(p.pid);
