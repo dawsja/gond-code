@@ -26,6 +26,13 @@ pub struct PathInput {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FolderPathInput {
+    /// Absolute path of any folder.
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectInput {
     pub project_id: String,
 }
@@ -153,6 +160,16 @@ pub fn register(r: &mut Registry<Services>) {
             Risk::Read,
         ),
         |call, _: NoInput| projects::list(store(call)),
+    );
+    r.add(
+        Def::new(
+            "folder.git",
+            "The git repository and branch a folder is in, if any (the status bar)",
+            Risk::Read,
+        ),
+        |_call, i: FolderPathInput| -> AppResult<crate::git::Place> {
+            Ok(crate::git::place(&i.path))
+        },
     );
     r.add(
         Def::new(

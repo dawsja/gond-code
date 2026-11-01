@@ -140,6 +140,7 @@ pub fn install_dirs_under(home: &Path, local: &Path, roaming: &Path) -> Vec<Path
         local.join("Programs").join("gh").join("bin"),
         local.join("Programs").join("nodejs"),
         home.join(".grok").join("bin"),
+        local.join("cursor-agent"),
     ];
     if let Ok(entries) = std::fs::read_dir(winget.join("Packages")) {
         let mut packages: Vec<PathBuf> = entries
@@ -184,10 +185,11 @@ pub fn version(bin: &Path) -> Option<String> {
     parse_version(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// "2.0.14 (Claude Code)" → "2.0.14"; "codex-cli 0.46.0" → "0.46.0".
+/// "2.0.14 (Claude Code)" → "2.0.14"; "codex-cli 0.46.0" → "0.46.0";
+/// "GitHub Copilot CLI 1.0.105." → "1.0.105".
 pub fn parse_version(text: &str) -> Option<String> {
     text.split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',')
-        .map(|t| t.trim_start_matches('v'))
+        .map(|t| t.trim_start_matches('v').trim_end_matches('.'))
         .find(|t| {
             let mut parts = t.split('.');
             t.contains('.')
@@ -238,6 +240,23 @@ mod tests {
         assert_eq!(parse_version("codex-cli 0.46.0").as_deref(), Some("0.46.0"));
         assert_eq!(parse_version("tool v1.2-beta").as_deref(), Some("1.2-beta"));
         assert_eq!(parse_version("no version here"), None);
+        // Copilot ends its line with a full stop; Cursor's version is a date and a commit.
+        assert_eq!(
+            parse_version(
+                "GitHub Copilot CLI 1.0.105.
+Run 'copilot update' to check for updates."
+            )
+            .as_deref(),
+            Some("1.0.105")
+        );
+        assert_eq!(
+            parse_version(
+                "2026.10.22-27dcf5f
+"
+            )
+            .as_deref(),
+            Some("2026.10.22-27dcf5f")
+        );
     }
 
     /// A fake `name` on a temp PATH that prints `output` for --version.
@@ -298,7 +317,9 @@ mod tests {
         assert_eq!(by_id("grok").provider, "grok");
         assert_eq!(by_id("opencode").kind, AgentKind::Opencode);
         assert_eq!(by_id("pi").kind, AgentKind::Pi);
-        assert_eq!(found.len(), 8);
+        assert_eq!(by_id("copilot").provider, "copilot");
+        assert_eq!(by_id("cursor").command, "cursor-agent");
+        assert_eq!(found.len(), 10);
     }
 
     #[test]

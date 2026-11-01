@@ -20,6 +20,8 @@ pub fn driver_for(store: &Store, agent_id: &str) -> AppResult<Arc<dyn Driver>> {
         "grok" => Ok(Arc::new(crate::agents::grok::Grok)),
         "opencode" => Ok(Arc::new(crate::agents::opencode::Opencode)),
         "pi" => Ok(Arc::new(crate::agents::pi::Pi)),
+        "copilot" => Ok(Arc::new(crate::agents::copilot::Copilot)),
+        "cursor" => Ok(Arc::new(crate::agents::cursor::Cursor)),
         other => store
             .with(custom_agents::list)?
             .into_iter()
@@ -173,6 +175,32 @@ impl AgentRunner {
                 }
                 "pi".to_string()
             }
+            // Copilot, like Pi, opens the session with this id or creates it.
+            "copilot" => {
+                if let Some(id) = &sid {
+                    args.extend(["--session-id".into(), id.clone()]);
+                }
+                if let Some(model) = &thread.model {
+                    args.extend(["--model".into(), model.clone()]);
+                }
+                if let Some(level) = thread.thinking {
+                    args.extend(["--reasoning-effort".into(), level.as_str().into()]);
+                }
+                "copilot".to_string()
+            }
+            // Cursor resumes its chat by id; the thinking level is part of the model id.
+            "cursor" => {
+                if let Some(id) = &sid {
+                    args.extend(["--resume".into(), id.clone()]);
+                }
+                if let Some(model) = &thread.model {
+                    args.extend([
+                        "--model".into(),
+                        crate::agents::models::cursor_slug(model, thread.thinking),
+                    ]);
+                }
+                "cursor-agent".to_string()
+            }
             "agy" => {
                 if let Some(id) = &sid {
                     args.extend(["--conversation".into(), id.clone()]);
@@ -195,6 +223,47 @@ impl AgentRunner {
             cwd: thread.worktree_path.clone().into(),
         })
     }
+}
+
+/// A new, empty Cursor chat for a pane (`cursor-agent create-chat`, as the pane's account in
+/// its folder), so the pane can resume it by id after a restart. `None` when Cursor can't
+/// make one (signed out, offline): the pane then starts fresh.
+pub fn cursor_new_chat(it: &Interactive) -> Option<String> {
+    let program = crate::agents::detect::find(&it.program, crate::process::path())?;
+    let mut cmd = crate::process::command(&program);
+    cmd.arg("create-chat")
+        .current_dir(&it.cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    if let Some(p) = crate::process::path() {
+        cmd.env("PATH", p);
+    }
+    for var in &it.remove {
+        cmd.env_remove(var);
+    }
+    for (k, v) in &it.env {
+        cmd.env(k, v);
+    }
+    crate::process::no_window(&mut cmd);
+    let mut child = crate::process::when_free(|| cmd.spawn()).ok()?;
+    let start = std::time::Instant::now();
+    while child.try_wait().ok()?.is_none() {
+        if start.elapsed() > std::time::Duration::from_secs(15) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let out = child.wait_with_output().ok()?;
+    chat_id(&String::from_utf8_lossy(&out.stdout)).filter(|_| out.status.success())
+}
+
+/// The chat id in `create-chat`'s output: a UUID on a line of its own.
+fn chat_id(text: &str) -> Option<String> {
+    let re = regex::Regex::new(r"(?m)^\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*$").ok()?;
+    re.captures(text).map(|c| c[1].to_lowercase())
 }
 
 #[cfg(test)]
@@ -250,5 +319,54 @@ mod tests {
                 "high"
             ]
         );
+        // Copilot opens (or creates) the session with Gond's id; its level is its own flag.
+        t.agent_id = "copilot".into();
+        t.model = Some("claude-opus-5.5".into());
+        let copilot = AgentRunner::new(Store::open_in_memory().unwrap())
+            .interactive(&t)
+            .unwrap();
+        assert_eq!(copilot.program, "copilot");
+        assert_eq!(
+            copilot.args,
+            [
+                "--session-id",
+                "s-1",
+                "--model",
+                "claude-opus-5.5",
+                "--reasoning-effort",
+                "high"
+            ]
+        );
+        // Cursor resumes its chat; the level is part of the model id, its default when unset.
+        t.agent_id = "cursor".into();
+        t.model = Some("claude-opus-5-5".into());
+        let cursor = AgentRunner::new(Store::open_in_memory().unwrap())
+            .interactive(&t)
+            .unwrap();
+        assert_eq!(cursor.program, "cursor-agent");
+        assert_eq!(
+            cursor.args,
+            ["--resume", "s-1", "--model", "claude-opus-5-5-high"]
+        );
+        t.thinking = None;
+        let cursor = AgentRunner::new(Store::open_in_memory().unwrap())
+            .interactive(&t)
+            .unwrap();
+        assert_eq!(cursor.args[3], "claude-opus-5-5-medium");
+        t.model = Some("auto".into());
+        let cursor = AgentRunner::new(Store::open_in_memory().unwrap())
+            .interactive(&t)
+            .unwrap();
+        assert_eq!(cursor.args[3], "auto");
+    }
+
+    /// `create-chat` prints the new chat's id on its own line.
+    #[test]
+    fn reads_the_chat_id_cursor_makes() {
+        assert_eq!(
+            chat_id("ca4bce7a-7bfc-4e8b-8026-57278b15fe50\n").as_deref(),
+            Some("ca4bce7a-7bfc-4e8b-8026-57278b15fe50")
+        );
+        assert_eq!(chat_id("Not logged in\n"), None);
     }
 }

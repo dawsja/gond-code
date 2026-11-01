@@ -57,6 +57,55 @@ pub fn repo_root(path: &Path) -> AppResult<PathBuf> {
     Ok(dunce(PathBuf::from(top)))
 }
 
+/// Where a folder is, for the status bar: its own name, and the repository and branch when
+/// it's inside one.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Place {
+    pub folder: String,
+    /// The repository's name: its main work tree's folder, also from a linked worktree.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// The checked-out branch, or the commit (short) when HEAD is detached.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+}
+
+/// The repository and branch `path` is in, if any. Never errors: a folder outside a
+/// repository (or a PC without Git) is just its name.
+pub fn place(path: &Path) -> Place {
+    let name = |p: &Path| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| p.to_string_lossy().into_owned())
+    };
+    let mut out = Place {
+        folder: name(path),
+        repo: None,
+        branch: None,
+    };
+    if !path.is_dir() {
+        return out;
+    }
+    let Ok(dirs) = run(path, &["rev-parse", "--show-toplevel", "--git-common-dir"]) else {
+        return out;
+    };
+    let mut lines = dirs.lines();
+    let top = PathBuf::from(lines.next().unwrap_or_default());
+    // A linked worktree's common dir is the main repository's `.git`, given absolute.
+    let common = lines.next().map(PathBuf::from);
+    let main = common
+        .filter(|c| c.is_absolute() && c.file_name().is_some_and(|n| n == ".git"))
+        .and_then(|c| c.parent().map(Path::to_path_buf));
+    out.repo = Some(name(main.as_deref().unwrap_or(&top)));
+    out.branch = run(path, &["symbolic-ref", "--short", "-q", "HEAD"])
+        .ok()
+        .filter(|b| !b.is_empty())
+        .or_else(|| run(path, &["rev-parse", "--short", "HEAD"]).ok())
+        .filter(|b| !b.is_empty());
+    out
+}
+
 /// origin's HEAD branch if there is one, else the checked-out branch, else "main".
 pub fn default_branch(repo: &Path) -> String {
     if let Ok(r) = run(
@@ -132,5 +181,51 @@ pub(crate) mod tests {
             repo.path().canonicalize().unwrap()
         );
         assert_eq!(default_branch(repo.path()), "main");
+    }
+
+    /// The status bar's place: the repository's name (the main one, from a linked worktree
+    /// too) and the branch, or the commit when detached; a plain folder is just its name.
+    #[test]
+    fn place_names_the_repo_and_branch() {
+        let repo = temp_repo();
+        let name = repo
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let sub = repo.path().join("src");
+        std::fs::create_dir(&sub).unwrap();
+        let p = place(&sub);
+        assert_eq!(p.folder, "src");
+        assert_eq!(p.repo.as_deref(), Some(name.as_str()));
+        assert_eq!(p.branch.as_deref(), Some("main"));
+
+        let wt_parent = tempfile::tempdir().unwrap();
+        let wt = wt_parent.path().join("feature-wt");
+        run(
+            repo.path(),
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feature/bar",
+                &wt.to_string_lossy(),
+            ],
+        )
+        .unwrap();
+        let p = place(&wt);
+        assert_eq!(p.repo.as_deref(), Some(name.as_str()));
+        assert_eq!(p.branch.as_deref(), Some("feature/bar"));
+
+        run(repo.path(), &["checkout", "-q", "--detach"]).unwrap();
+        let short = run(repo.path(), &["rev-parse", "--short", "HEAD"]).unwrap();
+        assert_eq!(place(repo.path()).branch, Some(short));
+
+        let plain = tempfile::tempdir().unwrap();
+        let p = place(plain.path());
+        assert_eq!((p.repo, p.branch), (None, None));
+        assert!(!p.folder.is_empty());
     }
 }

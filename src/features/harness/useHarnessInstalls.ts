@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { runCommand, useAppState } from "@/lib/appState";
-import type { JobState } from "@/lib/setup";
+import { NOTE_MS, type JobState } from "@/lib/setup";
 import { errorText } from "@/lib/types";
 
 /** One harness's install, update or uninstall as its card shows it: starting, the job,
@@ -13,6 +13,10 @@ export type InstallState = {
 };
 
 type Tracked = { kind: InstallState["kind"]; jobId?: string; error?: string };
+
+/** Whether a finished job's line has had its few seconds on the card. */
+const noteDone = (job: JobState) =>
+  !!job.endedAt && Date.now() - Date.parse(job.endedAt) >= NOTE_MS;
 
 /**
  * Installing a harness from the UI: `harness.install` answers `{ jobId }` at once, the job
@@ -62,8 +66,10 @@ export function useHarnessInstalls(onDone: () => void) {
     const t = tracked[harnessId];
     if (!t) return undefined;
     const job = t.jobId ? installs?.[t.jobId] : undefined;
-    // A finished uninstall has nothing left to show: the card reads Not installed.
-    if (t.kind === "uninstall" && job?.status === "done") return undefined;
+    // A finished uninstall has nothing left to show: the card reads Not installed. A finished
+    // install or update keeps its line ("Codex 0.166.0 is ready.") while the agents are read
+    // again, then clears a few seconds after the job ended (the card wakes then, `doneNote`).
+    if (job?.status === "done" && (t.kind === "uninstall" || noteDone(job))) return undefined;
     const fallback = t.kind === "uninstall" ? "The uninstall stopped." : "The install stopped.";
     return {
       kind: t.kind,

@@ -214,8 +214,8 @@ pub fn register(r: &mut Registry<Services>) {
             }
             if thread.agent_session_id.is_none() {
                 let found = match thread.agent_id.as_str() {
-                    // Pi and Grok Build take an id Gond chooses too.
-                    "pi" | "grok" => Some(session_uuid()),
+                    // Pi, Grok Build and Copilot take an id Gond chooses too.
+                    "pi" | "grok" | "copilot" => Some(session_uuid()),
                     // Codex and Antigravity name their own: find the one this pane started.
                     "codex" if again => {
                         let it = s.runner.interactive(&thread)?;
@@ -239,6 +239,8 @@ pub fn register(r: &mut Registry<Services>) {
                     "agy" if again => dirs::home_dir().and_then(|h| {
                         sessions::agy(&h.join(".gemini"), Path::new(&thread.worktree_path))
                     }),
+                    // Cursor makes the chat's id: ask for an empty one up front.
+                    "cursor" => crate::runner::cursor_new_chat(&s.runner.interactive(&thread)?),
                     _ => None,
                 };
                 if let Some(id) = found {

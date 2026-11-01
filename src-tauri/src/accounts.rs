@@ -264,6 +264,10 @@ pub fn rules(harness: &str) -> Option<HarnessAccounts> {
         "codex" => ("openai", &[Oauth, ApiKey, Gateway], None),
         "agy" => ("google", &[Oauth, ApiKey, Gateway], Some(1)),
         "grok" => ("xai", &[Oauth, ApiKey], None),
+        // Copilot: GitHub sign-ins (COPILOT_HOME), fine-grained tokens, or a model endpoint.
+        "copilot" => ("github", &[Oauth, Token, ApiKey, Gateway], None),
+        // Cursor keeps one sign-in per Windows user (`%APPDATA%\Cursor\auth.json`).
+        "cursor" => ("cursor", &[Oauth, ApiKey], Some(1)),
         _ => return None,
     };
     Some(HarnessAccounts {
@@ -331,6 +335,12 @@ pub fn add(store: &Store, vault: &dyn Vault, root: &Path, new: NewAccount) -> Ap
     if new.kind == Gateway && endpoint.is_none() {
         return Err(AppError::Invalid(
             "a gateway account needs an endpoint".into(),
+        ));
+    }
+    // Copilot has no key of its own: its keys are for a model endpoint (BYOK).
+    if harness == "copilot" && new.kind == ApiKey && endpoint.is_none() {
+        return Err(AppError::Invalid(
+            "a Copilot API key is for a model endpoint: add its base URL".into(),
         ));
     }
     if matches!(new.kind, Oauth | Token) && endpoint.is_some() {
@@ -599,6 +609,37 @@ pub fn identity_from_codex_home(home: &Path) -> Option<Identity> {
         openai["chatgpt_account_id"].as_str(),
         openai["chatgpt_plan_type"].as_str(),
     ))
+}
+
+/// Who a Copilot home is signed in as: its config's last signed-in GitHub user. A user on
+/// another host than github.com (GitHub Enterprise) is named with it.
+pub fn identity_from_copilot_home(home: &Path) -> Option<Identity> {
+    let (host, login) = copilot_user(home)?;
+    let host = host.trim_start_matches("https://").trim_end_matches('/');
+    let name = match host {
+        "" | "github.com" => login,
+        h => format!("{login}@{h}"),
+    };
+    Some(identity("github", &name, None, None))
+}
+
+/// The host and login of the user Copilot last signed in as in `home` (`config.json`'s
+/// `lastLoggedInUser`; the file starts with `//` comment lines).
+pub fn copilot_user(home: &Path) -> Option<(String, String)> {
+    let text = std::fs::read_to_string(home.join("config.json")).ok()?;
+    let json: String = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        );
+    let config: serde_json::Value = serde_json::from_str(&json).ok()?;
+    let user = &config["lastLoggedInUser"];
+    let login = user["login"].as_str().filter(|l| !l.trim().is_empty())?;
+    let host = user["host"].as_str().unwrap_or("https://github.com");
+    Some((host.to_string(), login.to_string()))
 }
 
 /// A key account's identity: its provider, where it goes, and a fingerprint of the key
@@ -1043,6 +1084,59 @@ pub(crate) mod tests {
         add(&store, &vault, root, new("agy", ApiKey, Some("AIza-2"))).unwrap();
         add(&store, &vault, root, new("agy", Gateway, Some("gw-key"))).unwrap();
         assert_eq!(list(&store, Some("agy"), None).unwrap().len(), 4);
+    }
+
+    /// Copilot holds several sign-ins (each its own home), tokens, and keys only with their
+    /// endpoint. Cursor holds one sign-in (Windows-wide) and keys.
+    #[test]
+    fn copilot_and_cursor_accounts() {
+        let (store, vault) = (Store::open_in_memory().unwrap(), MemoryVault::default());
+        let root = Path::new("/gond/accounts");
+        let a = add(&store, &vault, root, new("copilot", Oauth, None)).unwrap();
+        let b = add(&store, &vault, root, new("copilot", Oauth, None)).unwrap();
+        assert!(a.config_dir.is_some() && a.config_dir != b.config_dir);
+        assert_eq!(a.provider, "github");
+        add(
+            &store,
+            &vault,
+            root,
+            new("copilot", Token, Some("github_pat_1")),
+        )
+        .unwrap();
+        let err = add(&store, &vault, root, new("copilot", ApiKey, Some("sk-1"))).unwrap_err();
+        assert!(err.to_string().contains("base URL"), "{err}");
+        let mut byok = new("copilot", ApiKey, Some("sk-1"));
+        byok.endpoint = Some("https://llm.example.com/v1".into());
+        add(&store, &vault, root, byok).unwrap();
+
+        let own = add(&store, &vault, root, new("cursor", Oauth, None)).unwrap();
+        assert_eq!(own.config_dir, None, "Cursor uses its own sign-in");
+        assert!(add(&store, &vault, root, new("cursor", Oauth, None)).is_err());
+        add(&store, &vault, root, new("cursor", ApiKey, Some("key_1"))).unwrap();
+        assert!(add(&store, &vault, root, new("cursor", Token, Some("t"))).is_err());
+    }
+
+    /// Who Copilot is signed in as, from its config (comment lines first, as it writes it).
+    #[test]
+    fn copilot_identity_from_its_config() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(
+            home.path().join("config.json"),
+            "// User settings belong in settings.json.\n// This file is managed automatically.\n{\n  \"loggedInUsers\": [{ \"host\": \"https://github.com\", \"login\": \"dawsja\" }],\n  \"lastLoggedInUser\": { \"host\": \"https://github.com\", \"login\": \"dawsja\" }\n}\n",
+        )
+        .unwrap();
+        let who = identity_from_copilot_home(home.path()).unwrap();
+        assert_eq!((who.key.as_str(), who.label.as_str()), ("dawsja", "dawsja"));
+        std::fs::write(
+            home.path().join("config.json"),
+            r#"{ "lastLoggedInUser": { "host": "https://acme.ghe.com", "login": "dev" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            identity_from_copilot_home(home.path()).unwrap().label,
+            "dev@acme.ghe.com"
+        );
+        assert!(identity_from_copilot_home(Path::new("/nonexistent")).is_none());
     }
 
     #[test]

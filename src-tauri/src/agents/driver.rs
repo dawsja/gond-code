@@ -234,6 +234,89 @@ mod tests {
             .is_err());
     }
 
+    /// Copilot: an extra sign-in gets its own COPILOT_HOME with the GitHub token variables
+    /// unset (they'd win over it), your own sign-in keeps both; a token goes in
+    /// COPILOT_GITHUB_TOKEN, a key with its endpoint in Copilot's provider env. Cursor: one
+    /// sign-in per Windows user, so a sign-in sets nothing; a key is CURSOR_API_KEY.
+    #[test]
+    fn copilot_and_cursor_account_env() {
+        use super::super::{copilot::Copilot, cursor::Cursor};
+        use crate::accounts::{Account, AccountKind, AccountOptions, HeaderValue};
+        let acct = |harness: &str, kind, home: Option<&str>| Account {
+            id: "A1".into(),
+            harness: harness.into(),
+            provider: "p".into(),
+            label: "work".into(),
+            kind,
+            secret_ref: (kind != AccountKind::Oauth).then(|| SecretRef::for_account(harness, "A1")),
+            config_dir: home.map(String::from),
+            endpoint: None,
+            created_at: String::new(),
+            options: Default::default(),
+            identity: None,
+            is_default: false,
+            own: home.is_none(),
+        };
+        let e = Copilot
+            .account_env(&acct("copilot", AccountKind::Oauth, Some("/homes/A1")))
+            .unwrap();
+        assert_eq!(
+            e.env,
+            [("COPILOT_HOME".to_string(), "/homes/A1".to_string())]
+        );
+        for var in ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] {
+            assert!(e.remove.contains(&var), "{var} unset");
+        }
+        let own = Copilot
+            .account_env(&acct("copilot", AccountKind::Oauth, None))
+            .unwrap();
+        assert!(own.env.is_empty());
+        assert!(!own.remove.contains(&"COPILOT_HOME") && !own.remove.contains(&"GH_TOKEN"));
+        let e = Copilot
+            .account_env(&acct("copilot", AccountKind::Token, None))
+            .unwrap();
+        assert_eq!(e.secrets[0].0, "COPILOT_GITHUB_TOKEN");
+        // A key is for a model endpoint: without one it's refused.
+        let mut key = acct("copilot", AccountKind::ApiKey, None);
+        assert!(Copilot.account_env(&key).is_err());
+        key.endpoint = Some("https://llm.example.com/v1".into());
+        key.options = AccountOptions {
+            bearer: true,
+            wire_api: Some("chat".into()),
+            headers: [("X-Team".to_string(), HeaderValue::Plain("core".into()))].into(),
+            ..Default::default()
+        };
+        let e = Copilot.account_env(&key).unwrap();
+        assert_eq!(
+            e.env,
+            [
+                (
+                    "COPILOT_PROVIDER_BASE_URL".to_string(),
+                    "https://llm.example.com/v1".to_string()
+                ),
+                ("COPILOT_PROVIDER_TYPE".to_string(), "openai".to_string()),
+                (
+                    "COPILOT_PROVIDER_WIRE_API".to_string(),
+                    "completions".to_string()
+                ),
+            ]
+        );
+        assert_eq!(e.secrets[0].0, "COPILOT_PROVIDER_BEARER_TOKEN");
+        assert_eq!(e.composed[0].0, "COPILOT_PROVIDER_HEADERS");
+
+        let e = Cursor
+            .account_env(&acct("cursor", AccountKind::Oauth, None))
+            .unwrap();
+        assert!(e.env.is_empty() && e.secrets.is_empty());
+        let e = Cursor
+            .account_env(&acct("cursor", AccountKind::ApiKey, None))
+            .unwrap();
+        assert_eq!(e.secrets[0].0, "CURSOR_API_KEY");
+        assert!(Cursor
+            .account_env(&acct("cursor", AccountKind::Token, None))
+            .is_err());
+    }
+
     #[test]
     fn api_account_options_map_per_harness() {
         use crate::accounts::{

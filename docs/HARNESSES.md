@@ -18,13 +18,19 @@ Facts about the vendors' CLIs move fast; re-check a row when a CLI changes.
 | Grok Build | `grok` | winget `xAI.GrokBuild` · `irm https://x.ai/cli/install.ps1 \| iex` | `grok update` | sign-in, API key | `-s` / `-r <id>`, `-m`, `--effort` |
 | opencode | `opencode` | winget `SST.opencode` · `bun add -g opencode-ai` | `opencode upgrade` | none (signs in itself) | `--continue` |
 | Pi | `pi` | `bun add -g @earendil-works/pi-coding-agent` (Node 22.19+) | Bun | none (signs in itself, `/login`) | `--session-id <id>`, `--model`, `--thinking` |
+| GitHub Copilot | `copilot` | winget `GitHub.Copilot` · `bun add -g @github/copilot` (Node) | winget or Bun, the way it was installed | sign-in, GitHub token, model endpoint | `--session-id <id>`, `--model`, `--reasoning-effort` |
+| Cursor | `cursor-agent` | `irm https://cursor.com/install?win32=true \| iex` | `cursor-agent update` | one sign-in per Windows user, API key | `--resume <chat>`, `--model <model>-<level>` |
 | Custom | any | — | — | — | the saved command and args |
 
 Every built-in agent resumes its conversation when its pane opens again (`pane.start` in
 `api/pty.rs`, `agents/sessions.rs`):
 - **Claude Code** gets a fresh `--session-id` up front, and `--resume <id>` once the session's
   `.jsonl` exists under its config's `projects` folder.
-- **Pi** gets `--session-id <id>`, which creates the session or opens it.
+- **Pi** and **GitHub Copilot** get `--session-id <id>`, which creates the session or opens
+  it (Copilot's is under `~\.copilot\session-state\<id>`).
+- **Cursor** names its own chat, so on a pane's first start Gond asks for an empty one
+  (`cursor-agent create-chat`, in the pane's folder, as its account) and always starts with
+  `--resume <id>`. If Cursor can't make one (signed out, offline), the pane starts fresh.
 - **Grok Build** gets `-s <id>` to create it, then `-r <id>` once its `summary.json` is saved
   under `~\.grok\sessions`.
 - **Codex** names its own session: Gond finds the rollout file the pane started
@@ -49,10 +55,13 @@ re-read from the registry after an install, so a new agent shows without a resta
   (`bun_needs_node`) get Node as a prerequisite in the same job.
 - **Jobs** (`install.rs`): `harness.install` / `harness.update` run in the background with no
   console window, with progress (stages and bytes) at `/installs/{jobId}`, then PATH is
-  refreshed. A running install shows Cancel (`install.cancel`). Without winget, Git, GitHub CLI
+  refreshed. After a vendor script or a Bun install, Gond puts the program's folder on the user
+  PATH (`~\.bun\bin`, `~\.local\bin`, `%LOCALAPPDATA%\cursor-agent`…) if it isn't already, so
+  a terminal can run the agent too; winget does that itself. A running install shows Cancel (`install.cancel`). Without winget, Git, GitHub CLI
   and Node come from their vendors' releases (`fallback.rs`).
-- **Update checks** (`harness.check`, `releases.rs`): the npm registry's `latest` tag or the
-  vendor's GitHub releases, at start and every 6 hours. An update installs only from the Update
+- **Update checks** (`harness.check`, `releases.rs`): the npm registry's `latest` tag, the
+  vendor's GitHub releases, or the version Cursor's install script names, at start and every
+  6 hours. An update installs only from the Update
   button, the way the agent was installed.
 - **Uninstall** (`uninstall.rs`, `harness.uninstall`, human only): every way it was installed
   (winget, npm/Bun globals, the vendor's files), its PATH entries, and with "Remove everything"
@@ -67,16 +76,18 @@ re-read from the registry after an install, so a new agent shows without a resta
 | Grok Build | `~\.grok\{bin,completions,docs,downloads}`, `%LOCALAPPDATA%\grok` | `~\.grok` |
 | opencode | removed by winget or Bun | `~\.config\opencode`, `~\.local\share\opencode`, `~\.local\state\opencode`, `~\.cache\opencode` |
 | Pi | removed by Bun | `~\.pi\agent` |
+| GitHub Copilot | removed by winget or Bun | `~\.copilot` |
+| Cursor | `%LOCALAPPDATA%\cursor-agent`, `%LOCALAPPDATA%\cursor-compile-cache` | `~\.cursor\cli-config.json`, `%APPDATA%\Cursor\auth.json` (both folders are shared with the Cursor editor, so only the CLI's own files go) |
 
 ## 4. Sign-in and accounts
 - An account belongs to one agent (`accounts.rs`): `oauth` (a sign-in), `apiKey`, `token` or
   `gateway`. Secrets live in Windows Credential Manager (`GondCode/…`) and reach the agent's
   process env only at spawn.
 - **Your own sign-in:** at startup and when Settings opens, Gond finds each agent's existing
-  login (`claude auth status`, Codex's `auth.json`) and lists it as the default. A pane on it
-  runs exactly as the CLI does on its own.
+  login (`claude auth status`, Codex's `auth.json`, Copilot's `config.json`, `cursor-agent
+  status`) and lists it as the default. A pane on it runs exactly as the CLI does on its own.
 - **Extra sign-ins** run the agent's own login in the background (`account.signIn`:
-  `claude auth login`, `codex login`, `grok login`) inside a Gond-owned home under
+  `claude auth login`, `codex login`, `grok login`, `copilot login`) inside a Gond-owned home under
   `%LOCALAPPDATA%\GondCode`, passed by env:
 
 | Agent | Sign-in home | API key | Custom endpoint |
@@ -85,6 +96,8 @@ re-read from the registry after an install, so a new agent shows without a resta
 | Codex | `CODEX_HOME` | a per-run provider `-c model_provider='gond'` with the key in `GOND_CODEX_API_KEY` | `model_providers.gond.base_url` (`chat` wire API), headers, Azure `api-version` |
 | Antigravity | none: one Google sign-in per Windows user (its token is in Credential Manager) | `GEMINI_API_KEY` | `AGY_LLM_GATEWAY_URL` + `AGY_LLM_GATEWAY_API_KEY` |
 | Grok Build | `GROK_HOME` | `XAI_API_KEY` | not mapped |
+| GitHub Copilot | `COPILOT_HOME` (the GitHub token variables are unset so the sign-in wins) | a fine-grained token with Copilot Requests as `COPILOT_GITHUB_TOKEN` | its own provider (BYOK): `COPILOT_PROVIDER_BASE_URL`, the key as `_API_KEY` or `_BEARER_TOKEN`, `_TYPE` (openai or azure), `_WIRE_API`, `_HEADERS`; a key needs its endpoint |
+| Cursor | none: one sign-in per Windows user (`%APPDATA%\Cursor\auth.json`, which only `APPDATA` moves) | `CURSOR_API_KEY` | not mapped |
 
 - opencode (`opencode auth login`) and Pi (`/login`) sign in per provider inside their own CLI;
   Gond keeps no accounts for them.
@@ -103,6 +116,8 @@ model accepts. Levels: `none · minimal · low · medium · high · xhigh · max
 | Codex | GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Astra (up to `ultra`), GPT-6 Luna (up to `max`) | `model_reasoning_effort` (not passed to a pane yet) |
 | Antigravity | Gemini 4 Argon, Gemini 3.8 / 3.7 / 3.6 Flash (low/medium/high), Gemini 3.1 Pro (low/high) | part of the model id: `<model>-<level>` |
 | Grok Build | Grok 4.7, Grok 4.7 Fast, Grok 4.6 (low…xhigh), Grok 4.5 (low…high); default high | `--effort` |
+| GitHub Copilot | Auto, Claude Opus / Sonnet / Haiku 5.5 and Fable 5.1, GPT-6.1 Sol, GPT-6 Astra and Luna, Gemini 4 Argon, Grok 4.7, Kimi K3 (its `model` setting, 1.0.105) | `--reasoning-effort`, each family's own levels; Gemini and Kimi at Copilot's default |
+| Cursor | Auto, Composer 2.5, Claude Opus / Sonnet / Haiku 5.5 and Fable 5.1, GPT-5.6 Sol / Terra / Luna, Gemini 4 Argon, Grok 4.7, Kimi K3 (`cursor-agent models`, 2026.10.22) | part of the model id: `<model>-<level>`; unset, the level Cursor's plain name stands for |
 | opencode, Pi, custom | none listed: the agent picks | none (Pi takes `--thinking` when a level is set) |
 
 Google models run through Antigravity only; Gemini CLI is not supported (`check-no-gemini-cli.sh`).
@@ -117,6 +132,8 @@ Google models run through Antigravity only; Gemini CLI is not supported (`check-
 | Codex | its app server's `account/rateLimits/read` |
 | Grok Build | the CLI proxy's `/billing` (monthly credits, weekly share), `grok_usage.rs` |
 | Antigravity | Google's Cloud Code API (`retrieveUserQuotaSummary`, `retrieveUserQuota`) with agy's sign-in |
+| GitHub Copilot | `GET api.github.com/copilot_internal/user` with the sign-in's GitHub token (Credential Manager, `<host>:<login>.copilot-cli`, written as UTF-16): the month's AI credits, and chat and completions where the plan limits them |
+| Cursor | `DashboardService/GetCurrentPeriodUsage` on `api2.cursor.sh` with the sign-in's access token: the billing cycle's included usage and its Auto and API shares, weekly or monthly as the cycle is |
 
-The Claude and Antigravity sources aren't documented; if they change, the bars keep their last
+The Claude, Antigravity, Copilot and Cursor sources aren't documented; if they change, the bars keep their last
 reading. An expired token means no reading until the agent renews it.

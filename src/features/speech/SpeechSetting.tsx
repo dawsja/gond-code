@@ -5,7 +5,7 @@ import { liveBackend, runCommand } from "@/lib/appState";
 import { useSpeech } from "./speech";
 
 /**
- * Settings → General → Speech to text: on downloads NVIDIA's Parakeet model to this PC, off
+ * Settings → General → Transcription: on downloads NVIDIA's Parakeet model to this PC, off
  * (or uninstalling Gond Code) deletes it.
  */
 export function SpeechSetting() {
@@ -29,7 +29,7 @@ export function SpeechSetting() {
           aria-description={unsupported ? speech.error : undefined}
           onCheckedChange={toggle}
           data-command={on ? "speech.disable" : "speech.enable"}
-          aria-label="Speech to text"
+          aria-label="Transcription"
         />
         <span className="grid gap-1">
           <span>

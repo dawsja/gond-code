@@ -73,7 +73,9 @@ pub struct Harness {
     pub provider: &'static str,
     winget: Option<&'static str>,
     vendor_script: Option<&'static str>,
-    /// Where the vendor script puts the program when it doesn't add it to PATH itself.
+    /// Where the vendor script puts the program (under the profile). Gond puts it on the user
+    /// PATH after the script, so a terminal finds it even if the script didn't (a no-op when
+    /// it did).
     vendor_bin_dir: Option<&'static str>,
     bun_package: Option<&'static str>,
     /// The harness's own update subcommand, for vendor installs.
@@ -104,7 +106,7 @@ pub const CATALOG: &[Harness] = &[
         provider: "codex",
         winget: Some("OpenAI.Codex"),
         vendor_script: Some("https://chatgpt.com/codex/install.ps1"),
-        vendor_bin_dir: None,
+        vendor_bin_dir: Some("AppData\\Local\\Programs\\OpenAI\\Codex\\bin"),
         bun_package: Some("@openai/codex"),
         self_update: Some(&["update"]),
         bun_needs_node: true,
@@ -117,7 +119,7 @@ pub const CATALOG: &[Harness] = &[
         provider: "antigravity",
         winget: None,
         vendor_script: Some("https://antigravity.google/cli/install.ps1"),
-        vendor_bin_dir: None,
+        vendor_bin_dir: Some("AppData\\Local\\agy\\bin"),
         bun_package: None,
         // `agy update` is unverified: re-run the installer instead.
         self_update: None,
@@ -131,7 +133,7 @@ pub const CATALOG: &[Harness] = &[
         provider: "grok",
         winget: Some("xAI.GrokBuild"),
         vendor_script: Some("https://x.ai/cli/install.ps1"),
-        vendor_bin_dir: None,
+        vendor_bin_dir: Some(".grok\\bin"),
         bun_package: None,
         self_update: Some(&["update"]),
         bun_needs_node: false,
@@ -167,6 +169,37 @@ pub const CATALOG: &[Harness] = &[
         self_update: None,
         bun_needs_node: true,
         changelog: "https://github.com/earendil-works/pi/releases",
+    },
+    // GitHub Copilot CLI: winget's GitHub.Copilot (a per-user package with a `copilot`
+    // alias), else the npm package through Bun (its loader runs on Node). No Windows
+    // script; `copilot update` updates the winget install in place.
+    Harness {
+        id: "copilot",
+        name: "GitHub Copilot",
+        command: "copilot",
+        provider: "copilot",
+        winget: Some("GitHub.Copilot"),
+        vendor_script: None,
+        vendor_bin_dir: None,
+        bun_package: Some("@github/copilot"),
+        self_update: Some(&["update"]),
+        bun_needs_node: true,
+        changelog: "https://github.com/github/copilot-cli/releases",
+    },
+    // Cursor's CLI: only Cursor's own script (%LOCALAPPDATA%\cursor-agent, which it puts on
+    // the user PATH); `cursor-agent update` updates it.
+    Harness {
+        id: "cursor",
+        name: "Cursor",
+        command: "cursor-agent",
+        provider: "cursor",
+        winget: None,
+        vendor_script: Some("https://cursor.com/install?win32=true"),
+        vendor_bin_dir: Some("AppData\\Local\\cursor-agent"),
+        bun_package: None,
+        self_update: Some(&["update"]),
+        bun_needs_node: false,
+        changelog: "https://cursor.com/changelog",
     },
 ];
 
@@ -329,7 +362,9 @@ impl Harness {
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                &format!("irm {url} | iex"),
+                // Windows PowerShell's download progress bar slows Invoke-WebRequest many
+                // times over, even hidden (Cursor's script took minutes): off for the script.
+                &format!("$ProgressPreference = 'SilentlyContinue'; irm {url} | iex"),
             ]
             .map(String::from)
             .into(),
@@ -345,7 +380,9 @@ impl Harness {
             program: "bun".into(),
             args: vec!["add".into(), "-g".into(), format!("{pkg}@latest")],
             from: format!("npm registry package {pkg}"),
-            adds_to_path: None,
+            // Bun's globals land in ~\.bun\bin, which Bun from winget doesn't put on PATH:
+            // without it a terminal can't run them (Gond's own panes find them anyway).
+            adds_to_path: Some(".bun\\bin".into()),
             provides: self.provides(),
         }
     }
@@ -401,6 +438,8 @@ pub fn source_of(bin: &Path) -> Source {
         || p.contains("/appdata/local/programs/")
         // agy's installer: %LOCALAPPDATA%\agy\bin (recorded on windows-latest, 1.4.10).
         || p.contains("/appdata/local/agy/")
+        // Cursor's script: %LOCALAPPDATA%\cursor-agent (recorded on Windows, 2026.10.22).
+        || p.contains("/appdata/local/cursor-agent/")
         || p.contains("/.grok/")
         || p.contains("/.codex/")
     {
@@ -468,6 +507,10 @@ mod tests {
             (bun.program.as_str(), bun.args.join(" ")),
             ("bun", "add -g @anthropic-ai/claude-code@latest".into())
         );
+        // Bun's global bin goes on PATH, so a terminal can run what it installed (Pi).
+        assert_eq!(bun.adds_to_path.as_deref(), Some(".bun\\bin"));
+        let pi_update = get("pi").unwrap().update_plan(Source::Bun).unwrap();
+        assert_eq!(pi_update.adds_to_path.as_deref(), Some(".bun\\bin"));
         let w = &claude.install_plans()[0].args;
         for flag in ["--silent", "--scope", "user", "--disable-interactivity"] {
             assert!(w.iter().any(|a| a == flag), "winget plan lacks {flag}");
@@ -478,8 +521,22 @@ mod tests {
         assert_eq!(agy.install_plans().len(), 1);
         assert_eq!(
             agy.install_plans()[0].args.last().unwrap(),
-            "irm https://antigravity.google/cli/install.ps1 | iex"
+            "$ProgressPreference = 'SilentlyContinue'; irm https://antigravity.google/cli/install.ps1 | iex"
         );
+        // Every vendor script and Bun install names the folder it leaves the program in, so
+        // Gond puts it on PATH and a terminal can run the agent (winget does that itself).
+        for h in CATALOG {
+            for p in h.install_plans() {
+                if matches!(p.source, Source::Vendor | Source::Bun) {
+                    assert!(
+                        p.adds_to_path.is_some(),
+                        "{} {:?} adds no PATH",
+                        h.id,
+                        p.source
+                    );
+                }
+            }
+        }
         // No harness is ever installed with npm.
         for h in CATALOG {
             assert!(h.install_plans().iter().all(|p| p.program != "npm"));
@@ -554,10 +611,71 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let found = list(Some(dir.path().as_os_str().to_owned()));
         let ids: Vec<_> = found.iter().map(|h| h.id.as_str()).collect();
-        assert_eq!(ids, ["claude", "codex", "agy", "grok", "opencode", "pi"]);
+        assert_eq!(
+            ids,
+            ["claude", "codex", "agy", "grok", "opencode", "pi", "copilot", "cursor"]
+        );
         assert!(found
             .iter()
             .all(|h| !h.installed && h.source.is_none() && !h.can_update));
+    }
+
+    /// Copilot: winget, else Bun (with Node, its loader's runtime). Cursor: only its
+    /// script, then its own updater for that install.
+    #[test]
+    fn copilot_and_cursor_plans() {
+        let copilot = get("copilot").unwrap();
+        let plans = copilot.install_plans();
+        assert_eq!(
+            plans.iter().map(|p| p.source).collect::<Vec<_>>(),
+            [Source::Winget, Source::Bun]
+        );
+        assert!(plans[0]
+            .args
+            .windows(2)
+            .any(|w| w == ["--id", "GitHub.Copilot"]));
+        assert_eq!(plans[1].args.join(" "), "add -g @github/copilot@latest");
+        let empty = tempfile::tempdir().unwrap();
+        let path = Some(empty.path().as_os_str().to_owned());
+        let labels: Vec<_> = install_steps(copilot, Some(1), path)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.label)
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "Install Node.js LTS",
+                "Install Bun",
+                "Install GitHub Copilot"
+            ]
+        );
+
+        let cursor = get("cursor").unwrap();
+        let plans = cursor.install_plans();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(
+            plans[0].args.last().unwrap(),
+            "$ProgressPreference = 'SilentlyContinue'; irm https://cursor.com/install?win32=true | iex"
+        );
+        assert_eq!(plans[0].provides.as_deref(), Some("cursor-agent"));
+        let update = cursor.update_plan(Source::Vendor).unwrap();
+        assert_eq!(
+            (update.program.as_str(), update.args.clone()),
+            ("cursor-agent", vec!["update".to_string()])
+        );
+        for (path, want) in [
+            (
+                r"C:\Users\d\AppData\Local\cursor-agent\cursor-agent.cmd",
+                Source::Vendor,
+            ),
+            (
+                r"C:\Users\d\AppData\Local\Microsoft\WinGet\Packages\GitHub.Copilot_Microsoft.Winget.Source_8wekyb3d8bbwe\copilot.exe",
+                Source::Winget,
+            ),
+        ] {
+            assert_eq!(source_of(Path::new(path)), want, "{path}");
+        }
     }
 
     #[test]

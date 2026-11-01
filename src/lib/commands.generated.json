@@ -1172,6 +1172,8 @@
             "grok",
             "opencode",
             "pi",
+            "copilot",
+            "cursor",
             "custom"
           ],
           "type": "string"
@@ -1254,6 +1256,55 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "string",
       "type": "string"
+    }
+  },
+  {
+    "name": "folder.git",
+    "summary": "The git repository and branch a folder is in, if any (the status bar)",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path of any folder.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "FolderPathInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Where a folder is, for the status bar: its own name, and the repository and branch when\nit's inside one.",
+      "properties": {
+        "branch": {
+          "description": "The checked-out branch, or the commit (short) when HEAD is detached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "folder": {
+          "type": "string"
+        },
+        "repo": {
+          "description": "The repository's name: its main work tree's folder, also from a linked worktree.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "folder"
+      ],
+      "title": "Place",
+      "type": "object"
     }
   },
   {
@@ -2396,7 +2447,7 @@
       "additionalProperties": false,
       "properties": {
         "harnessId": {
-          "description": "A catalog id: \"claude\", \"codex\", \"agy\" or \"grok\".",
+          "description": "A catalog id: \"claude\", \"codex\", \"agy\", \"grok\", \"opencode\", \"pi\", \"copilot\" or \"cursor\".",
           "type": "string"
         }
       },

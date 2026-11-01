@@ -13,9 +13,13 @@ every agent by what it's doing.
   Gond reads the status from each terminal's output, as you would: output still coming means
   working, a question on screen ("Do you want to…", "[y/n]") means it needs you.
 - **Panes.** Each pane is a terminal: an installed agent's own CLI (Claude Code, Codex,
-  Antigravity, Grok Build, opencode, Pi, or a custom agent) or a plain shell. Panes split right
+  Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or a custom agent) or a plain
+  shell. Panes split right
   or down, resize, zoom, rename and restart. The right-click menu has Copy, Paste, Select all,
   Split right, Split down, Rename, Restart, Open folder, Zoom and Close.
+- **Status bar.** A thin bar under the panes: on the left, where the focused pane is (the git
+  repository and branch, or a plain folder, following a shell's `cd`); on the right, Gond Code's
+  version.
 - **New agent (Ctrl+T).** Pick the agent (or a plain terminal), how it signs in (your
   subscription or a pasted API key, saved to Credential Manager), the folder, the model and
   thinking level, and whether it splits right or down.
@@ -31,7 +35,7 @@ every agent by what it's doing.
   Ctrl+Shift+W close pane; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
   selection); Ctrl+Shift+Space speech to text, Esc cancels it. Ctrl+Shift+P opens a searchable
   list of them.
-- **Speech to text** (optional). A local NVIDIA Parakeet model, downloaded when you turn it on
+- **Transcription** (optional, speech to text). A local NVIDIA Parakeet model, downloaded when you turn it on
   in Settings. The text is typed into the focused pane for you to send.
 - **Settings.**
   - **General:** colour, default shell (PowerShell, Command Prompt, Git Bash, WSL; whichever are
@@ -40,7 +44,8 @@ every agent by what it's doing.
     windows). Gond does not count spend.
   - **Agents:** install, update and uninstall each agent CLI; sign-ins and API keys. A running
     install can be cancelled.
-  - **GitHub:** Git and the GitHub CLI install from here if missing; sign in through `gh`.
+  - **Plugins:** what Gond Code connects to, one card each. GitHub: Git and the GitHub CLI
+    install from here if missing; sign in through `gh`.
   - **Updates:** this version, Check for updates, download progress and Restart to update.
     The app also checks every 6 hours; an update installs only when you click.
 

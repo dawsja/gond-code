@@ -50,6 +50,15 @@ const KIND_HINT: Record<Kind, string> = {
     "Any OpenAI- or Anthropic-compatible address: a gateway, a proxy, Azure, Bedrock or Vertex.",
 };
 
+/** Where a harness's key or token isn't what the kind's own hint says. */
+const HARNESS_HINT: Record<string, Partial<Record<Kind, string>>> = {
+  copilot: {
+    token:
+      "A fine-grained GitHub token with the Copilot Requests permission. Classic ghp_ tokens don't work.",
+  },
+  cursor: { apiKey: "A Cursor API key, from your dashboard's Integrations page." },
+};
+
 /** The default address each provider's API key talks to, shown as the placeholder. */
 const DEFAULT_URL: Record<string, string> = {
   anthropic: "https://api.anthropic.com",
@@ -114,7 +123,9 @@ export function AddAccount({
   const rows = (options.headers ?? []).filter((h) => h.name.trim());
   const withUrl = api && can(harness, "endpoint") && !opts?.cloud;
   const url = endpoint.trim();
-  const urlOk = !withUrl || url === "" || endpointOk(url);
+  // Copilot has no API key of its own: a key is always for a model endpoint (BYOK).
+  const urlNeeded = withUrl && harness === "copilot";
+  const urlOk = !withUrl || (url === "" ? !urlNeeded : endpointOk(url));
   const headersOk = !can(harness, "headers") || rows.every((h, _, all) => !headerProblem(h, all));
   const cloudOk =
     !opts?.cloud ||
@@ -132,7 +143,9 @@ export function AddAccount({
     : needsKey && !secret
       ? "The key first"
       : !urlOk
-        ? "The base URL must be https://, or http://localhost for a server on this PC"
+        ? url === ""
+          ? "The base URL first: a Copilot key is for a model endpoint"
+          : "The base URL must be https://, or http://localhost for a server on this PC"
         : !headersOk
           ? "Fix the headers first"
           : !cloudOk
@@ -200,7 +213,7 @@ export function AddAccount({
           </ToggleGroup>
         </Field>
 
-        <Field label="How it signs in" hint={KIND_HINT[k]}>
+        <Field label="How it signs in" hint={HARNESS_HINT[harness]?.[k] ?? KIND_HINT[k]}>
           <ToggleGroup
             type="single"
             value={k}
@@ -236,7 +249,14 @@ export function AddAccount({
         </Field>
 
         {withUrl && (
-          <Field label="Base URL" hint="Optional: a gateway, a proxy, Azure or a server on this PC">
+          <Field
+            label="Base URL"
+            hint={
+              urlNeeded
+                ? "The model endpoint Copilot uses instead of GitHub's: OpenAI-compatible, Azure or a server on this PC"
+                : "Optional: a gateway, a proxy, Azure or a server on this PC"
+            }
+          >
             <Input
               aria-label="Base URL"
               data-local="account-draft"

@@ -100,16 +100,16 @@ Agents +.
 
 ## 6. Settings
 
-A section nav (General, Usage, Agents, GitHub, Updates) and the section; below 1100px the nav becomes a
+A section nav (General, Usage, Agents, Plugins, Updates) and the section; below 1100px the nav becomes a
 row of tabs.
-- **General:** Colour (tint swatches), Default shell, Speech to text (download with progress, or
+- **General:** Colour (tint swatches), Default shell, Transcription (speech to text: download with progress, or
   why this CPU can't), Closing the window (keep running in the tray).
 - **Usage:** each account's plan windows as bars that fill as the plan is used (green, then
   amber, then red), with what's left and when it resets. No costs.
 - **Agents:** a card per agent: version → latest, install source, Install / Update / Check, the
   sign-in actions (Use an API key, Sign in where supported) and a muted Uninstall that asks
   first: **Keep my settings and sign-ins** or **Remove everything**, listing what goes.
-- **GitHub:** the `gh` accounts (Active badge, scopes, Switch to, Disconnect) and Add account:
+- **Plugins:** one card per plugin. GitHub: the `gh` accounts (Active badge, scopes, Switch to, Disconnect) and Add account:
   Sign in with browser (a large one-time code, Copy, Open GitHub, completes by itself) or Use a
   token (masked, piped to `gh`). Git and GitHub CLI install from here if missing.
 - **Updates:** this version and Check for updates. When a newer one is ready: its version, its

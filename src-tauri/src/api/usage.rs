@@ -121,6 +121,17 @@ pub fn refresh(s: &Services, fetch: crate::endpoint_test::Fetch, post: crate::en
                 "agy" => crate::plan_usage::agy_token()
                     .map(|t| crate::plan_usage::agy(&t, post))
                     .unwrap_or_default(),
+                "copilot" => home
+                    .or_else(|| std::env::var_os("COPILOT_HOME").map(Into::into))
+                    .or_else(|| dirs::home_dir().map(|h| h.join(".copilot")))
+                    .and_then(|h| crate::plan_usage::copilot_token(&h))
+                    .map(|t| crate::plan_usage::copilot(&t, fetch))
+                    .unwrap_or_default(),
+                // One sign-in per Windows user (%APPDATA%\Cursor).
+                "cursor" => dirs::data_dir()
+                    .and_then(|r| crate::plan_usage::cursor_token(&r))
+                    .map(|t| crate::plan_usage::cursor(&t, post))
+                    .unwrap_or_default(),
                 _ => vec![],
             };
             if !windows.is_empty() {

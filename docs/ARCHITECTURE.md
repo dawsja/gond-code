@@ -51,6 +51,8 @@ Each agent resumes its conversation when its pane opens again (`api/pty.rs`,
 |---|---|---|
 | Claude Code | `--session-id <new uuid>` | `--resume <id>` once its `.jsonl` exists, else a new id |
 | Pi | `--session-id <new uuid>` (create or open) | the same |
+| GitHub Copilot | `--session-id <new uuid>` (create or open) | the same |
+| Cursor | `cursor-agent create-chat`, then `--resume <id>` | `--resume <id>` |
 | Grok Build | `-s <new uuid>` | `-r <id>` once Grok has saved it |
 | Codex | nothing | finds the rollout file under `~/.codex/sessions` (or the account's `CODEX_HOME`) that this pane started in its folder, then `codex resume <id>` |
 | Antigravity | nothing | the folder's entry in `last_conversations.json`, then `--conversation <id>` |
@@ -81,7 +83,7 @@ src/                       React app
   features/usage/          Settings → Usage
   features/harness/        Settings → Agents (install, update, uninstall)
   features/accounts/       sign-in and API-key flows
-  features/connections/    Settings → GitHub
+  features/connections/    Settings → Plugins (GitHub)
   features/setup/          Git and GitHub CLI installs and the progress toast
   features/speech/         speech to text setting and recording
   features/shell/          workspace hook, the sidebar's update button
@@ -94,7 +96,8 @@ src-tauri/src/             Rust
                            layout, models, projects, pty, signin, speech, threads, usage, git,
                            github, builtin)
   commands/                thin #[tauri::command] wrappers (command_run, state_get, window)
-  agents/                  driver.rs (trait), claude, codex, agy, grok, opencode, pi, custom,
+  agents/                  driver.rs (trait), claude, codex, agy, grok, opencode, pi, copilot,
+                           cursor, custom,
                            detect.rs, models.rs, sessions.rs (finding an agent's session)
   runner.rs                a pane's agent command
   pty/                     PtyManager, scrollback

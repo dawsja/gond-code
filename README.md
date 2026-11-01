@@ -1,8 +1,8 @@
 # Gond Code
 
 A Windows app that hosts your coding agents in a terminal workspace. Each pane is a terminal
-running an agent's own interactive CLI (Claude Code, Codex, Antigravity, Grok Build, opencode
-or Pi) or a plain shell. Panes are grouped into named **Sessions**, and the sidebar lists every
+running an agent's own interactive CLI (Claude Code, Codex, Antigravity, Grok Build, opencode,
+Pi, GitHub Copilot or Cursor) or a plain shell. Panes are grouped into named **Sessions**, and the sidebar lists every
 agent by what it's doing: needs you, working, done or idle.
 
 Gond Code doesn't sit between you and the agent. Each one runs as it would in your own terminal,
@@ -33,7 +33,7 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
 - **Settings:** General (colour, default shell, speech to text, close to tray), Usage (plan
   limits), Agents (install, update, uninstall), GitHub (Git and GitHub CLI install and sign-in),
   Updates.
-- **Speech to text**, optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say
+- **Transcription** (speech to text), optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say
   into the focused pane.
 - **Ctrl+Shift+P** lists every keyboard shortcut.
 

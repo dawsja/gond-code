@@ -1,7 +1,7 @@
 import { InstallControl } from "./InstallControl";
 import { UninstallButton, UninstallDialog } from "./UninstallDialog";
 import type { useHarnessInstalls } from "./useHarnessInstalls";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAgentAccountActions, type AccountFlows } from "@/features/accounts/AgentAccountButtons";
 import {
   DropdownMenu,
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isRegistered } from "@/lib/appState";
-import { doneNote, type JobState } from "@/lib/setup";
+import { doneNote, NOTE_MS, type JobState } from "@/lib/setup";
 import {
   ArrowUpCircleIcon,
   DownloadIcon,
@@ -89,8 +89,7 @@ export function HarnessManager({
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Harnesses</h2>
             <p className="max-w-[72ch] text-sm text-muted-foreground">
-              The agent programs Gond Code runs. Install and update them here; nothing opens a
-              browser.
+              The agent programs Gond Code runs. Install, update and sign in to them here.
             </p>
           </div>
           <Button variant="outline" data-command="harness.check" onClick={check}>
@@ -157,6 +156,25 @@ export function HarnessManager({
  * primary action (Install, Update or Check). Right: Use an API key, Sign in, then a muted
  * Uninstall; on a narrow card those fold into a ⋯ menu, Uninstall last.
  */
+/**
+ * A finished job's line for this agent ("Pi is ready.", "Pi is uninstalled."), while it's fresh:
+ * it clears `NOTE_MS` after the job ends, and isn't there when you come back later.
+ */
+function useFreshNote(jobs: JobState[], name: string): string | undefined {
+  const [now, setNow] = useState(() => Date.now());
+  const note = doneNote(jobs, name, now);
+  // The latest end among the jobs: wake once its line is due to go.
+  const last = Math.max(0, ...jobs.map((j) => (j.endedAt ? Date.parse(j.endedAt) : 0)));
+  useEffect(() => {
+    const left = last + NOTE_MS - Date.now();
+    if (left <= 0) return;
+    const t = window.setTimeout(() => setNow(Date.now()), left + 50);
+    return () => window.clearTimeout(t);
+  }, [last]);
+  // A job that ends after `now` was read counts as fresh until that timer reads it again.
+  return note;
+}
+
 function HarnessCard({
   harness: h,
   status,
@@ -189,6 +207,7 @@ function HarnessCard({
   const account = useAgentAccountActions(h, accountFlows ?? EMPTY_FLOWS);
   const hasAccount = !!accountFlows && account.any;
   const state = installs?.state(h.id);
+  const note = useFreshNote(jobs, h.label);
   const canUninstall = h.installed && status !== "self";
   const uninstallWhy = n ? `Close its ${n === 1 ? "pane" : `${n} panes`} first` : undefined;
   const uninstallOff =
@@ -274,10 +293,10 @@ function HarnessCard({
           }
         />
       )}
-      {!state && doneNote(jobs, h.label) && (
-        <Hint text={doneNote(jobs, h.label)}>
+      {!state && note && (
+        <Hint text={note}>
           <p role="status" className="truncate text-xs text-tone-ok">
-            {doneNote(jobs, h.label)}
+            {note}
           </p>
         </Hint>
       )}
@@ -312,7 +331,8 @@ function HarnessCard({
                 {hasAccount && account.items}
                 {hasAccount && canUninstall && <DropdownMenuSeparator />}
                 {canUninstall && (
-                  <Hint text={uninstallWhy}>
+                  // A grid, so the item spans the menu (and its highlight) like the others.
+                  <Hint text={uninstallWhy} wrapClassName="grid">
                     <DropdownMenuItem
                       data-command="harness.uninstall"
                       data-arg={h.id}

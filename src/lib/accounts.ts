@@ -32,6 +32,8 @@ export const CAPS: Record<string, Capability[]> = {
   codex: ["endpoint", "headers", "organization", "azure", "wireApi"],
   agy: ["endpoint"],
   grok: [],
+  copilot: ["endpoint", "bearer", "headers", "azure", "wireApi"],
+  cursor: [],
 };
 
 export const can = (harness: string, c: Capability) => (CAPS[harness] ?? []).includes(c);

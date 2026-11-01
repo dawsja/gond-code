@@ -15,6 +15,9 @@ use crate::agents::detect;
 pub enum Latest {
     Npm(&'static str),
     GitHub(&'static str),
+    /// The vendor's install script, which names the version it installs
+    /// (Cursor's: `$version = '2026.10.22-27dcf5f'`).
+    Script(&'static str),
 }
 
 /// Per catalog harness. Grok Build publishes no GitHub releases and its changelog page
@@ -24,6 +27,8 @@ pub fn source(harness_id: &str) -> Option<Latest> {
         "claude" => Some(Latest::Npm("@anthropic-ai/claude-code")),
         "codex" => Some(Latest::Npm("@openai/codex")),
         "agy" => Some(Latest::GitHub("google-antigravity/antigravity-cli")),
+        "copilot" => Some(Latest::Npm("@github/copilot")),
+        "cursor" => Some(Latest::Script("https://cursor.com/install?win32=true")),
         _ => None,
     }
 }
@@ -33,15 +38,24 @@ impl Latest {
         match self {
             Latest::Npm(pkg) => format!("https://registry.npmjs.org/{pkg}/latest"),
             Latest::GitHub(repo) => format!("https://api.github.com/repos/{repo}/releases/latest"),
+            Latest::Script(url) => url.to_string(),
         }
     }
 
     /// The version in the response body.
     pub fn parse(self, body: &str) -> Option<String> {
+        if let Latest::Script(_) = self {
+            let line = body
+                .lines()
+                .find(|l| l.trim_start().starts_with("$version"))?;
+            let v = line.split('\'').nth(1)?;
+            return (!v.is_empty()).then(|| v.to_string());
+        }
         let v: Value = serde_json::from_str(body).ok()?;
         let raw = match self {
             Latest::Npm(_) => v["version"].as_str()?,
             Latest::GitHub(_) => v["tag_name"].as_str()?,
+            Latest::Script(_) => return None,
         };
         detect::parse_version(&raw.replace(['-', '_'], " ").replacen("rust v", "", 1))
             .or_else(|| detect::parse_version(raw))
@@ -133,6 +147,20 @@ mod tests {
             Some("0.166.0")
         );
         assert_eq!(gh.parse("not json"), None);
+        // Cursor names its version in its install script.
+        let script = source("cursor").unwrap();
+        assert_eq!(
+            script
+                .parse(
+                    "$downloadUrl = 'https://downloads.cursor.com/lab/2026.10.22-27dcf5f/'
+$version = '2026.10.22-27dcf5f'
+"
+                )
+                .as_deref(),
+            Some("2026.10.22-27dcf5f")
+        );
+        assert!(newer("2026.10.29-a1b2c3d", "2026.10.22-27dcf5f"));
+        assert!(!newer("2026.10.22-27dcf5f", "2026.10.22-27dcf5f"));
         assert_eq!(source("grok"), None);
     }
 

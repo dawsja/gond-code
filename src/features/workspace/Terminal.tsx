@@ -10,6 +10,7 @@ import { callOrRun, isRegistered, liveBackend, runCommand } from "@/lib/appState
 import { on, openExternal } from "@/lib/ipc";
 import { onBeforeRestart } from "@/lib/restart";
 import { errorText } from "@/lib/types";
+import { setPaneFolder } from "./paneFolder";
 import { promptFolder } from "./prompt";
 import { asks, setStatus, type Status } from "./status";
 
@@ -203,6 +204,11 @@ export function Terminal({ paneId, open, watch, active, onFocus, onShortcut }: P
     });
     const tick = window.setInterval(() => {
       if (state === "exited") return;
+      // A shell can cd anywhere: the status bar follows the folder its prompt shows.
+      if (!live.current.watch) {
+        const folder = promptFolder(lines());
+        if (folder) setPaneFolder(paneId, folder);
+      }
       const now = Date.now();
       // A question on screen is the agent waiting for you, even while it redraws (Codex's
       // folder-trust prompt animates).
@@ -290,6 +296,7 @@ export function Terminal({ paneId, open, watch, active, onFocus, onShortcut }: P
       disposed = true;
       stopSaving();
       window.clearInterval(tick);
+      setPaneFolder(paneId, undefined);
       resize.disconnect();
       stopData.then((stop) => stop());
       stopExit.then((stop) => stop());

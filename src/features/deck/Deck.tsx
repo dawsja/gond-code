@@ -38,7 +38,8 @@ import { NewAgent } from "@/features/workspace/NewAgent";
 import { SessionsSidebar } from "@/features/workspace/SessionsSidebar";
 import { useStatuses } from "@/features/workspace/status";
 import { useSessions } from "@/features/workspace/useSessions";
-import { panes } from "@/features/workspace/layout";
+import { find, panes } from "@/features/workspace/layout";
+import { StatusBar } from "@/features/workspace/StatusBar";
 import { Workspace } from "@/features/workspace/Workspace";
 
 const URL_TOAST = import.meta.env.DEV && new URLSearchParams(window.location.search).has("toast");
@@ -73,6 +74,8 @@ const PROVIDERS: Record<string, string[]> = {
   codex: ["openai"],
   agy: ["google"],
   grok: ["xai"],
+  copilot: ["github"],
+  cursor: ["cursor"],
 };
 
 export function Deck() {
@@ -92,7 +95,7 @@ export function Deck() {
   const installedIds = agents.filter((a) => a.installed).map((a) => a.id);
   const installs = useAppState((t) => t.installs as Record<string, JobState> | undefined);
   const liveJobs = useMemo(() => Object.values(installs ?? {}), [installs]);
-  // GitHub through gh (Settings → GitHub): signed-in accounts live at /github.
+  // GitHub through gh (Settings → Plugins): signed-in accounts live at /github.
   const github = useAppState((t) => t.github as GithubStatus | undefined);
   const ghLive = !DEMO && liveBackend();
   const liveModels = useModels(installedIds);
@@ -154,7 +157,7 @@ export function Deck() {
   useEffect(() => {
     if (panel === "settings" && section === "harnesses") discover();
   }, [panel, section, discover]);
-  // Settings → GitHub reads gh again when it opens (a sign-in made in a terminal shows up).
+  // Settings → Plugins reads gh again when it opens (a sign-in made in a terminal shows up).
   useEffect(() => {
     if (!ghLive || panel !== "settings" || section !== "connections") return;
     if (!isRegistered("github.status")) return;
@@ -209,7 +212,7 @@ export function Deck() {
     return () => window.removeEventListener("keydown", key);
   }, [sp]);
   const setup = useSetup();
-  // The set-up job (Settings → GitHub installs Git and gh) carries on in a toast; ?toast shows one
+  // The set-up job (Settings → Plugins installs Git and gh) carries on in a toast; ?toast shows one
   // on the mock build.
   const [job, setJob] = useState<JobState | undefined>(() => (URL_TOAST ? MOCK_JOB : undefined));
   // Hide hides this job's toast; the next install shows its own.
@@ -224,6 +227,11 @@ export function Deck() {
   }, [liveJob?.id]);
 
   const projects = DEMO ? MOCK_PROJECTS : liveProjects;
+  // The status bar follows the focused pane's folder.
+  const focusedPane = sp.current?.layout.focus
+    ? find(sp.current.layout.root, sp.current.layout.focus)
+    : undefined;
+  const focusedProject = projects.find((p) => p.id === focusedPane?.projectId);
   return (
     <TooltipProvider delayDuration={300}>
       <div
@@ -328,6 +336,20 @@ export function Deck() {
             ))}
           <Dictation target={() => sp.current?.layout.focus} />
           <KeyHelp />
+          <StatusBar
+            paneId={focusedPane?.id}
+            path={focusedProject?.path}
+            mock={
+              focusedProject && {
+                folder: focusedProject.name,
+                ...(focusedProject.vcs !== "folder" && {
+                  repo: focusedProject.name,
+                  branch: focusedProject.defaultBranch,
+                }),
+              }
+            }
+            version={version}
+          />
         </main>
         <NewAgent
           open={sp.picker.open}

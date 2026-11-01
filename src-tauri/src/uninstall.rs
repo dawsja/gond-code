@@ -103,12 +103,35 @@ fn footprint(id: &str, r: &Roots) -> Footprint {
             ],
         },
         // Pi installs through Bun (removed by Bun); its settings, sign-ins and sessions are
-        // ~\.pigent.
+        // ~\.pi\agent.
         "pi" => Footprint {
             install: vec![],
             path: vec![],
             shared_path: None,
             config: vec![h.join(".pi").join("agent")],
+        },
+        // winget's GitHub.Copilot or the @github/copilot package remove the program
+        // themselves; its settings, sessions and downloaded updates are ~\.copilot.
+        "copilot" => Footprint {
+            install: vec![],
+            path: vec![],
+            shared_path: None,
+            config: vec![h.join(".copilot")],
+        },
+        // %LOCALAPPDATA%\cursor-agent (its versions and launchers) and Node's compile cache
+        // for it. ~\.cursor and %APPDATA%\Cursor are shared with the Cursor editor, so only
+        // the CLI's own files there go.
+        "cursor" => Footprint {
+            install: vec![l.join("cursor-agent"), l.join("cursor-compile-cache")],
+            path: vec![l.join("cursor-agent")],
+            shared_path: None,
+            config: vec![
+                h.join(".cursor").join("cli-config.json"),
+                h.join(".cursor").join("agent-cli-state.json"),
+                h.join(".cursor").join("statsig-cache.json"),
+                h.join(".cursor").join("chats"),
+                r.roaming.join("Cursor").join("auth.json"),
+            ],
         },
         _ => Footprint {
             install: vec![],
@@ -239,15 +262,20 @@ pub fn plan(
             .any(|e| crate::pathenv::same_entry(e, &show(d)))
     };
     let mut entries: Vec<PathBuf> = f.path.iter().filter(|d| on_path(d)).cloned().collect();
-    if let Some(shared) = &f.shared_path {
-        let left = std::fs::read_dir(shared)
+    let mut shared: Vec<PathBuf> = f.shared_path.iter().cloned().collect();
+    // Bun's global bin, which Gond puts on PATH for Bun installs: shared by every Bun tool.
+    if methods.iter().any(|m| m == "bun") {
+        shared.push(r.home.join(".bun").join("bin"));
+    }
+    for dir in &shared {
+        let left = std::fs::read_dir(dir)
             .map(|d| {
                 d.filter_map(Result::ok)
                     .any(|e| !deletes.contains(&e.path()))
             })
             .unwrap_or(false);
-        if on_path(shared) && !left {
-            entries.push(shared.clone());
+        if on_path(dir) && !left {
+            entries.push(dir.clone());
         }
     }
 
@@ -357,6 +385,75 @@ mod tests {
         );
     }
 
+    /// Cursor's CLI: its folder, its compile cache and its PATH entry; with everything, only
+    /// the CLI's own files in ~\.cursor and %APPDATA%\Cursor, which the Cursor editor shares.
+    #[test]
+    fn cursor_removes_only_the_clis_files() {
+        let t = tempfile::tempdir().unwrap();
+        let r = roots(t.path());
+        touch(&r.local.join(j("cursor-agent/cursor-agent.cmd")));
+        touch(&r.local.join(j("cursor-compile-cache/x")));
+        touch(&r.home.join(j(".cursor/cli-config.json")));
+        touch(&r.home.join(j(".cursor/chats/abc/def/store.db")));
+        touch(&r.home.join(j(".cursor/extensions/editor-ext/package.json")));
+        touch(&r.roaming.join(j("Cursor/auth.json")));
+        touch(&r.roaming.join(j("Cursor/User/settings.json")));
+        let h = crate::harness::get("cursor").unwrap();
+        let entry = show(&r.local.join("cursor-agent"));
+
+        let p = plan(h, &r, std::slice::from_ref(&entry), false, &[]);
+        assert_eq!(p.methods, ["vendor"]);
+        assert_eq!(
+            p.deletes,
+            [
+                show(&r.local.join("cursor-agent")),
+                show(&r.local.join("cursor-compile-cache"))
+            ]
+        );
+        assert_eq!(p.path_entries, std::slice::from_ref(&entry));
+
+        let all = plan(h, &r, &[entry], true, &[]);
+        for want in [".cursor/cli-config.json", ".cursor/chats"] {
+            assert!(all.deletes.contains(&show(&r.home.join(j(want)))), "{want}");
+        }
+        assert!(all
+            .deletes
+            .contains(&show(&r.roaming.join(j("Cursor/auth.json")))));
+        let editor = [
+            r.home.join(j(".cursor/extensions/editor-ext/package.json")),
+            r.roaming.join(j("Cursor/User/settings.json")),
+        ];
+        assert!(
+            !all.deletes
+                .iter()
+                .any(|d| editor.iter().any(|e| e.starts_with(d))),
+            "never the editor's files: {:?}",
+            all.deletes
+        );
+    }
+
+    /// Copilot from winget: winget removes it; with everything, ~\.copilot goes too.
+    #[test]
+    fn copilot_from_winget() {
+        let t = tempfile::tempdir().unwrap();
+        let r = roots(t.path());
+        touch(&r.local.join(j(
+            "Microsoft/WinGet/Packages/GitHub.Copilot_Microsoft.Winget.Source_8wekyb3d8bbwe/copilot.exe",
+        )));
+        touch(&r.home.join(j(".copilot/config.json")));
+        let h = crate::harness::get("copilot").unwrap();
+        let p = plan(h, &r, &[], false, &[]);
+        assert_eq!(p.methods, ["winget"]);
+        assert!(p.deletes.is_empty());
+        assert!(p.steps[0]
+            .plan
+            .args
+            .join(" ")
+            .contains("uninstall --id GitHub.Copilot"));
+        let all = plan(h, &r, &[], true, &[]);
+        assert_eq!(all.deletes, [show(&r.home.join(".copilot"))]);
+    }
+
     #[test]
     fn agy_removes_its_folder_and_path_entry_and_only_its_gemini_settings() {
         let t = tempfile::tempdir().unwrap();
@@ -376,6 +473,29 @@ mod tests {
         );
         assert_eq!(p.path_entries, [entry]);
         assert_eq!(p.steps.len(), 2);
+    }
+
+    /// Pi from Bun: its shims and package go, and ~\.bun\bin comes off PATH once nothing
+    /// else is in it; while another Bun tool is there, the entry stays.
+    #[test]
+    fn bun_bin_leaves_path_with_the_last_bun_tool() {
+        let t = tempfile::tempdir().unwrap();
+        let r = roots(t.path());
+        let bin = r.home.join(j(".bun/bin"));
+        touch(&bin.join("pi.exe"));
+        touch(&bin.join("pi.bunx"));
+        touch(&r.home.join(j(
+            ".bun/install/global/node_modules/@earendil-works/pi-coding-agent/package.json",
+        )));
+        let h = crate::harness::get("pi").unwrap();
+        let path = vec![show(&bin)];
+        let p = plan(h, &r, &path, false, &[]);
+        assert_eq!(p.methods, ["bun"]);
+        assert!(p.deletes.contains(&show(&bin.join("pi.exe"))));
+        assert_eq!(p.path_entries, [show(&bin)]);
+
+        touch(&bin.join("opencode.exe"));
+        assert!(plan(h, &r, &path, false, &[]).path_entries.is_empty());
     }
 
     #[test]

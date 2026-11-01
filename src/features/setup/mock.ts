@@ -1,4 +1,4 @@
-// Set-up jobs (Settings → GitHub installs Git and gh) for the mock build's toast (?toast) and the
+// Set-up jobs (Settings → Plugins installs Git and gh) for the mock build's toast (?toast) and the
 // tests: one running, one installing, one failed.
 import type { JobState } from "@/lib/setup";
 

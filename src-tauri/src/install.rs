@@ -186,6 +186,10 @@ pub struct JobState {
     pub stage: Option<Stage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stage_started_at: Option<String>,
+    /// When the job finished (done, failed or cancelled), so a card's "is ready" line can
+    /// clear a while after.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
     /// While downloading: bytes so far and the size, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bytes: Option<Bytes>,
@@ -435,7 +439,7 @@ pub fn run(
     jobs()
         .get_or_insert_with(HashMap::new)
         .insert(id.clone(), control.clone());
-    let job = run_job(
+    let mut job = run_job(
         id,
         title,
         steps,
@@ -448,6 +452,8 @@ pub fn run(
     if let Some(m) = jobs().as_mut() {
         m.remove(&job.id);
     }
+    job.ended_at = Some(crate::store::now());
+    progress.update(&job);
     job
 }
 
@@ -478,6 +484,7 @@ fn run_job(
         percent: None,
         stage: None,
         stage_started_at: None,
+        ended_at: None,
         bytes: None,
         speed: None,
         byte_samples: Default::default(),
@@ -1230,12 +1237,7 @@ fn gond_step(plan: &Plan, job: &mut JobState) -> Result<(), String> {
                         "Gond won't delete {p}: it isn't inside your user folder."
                     ));
                 }
-                let gone = if path.is_dir() {
-                    std::fs::remove_dir_all(path)
-                } else {
-                    std::fs::remove_file(path)
-                };
-                match gone {
+                match remove_soon(path, LOCK_WAIT) {
                     Ok(()) => keep_tail(&mut job.details, &format!("Removed {p}")),
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                     Err(e) => {
@@ -1263,6 +1265,30 @@ fn gond_step(plan: &Plan, job: &mut JobState) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!("unknown Gond step {other}")),
+    }
+}
+
+/// How long a removal waits out a file that's briefly in use.
+const LOCK_WAIT: Duration = Duration::from_secs(5);
+
+/// Removes `path`, waiting up to `wait` while Windows says it's in use: a version check
+/// (`agy --version` from the Agents page) or a virus scan holds an .exe for a moment, and
+/// a running .exe can't be deleted. Any other error answers at once.
+fn remove_soon(path: &std::path::Path, wait: Duration) -> std::io::Result<()> {
+    let start = std::time::Instant::now();
+    loop {
+        let gone = if path.is_dir() {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        };
+        match gone {
+            // Access denied (5) or a sharing violation (32): in use, for now.
+            Err(e) if matches!(e.raw_os_error(), Some(5) | Some(32)) && start.elapsed() < wait => {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            other => return other,
+        }
     }
 }
 
@@ -1316,6 +1342,30 @@ fn put_on_path(rel: &str, job: &mut JobState) {
 mod tests {
     use super::*;
     use crate::harness::Source;
+
+    /// A file another program has open without sharing (as a running .exe is) can't be
+    /// deleted; the removal waits for it to be let go, and gives up plainly without a wait.
+    #[cfg(windows)]
+    #[test]
+    fn removal_waits_out_a_file_in_use() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("agy.exe");
+        std::fs::write(&exe, "x").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&exe)
+            .unwrap();
+        assert!(remove_soon(&exe, Duration::ZERO).is_err());
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(600));
+            drop(held);
+        });
+        remove_soon(&exe, Duration::from_secs(5)).unwrap();
+        release.join().unwrap();
+        assert!(!exe.exists());
+    }
 
     #[derive(Default)]
     struct Recorder(Mutex<Vec<JobState>>);
@@ -1956,6 +2006,7 @@ mod tests {
             percent: None,
             stage: None,
             stage_started_at: None,
+            ended_at: None,
             bytes: None,
             speed: None,
             byte_samples: Default::default(),

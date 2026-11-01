@@ -5,6 +5,8 @@
 pub mod agy;
 pub mod claude;
 pub mod codex;
+pub mod copilot;
+pub mod cursor;
 pub mod custom;
 pub mod detect;
 pub mod driver;
@@ -25,6 +27,8 @@ pub enum AgentKind {
     Grok,
     Opencode,
     Pi,
+    Copilot,
+    Cursor,
     Custom,
 }
 
@@ -91,6 +95,8 @@ pub const BUILT_IN: &[(&str, AgentKind, &str, &str)] = &[
     ("grok", AgentKind::Grok, "Grok Build", "grok"),
     ("opencode", AgentKind::Opencode, "opencode", "opencode"),
     ("pi", AgentKind::Pi, "Pi", "pi"),
+    ("copilot", AgentKind::Copilot, "GitHub Copilot", "copilot"),
+    ("cursor", AgentKind::Cursor, "Cursor", "cursor-agent"),
 ];
 
 /// One plan-usage window a harness reported: the 5-hour session, the week…

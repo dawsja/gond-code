@@ -1,7 +1,7 @@
 import {
   ArrowUpCircleIcon,
   ChartColumnIcon,
-  LinkIcon,
+  PlugIcon,
   SlidersHorizontalIcon,
   WrenchIcon,
   type LucideIcon,
@@ -18,7 +18,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: SlidersHorizontalIcon },
   { id: "usage", label: "Usage", icon: ChartColumnIcon },
   { id: "harnesses", label: "Agents", icon: WrenchIcon },
-  { id: "connections", label: "GitHub", icon: LinkIcon },
+  { id: "connections", label: "Plugins", icon: PlugIcon },
   { id: "updates", label: "Updates", icon: ArrowUpCircleIcon },
 ];
 

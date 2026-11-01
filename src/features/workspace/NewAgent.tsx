@@ -35,6 +35,8 @@ const PROVIDERS: Record<string, string[]> = {
   codex: ["openai"],
   agy: ["google"],
   grok: ["xai"],
+  copilot: ["github"],
+  cursor: ["cursor"],
 };
 
 /** The agent's accounts: its own sign-ins, then keys for its provider; the default first. */

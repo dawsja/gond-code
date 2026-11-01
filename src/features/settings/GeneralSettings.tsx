@@ -94,7 +94,10 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
     <section aria-label="General" className="flex max-w-xl flex-col gap-5">
       <header>
         <h2 className="text-lg font-semibold">General</h2>
-        <p className="text-sm text-muted-foreground">Saved on this computer.</p>
+        <p className="text-sm text-muted-foreground">
+          How Gond Code looks and works: its colour, the shell new terminals open in, transcription
+          and what closing the window does.
+        </p>
       </header>
       <Field label="Colour">
         <div role="radiogroup" aria-label="Colour" className="flex gap-2">
@@ -115,9 +118,8 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
       </Field>
       <Field label="Default shell">
         <ShellPicker value={settings.shell} onChange={(shell) => onChange({ shell })} />
-        <p className="text-xs text-muted-foreground">Used for new terminals.</p>
       </Field>
-      <Field label="Speech to text">
+      <Field label="Transcription">
         <SpeechSetting />
       </Field>
       <Field label="Closing the window">

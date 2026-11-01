@@ -3,7 +3,7 @@ import { liveBackend, runCommand, useAppState } from "@/lib/appState";
 import type { GithubStatus } from "@/lib/github";
 import type { IdentityStatus, JobState, Prereq } from "@/lib/setup";
 
-/** Git and the GitHub CLI on this PC (Settings → GitHub); Node and Bun join when an agent needs them. */
+/** Git and the GitHub CLI on this PC (Settings → Plugins); Node and Bun join when an agent needs them. */
 const FIRST_RUN = ["git", "gh"];
 
 /**

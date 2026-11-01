@@ -45,8 +45,9 @@ type Props = {
 };
 
 /**
- * Settings → Connections: GitHub through the GitHub CLI,
- * with no Gond app and no broker in between. Tokens stay in gh's store; agents never see them.
+ * Settings → Plugins: what Gond Code connects to, one card each. GitHub goes through the
+ * GitHub CLI, with no Gond app and no broker in between: tokens stay in gh's store; agents
+ * never see them.
  */
 export function ConnectionsSettings({ status, startWebLogin, onToken, onCommand }: Props) {
   const [adding, setAdding] = useState(false);
@@ -56,10 +57,10 @@ export function ConnectionsSettings({ status, startWebLogin, onToken, onCommand 
   return (
     <div data-slot="connections" className="flex max-w-5xl flex-col gap-6">
       <header>
-        <h1 className="text-xl font-semibold">GitHub</h1>
+        <h1 className="text-xl font-semibold">Plugins</h1>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Gond Code talks to GitHub through the GitHub CLI on this PC. There's no Gond app and no
-          broker in between, and agents never see your token.
+          What Gond Code connects to. Each plugin works through tools on this PC, with no Gond
+          service in between, and agents never see your tokens.
         </p>
       </header>
 

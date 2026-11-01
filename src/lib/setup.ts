@@ -21,6 +21,8 @@ export type JobState = {
    *  real percent; the other stages show an indeterminate bar with the time spent. */
   stage?: "downloading" | "installing" | "settingUp" | "checking";
   stageStartedAt?: string;
+  /** When it finished, so a card's "is ready" line clears a while after. */
+  endedAt?: string;
   /** Bytes downloaded so far, and the size when the server says it. */
   bytes?: { done: number; total?: number };
   /** Download speed, bytes per second. */
@@ -47,13 +49,19 @@ export function stepLine(job: JobState): string {
   return n > 1 ? `${job.steps[i].label} · ${i + 1} of ${n}` : job.steps[i].label;
 }
 
+/** How long a finished install, update or uninstall keeps its line on the agent's card. */
+export const NOTE_MS = 10_000;
+
 /** The note on the last finished step that names this harness or tool ("Codex is already up to
  *  date."), from any job: shown under it in the harness manager and on its set-up card. */
-export function doneNote(jobs: JobState[], name: string): string | undefined {
-  for (const j of [...jobs].reverse())
+export function doneNote(jobs: JobState[], name: string, now?: number): string | undefined {
+  for (const j of [...jobs].reverse()) {
+    // Given the time, only a job that finished in the last few seconds still says so.
+    if (now !== undefined && !(j.endedAt && now - Date.parse(j.endedAt) < NOTE_MS)) continue;
     for (const s of j.steps)
       if (s.status === "done" && s.note && (s.label.endsWith(name) || s.note.startsWith(name)))
         return s.note;
+  }
   return undefined;
 }
 

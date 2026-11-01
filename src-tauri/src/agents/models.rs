@@ -207,6 +207,139 @@ pub fn grok() -> Vec<ModelInfo> {
     ]
 }
 
+/// GitHub Copilot's models, from its `model` setting (`copilot help config`, Copilot CLI
+/// 1.0.105): the current one of each family it serves. `--reasoning-effort` takes the
+/// levels the family's own harness offers; Gemini and Kimi run at Copilot's default.
+pub fn copilot() -> Vec<ModelInfo> {
+    const FOUR: &[Level] = &[Low, Medium, High, Xhigh];
+    let none = || flag(&[], None);
+    vec![
+        model("auto", "Auto", "copilot", none()),
+        model(
+            "claude-opus-5.5",
+            "Claude Opus 5.5",
+            "claude",
+            flag(FIVE, None),
+        ),
+        model(
+            "claude-sonnet-5.5",
+            "Claude Sonnet 5.5",
+            "claude",
+            flag(FIVE, None),
+        ),
+        model(
+            "claude-fable-5.1",
+            "Claude Fable 5.1",
+            "claude",
+            flag(FIVE, None),
+        ),
+        model(
+            "claude-haiku-5.5",
+            "Claude Haiku 5.5",
+            "claude",
+            flag(FIVE, None),
+        ),
+        model("gpt-6.1-sol", "GPT-6.1 Sol", "openai", flag(FIVE, None)),
+        model("gpt-6-astra", "GPT-6 Astra", "openai", flag(FIVE, None)),
+        model("gpt-6-luna", "GPT-6 Luna", "openai", flag(FIVE, None)),
+        model("gemini-4-argon", "Gemini 4 Argon", "gemini", none()),
+        model("grok-4.7", "Grok 4.7", "grok", flag(FOUR, None)),
+        model("kimi-k3", "Kimi K3", "kimi", none()),
+    ]
+}
+
+/// Cursor's models, as `cursor-agent models` lists them (recorded on Windows, Cursor CLI
+/// 2026.10.22, a signed-in account): the current one of each family. The level is part of
+/// the id (`claude-opus-5-5-high`), so it goes in the model slug; a model without one
+/// runs at the level Cursor's own name marks as plain ("Claude Opus 5.5 1M" is medium).
+pub fn cursor() -> Vec<ModelInfo> {
+    let slug = |levels: &[Level], default| ThinkingSupport {
+        via: ThinkingVia::ModelSlug,
+        ..flag(levels, default)
+    };
+    const GPT: &[Level] = &[Level::None, Low, Medium, High, Xhigh, Max];
+    vec![
+        model("auto", "Auto", "cursor", flag(&[], None)),
+        model("composer-2.5", "Composer 2.5", "cursor", flag(&[], None)),
+        model(
+            "claude-opus-5-5",
+            "Claude Opus 5.5",
+            "claude",
+            slug(FIVE, Some(Medium)),
+        ),
+        model(
+            "claude-sonnet-5-5",
+            "Claude Sonnet 5.5",
+            "claude",
+            slug(FIVE, Some(Medium)),
+        ),
+        model(
+            "claude-fable-5-1",
+            "Claude Fable 5.1",
+            "claude",
+            slug(FIVE, Some(High)),
+        ),
+        model(
+            "claude-haiku-5-5-thinking",
+            "Claude Haiku 5.5",
+            "claude",
+            slug(FIVE, Some(Medium)),
+        ),
+        model(
+            "gpt-5.6-sol",
+            "GPT-5.6 Sol",
+            "openai",
+            slug(GPT, Some(Medium)),
+        ),
+        model(
+            "gpt-5.6-terra",
+            "GPT-5.6 Terra",
+            "openai",
+            slug(GPT, Some(Medium)),
+        ),
+        model(
+            "gpt-5.6-luna",
+            "GPT-5.6 Luna",
+            "openai",
+            slug(GPT, Some(Medium)),
+        ),
+        model(
+            "gemini-4-argon",
+            "Gemini 4 Argon",
+            "gemini",
+            slug(&[Low, Medium, High], Some(Medium)),
+        ),
+        model(
+            "grok-4.7",
+            "Grok 4.7",
+            "grok",
+            slug(&[Low, Medium, High, Xhigh], Some(Medium)),
+        ),
+        model(
+            "kimi-k3",
+            "Kimi K3",
+            "kimi",
+            slug(&[Low, High, Max], Some(Max)),
+        ),
+    ]
+}
+
+/// The id Cursor takes for `model` at `level`: `<model>-<level>`, the model's default level
+/// when none is picked. Models without levels and unknown ones pass through unchanged.
+pub fn cursor_slug(model: &str, level: Option<Level>) -> String {
+    let default = cursor()
+        .into_iter()
+        .find(|m| m.id == model && !m.thinking.levels.is_empty())
+        .map(|m| m.thinking.default);
+    match default {
+        Some(d) => match level.or(d) {
+            Some(l) => format!("{model}-{}", l.as_str()),
+            None => model.to_string(),
+        },
+        None => model.to_string(),
+    }
+}
+
 /// Checks a turn's model and level against `models`. An unknown model id is allowed
 /// (full ids and new releases), but then only with no level, since we can't vouch for it.
 pub fn validate(models: &[ModelInfo], model: Option<&str>, level: Option<Level>) -> AppResult<()> {

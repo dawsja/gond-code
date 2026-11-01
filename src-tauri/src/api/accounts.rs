@@ -234,13 +234,18 @@ pub fn sign_in(
     }
     let driver = crate::runner::driver_for(&services.store, &a.harness)?;
     let path_var = path_var.or_else(crate::process::path);
-    let program = crate::agents::detect::find(&a.harness, path_var.clone()).ok_or_else(|| {
-        AppError::AgentNotFound(format!("{} isn't installed or isn't on PATH", a.harness))
+    let command = command_of(&a.harness);
+    let program = crate::agents::detect::find(command, path_var.clone()).ok_or_else(|| {
+        AppError::AgentNotFound(format!("{command} isn't installed or isn't on PATH"))
     })?;
-    // One sign-in per Windows user (agy keeps its token in Credential Manager): the agent's
-    // own CLI, as you, in the terminal here; you sign in the way it asks.
+    // One sign-in per Windows user (agy keeps its token in Credential Manager, Cursor in
+    // %APPDATA%), or your own sign-in again: the agent's own login, as you, in the terminal
+    // here; you sign in the way it asks.
     let (Some(args), Some(home)) = (driver.login_args(), a.config_dir.as_deref()) else {
         let mut cmd = command_for(&program);
+        if let Some(args) = driver.login_args() {
+            cmd.args(args);
+        }
         cmd.cwd(dirs::home_dir().unwrap_or_else(std::env::temp_dir));
         cmd.env("TERM", "xterm-256color");
         if let Some(p) = &path_var {
@@ -310,6 +315,11 @@ pub fn sign_in(
         job_id: Some(job_id),
         pty_id,
     })
+}
+
+/// The command a harness runs as (`cursor` is `cursor-agent`).
+fn command_of(harness: &str) -> &str {
+    crate::harness::get(harness).map_or(harness, |h| h.command)
 }
 
 /// The agent's CLI for a terminal. npm installs harnesses as `.cmd` shims, which
@@ -425,6 +435,13 @@ fn own_identity(
             .or_else(|| dirs::home_dir().map(|h| h.join(".codex")))?;
         return accounts::identity_from_codex_home(&home);
     }
+    // Copilot has no status command: its config names who's signed in.
+    if harness == "copilot" {
+        let home = std::env::var_os("COPILOT_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".copilot")))?;
+        return accounts::identity_from_copilot_home(&home);
+    }
     let driver = crate::runner::driver_for(&s.store, harness).ok()?;
     let home = dirs::home_dir()?;
     let mut cmd = status_command(
@@ -460,7 +477,7 @@ pub fn tidy(s: &Services) -> AppResult<usize> {
         };
         let (Ok(env), Some(program)) = (
             driver.account_env(&a),
-            crate::agents::detect::find(&a.harness, path_var.clone()),
+            crate::agents::detect::find(command_of(&a.harness), path_var.clone()),
         ) else {
             continue;
         };

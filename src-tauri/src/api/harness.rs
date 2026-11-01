@@ -16,7 +16,7 @@ use crate::install::{self, JobState, Step};
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanInput {
-    /// A catalog id: "claude", "codex", "agy" or "grok".
+    /// A catalog id: "claude", "codex", "agy", "grok", "opencode", "pi", "copilot" or "cursor".
     pub harness_id: String,
 }
 
@@ -90,12 +90,63 @@ fn job_path() -> Option<std::ffi::OsString> {
     }
 }
 
+/// The harnesses with an install, update or uninstall running now.
+static BUSY: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// One job per harness at a time: a second click on Install while one runs would start a
+/// second installer over the first (Cursor's script deletes its folder first, so one fails).
+/// Held for the job's life; dropping it frees the harness.
+struct Busy(String);
+
+impl Busy {
+    fn claim(h: &harness::Harness) -> AppResult<Busy> {
+        let mut busy = BUSY.lock().unwrap_or_else(|e| e.into_inner());
+        if busy.iter().any(|b| b == h.id) {
+            return Err(AppError::Invalid(format!(
+                "{} is already being installed, updated or removed. Wait for it to finish.",
+                h.name
+            )));
+        }
+        busy.push(h.id.to_string());
+        Ok(Busy(h.id.to_string()))
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|b| *b != self.0);
+    }
+}
+
+/// `start` for a harness's own job, once nothing else is running for it.
+fn start_harness(
+    services: &Services,
+    id: &str,
+    title: String,
+    steps: Vec<Step>,
+) -> AppResult<Started> {
+    let busy = Busy::claim(find(id)?)?;
+    Ok(start_holding(services, title, steps, Some(busy)))
+}
+
 /// Starts `steps` on a background thread and returns at once.
 fn start(services: &Services, title: String, steps: Vec<Step>) -> Started {
+    start_holding(services, title, steps, None)
+}
+
+fn start_holding(
+    services: &Services,
+    title: String,
+    steps: Vec<Step>,
+    busy: Option<Busy>,
+) -> Started {
     let job_id = ulid::Ulid::generate().to_string();
     let progress = TreeProgress(services.state.clone());
     let (id, run_steps) = (job_id.clone(), steps.clone());
     std::thread::spawn(move || {
+        let _busy = busy;
         install::run(
             id,
             title,
@@ -112,7 +163,7 @@ fn start(services: &Services, title: String, steps: Vec<Step>) -> Started {
 fn find(id: &str) -> AppResult<&'static harness::Harness> {
     harness::get(id).ok_or_else(|| {
         AppError::NotFound(format!(
-            "no harness {id}; try one of: claude, codex, agy, grok"
+            "no harness {id}; try one of: claude, codex, agy, grok, opencode, pi, copilot, cursor"
         ))
     })
 }
@@ -247,7 +298,7 @@ pub fn register(r: &mut Registry<Services>) {
         ),
         |call, i: InstallInput| -> AppResult<Started> {
             let (title, steps) = resolve_install(&i.harness_id, i.plan_index, i.machine_scope)?;
-            Ok(start(call.ctx, title, steps))
+            start_harness(call.ctx, &i.harness_id, title, steps)
         },
     );
     r.add(
@@ -277,7 +328,7 @@ pub fn register(r: &mut Registry<Services>) {
         ),
         |call, i: PlanInput| -> AppResult<Started> {
             let (title, steps) = resolve_update(&i.harness_id)?;
-            Ok(start(call.ctx, title, steps))
+            start_harness(call.ctx, &i.harness_id, title, steps)
         },
     );
 }
@@ -402,11 +453,13 @@ pub fn start_uninstall(s: &Services, id: &str, everything: bool) -> AppResult<St
             },
         ));
     }
+    let busy = Busy::claim(h)?;
     let job_id = ulid::Ulid::generate().to_string();
     let steps = p.plan.steps.clone();
     let (svc, jid, name, command) = (s.clone(), job_id.clone(), h.name, h.command);
     let harness_id = id.to_string();
     std::thread::spawn(move || {
+        let _busy = busy;
         let progress = TreeProgress(svc.state.clone());
         let mut job = install::run(
             jid,
@@ -604,6 +657,23 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(e.code(), "invalid");
+    }
+
+    /// One job per harness: a second while one runs is refused plainly, and the harness is
+    /// free again once the first ends.
+    #[test]
+    fn one_job_per_harness_at_a_time() {
+        let pi = crate::harness::get("pi").unwrap();
+        let first = super::Busy::claim(pi).unwrap();
+        let e = super::Busy::claim(pi).err().unwrap();
+        assert!(
+            e.to_string().contains("Pi is already being installed"),
+            "{e}"
+        );
+        // Another harness isn't held up.
+        drop(super::Busy::claim(crate::harness::get("cursor").unwrap()).unwrap());
+        drop(first);
+        drop(super::Busy::claim(pi).unwrap());
     }
 
     #[test]

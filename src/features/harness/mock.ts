@@ -205,6 +205,8 @@ export const MOCK_KINDS: Record<string, AccountKinds> = {
   claude: { provider: "anthropic", kinds: ["oauth", "apiKey", "token", "gateway"] },
   codex: { provider: "openai", kinds: ["oauth", "apiKey", "gateway"] },
   agy: { provider: "google", kinds: ["oauth"], maxOauth: 1 },
+  copilot: { provider: "github", kinds: ["oauth", "token", "gateway"] },
+  cursor: { provider: "cursor", kinds: ["oauth", "apiKey"], maxOauth: 1 },
 };
 
 /** ?demo's Test connection: an endpoint that answers with its models, after a moment. */

@@ -205,10 +205,12 @@ fn signed_in(s: &Services, login: &Login, status: Option<&str>) -> Value {
     let who = status
         .and_then(|t| accounts::identity_from_status(&a.provider, t))
         .or_else(|| {
-            a.config_dir
-                .as_deref()
-                .filter(|_| a.harness == "codex")
-                .and_then(|h| accounts::identity_from_codex_home(std::path::Path::new(h)))
+            let home = std::path::Path::new(a.config_dir.as_deref()?);
+            match a.harness.as_str() {
+                "codex" => accounts::identity_from_codex_home(home),
+                "copilot" => accounts::identity_from_copilot_home(home),
+                _ => None,
+            }
         });
     let Some(who) = who else {
         return done(format!("Signed in to {}.", login.name), &a.id);
