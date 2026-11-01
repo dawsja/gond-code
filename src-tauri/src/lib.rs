@@ -154,6 +154,8 @@ pub fn run() {
                     state.commit(cause, |d| d["ptyHost"] = serde_json::json!(in_host));
                 });
             }
+            // Plan limits for the sidebar while agents with a plan run.
+            api::usage::watch(api.services.clone());
             // Looks for a newer Gond Code on start and every few hours (not in Gond Code Dev).
             updater::start(app.handle(), std::sync::Arc::new(api.services.clone()));
             commands::api::emit_patches(app.handle(), &api);

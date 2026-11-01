@@ -18,12 +18,21 @@ import {
 } from "@/components/ui/context-menu";
 import { ProviderIcon } from "@/components/brand/provider-icon";
 import { AppUpdate } from "@/features/shell/AppUpdate";
+import { useAppState } from "@/lib/appState";
+import { notify } from "@/lib/notify";
 import type { AgentInfo, Project } from "@/lib/types";
+import { tightest, usageKey, type PlanUsage } from "@/lib/usage";
 import { cn } from "@/lib/utils";
 import { panes, type Session, type Pane } from "./layout";
 import { usePaneAgents } from "./paneAgent";
 import { ago, STATUS_LABEL, type PaneStatus, type Status } from "./status";
 import { Hint } from "@/components/hint";
+
+/** Plan warnings already shown: once per agent, window, reset and level. */
+const warned = new Set<string>();
+
+/** An agent's plan on its row: the window it runs out of first, coloured as it gets close. */
+const PLAN_TONE = { ok: "text-muted-foreground", low: "text-tone-warn", out: "text-tone-bad" };
 
 /** Agents by what they're doing, the ones that want you first. */
 const ORDER: Status[] = ["needs", "working", "done", "idle", "exited"];
@@ -110,6 +119,31 @@ export function SessionsSidebar({
         st: statuses[p.id] ?? { status: "idle" as Status, since: now },
       })),
   );
+  // Each running agent's plan (Settings → Usage's readings, kept current while it runs).
+  const usage = useAppState((t) => t.usage as Record<string, PlanUsage> | undefined);
+  const planOf = (agentId: string) => tightest(usage?.[usageKey(agentId)], new Date(now));
+  const planText = (p: NonNullable<ReturnType<typeof planOf>>) =>
+    [p.level === "out" ? `${p.label} limit reached` : `${p.label} ${p.left}% left`, p.resetsShort]
+      .filter(Boolean)
+      .join(" · ");
+  // A warning when a running agent's plan gets low, and when it runs out: once each.
+  const runningIds = [...new Set(all.map((a) => a.agentId))].sort().join(",");
+  useEffect(() => {
+    for (const id of runningIds ? runningIds.split(",") : []) {
+      const p = tightest(usage?.[usageKey(id)]);
+      if (!p || p.level === "ok") continue;
+      const key = `${id}:${p.name}:${p.resetsAt ?? ""}:${p.level}`;
+      if (warned.has(key)) continue;
+      warned.add(key);
+      const name = agents.find((a) => a.id === id)?.name ?? id;
+      notify.warning(
+        p.level === "out"
+          ? `${name} reached its ${p.label.toLowerCase()} limit`
+          : `${name} is running low: ${p.label.toLowerCase()} ${p.left}% left`,
+        { description: p.resets ? `It ${p.resets}.` : undefined },
+      );
+    }
+  }, [runningIds, usage, agents]);
   const nameOf = (p: Pane, agentId: string) =>
     p.title ??
     projects.find((x) => x.id === p.projectId)?.name ??
@@ -209,24 +243,50 @@ export function SessionsSidebar({
                 {here.map(({ pane, agentId, session, st }) => {
                   const agent = agents.find((a) => a.id === agentId);
                   const on = !settings && current === session.id && focusedPane === pane.id;
+                  const plan = planOf(agentId);
                   return (
                     <Hint
-                      text={`${nameOf(pane, agentId)} · ${agent?.name ?? agentId} · ${session.name}`}
+                      key={pane.id}
+                      text={[
+                        nameOf(pane, agentId),
+                        agent?.name ?? agentId,
+                        session.name,
+                        plan && planText(plan),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     >
                       <button
-                        key={pane.id}
                         type="button"
                         data-entity="pane"
                         data-id={pane.id}
                         onClick={() => onSelectPane(pane.id)}
-                        className={cn(row, on && "bg-hover")}
+                        className={cn(
+                          row,
+                          plan && "h-auto min-h-8 flex-col items-stretch gap-0.5 py-1.5",
+                          on && "bg-hover",
+                        )}
                       >
-                        <ProviderIcon id={agent?.provider ?? agentId} size={15} />
-                        <span className="min-w-0 flex-1 truncate">{nameOf(pane, agentId)}</span>
-                        <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
-                          {ago(st.since, now)}
+                        <span className="flex items-center gap-2.5">
+                          <ProviderIcon id={agent?.provider ?? agentId} size={15} />
+                          <span className="min-w-0 flex-1 truncate">{nameOf(pane, agentId)}</span>
+                          <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                            {ago(st.since, now)}
+                          </span>
+                          <StatusIcon status={st.status} />
                         </span>
-                        <StatusIcon status={st.status} />
+                        {/* The plan under the name, the row's full width. */}
+                        {plan && (
+                          <span
+                            data-slot="plan"
+                            className={cn(
+                              "truncate pl-[25px] text-[11px] leading-tight",
+                              PLAN_TONE[plan.level],
+                            )}
+                          >
+                            {planText(plan)}
+                          </span>
+                        )}
                       </button>
                     </Hint>
                   );

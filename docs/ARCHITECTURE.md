@@ -108,7 +108,9 @@ src-tauri/src/             Rust
   harness.rs install.rs    install/update plans; the background install engine
   fallback.rs releases.rs  installs without winget; latest versions
   uninstall.rs             removing an agent (keep or delete its data)
-  plan_usage.rs grok_usage.rs  plan limits for Settings → Usage
+  plan_usage.rs grok_usage.rs  plan limits for Settings → Usage and the sidebar; api/usage.rs
+                           reads them (`usage::watch`) when an agent with a plan starts in a
+                           terminal and every 5 minutes while one runs
   http.rs credentials.rs   curl for the usage sources; reading agents' own credentials
   github.rs git/           GitHub through `gh`; git CLI and identity
   shells.rs speech.rs      plain shells; speech to text (transcribe.cpp)

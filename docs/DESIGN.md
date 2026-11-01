@@ -60,8 +60,11 @@ The design language and the screens as they are now. Palette, fonts and tokens:
     says "No agents running." Each group heading is the status in its
     tone with a count. Each row: brand icon, the pane's name, how long it has held that status
     ("2m"), a status icon (amber alert, spinning loader in tint ink, green check, grey dot, red
-    x). Clicking a row opens its session and focuses the pane. A tooltip names pane · agent ·
-    session.
+    x). An agent with a plan gets a second line under it, the row's width: its tightest window
+    ("Weekly 80% left · resets Tue 3 AM", or "… limit reached"), 11px, muted, amber at 10% or
+    less left, red when used up; a toast warns once as it gets low and once when it runs out.
+    Clicking a row opens its session and focuses the pane. A tooltip names pane · agent ·
+    session · plan.
   - At the foot: the app update button when a newer Gond Code is ready, then Settings.
 - **Workspace:** the current session's panes. Every session's panes stay mounted (hidden when
   another is showing), so agents keep running.

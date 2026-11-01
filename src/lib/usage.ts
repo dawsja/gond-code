@@ -41,6 +41,45 @@ export function limitedUntil(u?: PlanUsage, now = new Date()): string | undefine
 
 const WINDOW = { session: "Session", weekly: "Weekly", monthly: "Monthly" } as const;
 
+/** At or below this much left, a plan window is running low. */
+export const LOW_PERCENT = 10;
+
+/**
+ * The window an agent will run out of first: the one with the least left, of those that
+ * haven't already reset. `level` says how close: "out" (nothing left), "low" (10% or less),
+ * else "ok". What the sidebar shows on an agent's row.
+ */
+export function tightest(u?: PlanUsage, now = new Date()) {
+  const live = (u?.windows ?? []).filter(
+    (w) => !w.resetsAt || Number.isNaN(Date.parse(w.resetsAt)) || new Date(w.resetsAt) > now,
+  );
+  if (!live.length) return undefined;
+  const w = live.reduce((a, b) => (b.percentLeft < a.percentLeft ? b : a));
+  const line = windowLine(w, now);
+  const level: "out" | "low" | "ok" =
+    w.status === "rejected" || line.left <= 0 ? "out" : line.left <= LOW_PERCENT ? "low" : "ok";
+  return {
+    ...line,
+    name: w.name,
+    resetsAt: w.resetsAt,
+    level,
+    resetsShort: short(w.resetsAt, now),
+  };
+}
+
+/** "resets 3 PM", "resets Tue 3:40 AM": a reset as short as it can be said, for the sidebar. */
+function short(at: string | undefined, now: Date) {
+  if (!at) return undefined;
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const opts: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    ...(d.getMinutes() ? { minute: "2-digit" } : {}),
+    ...(d.toDateString() === now.toDateString() ? {} : { weekday: "short" }),
+  };
+  return `resets ${d.toLocaleString(undefined, opts)}`;
+}
+
 /**
  * "Session 6% used · resets 3:40 PM": a window as its Usage card says it. Bars fill as the
  * plan is used, from empty to full.

@@ -11,7 +11,10 @@ every agent by what it's doing.
 - **Agents.** The sidebar lists every agent pane in every session, grouped by status: **Needs
   you**, **Working**, **Done**, **Idle** (and Exited), with how long it has been in that status.
   Gond reads the status from each terminal's output, as you would: output still coming means
-  working, a question on screen ("Do you want to…", "[y/n]") means it needs you.
+  working, a question on screen ("Do you want to…", "[y/n]") means it needs you. Under its name,
+  an agent with a plan shows the window it will run out of first ("Weekly 80% left · resets Tue
+  3 AM"), amber at 10% or less and red when it's used up, and Gond warns once as it gets low and
+  once when it runs out. While one runs, Gond reads its plan when it starts and every 5 minutes.
 - **Panes.** Each pane is a terminal in your default shell. You start an agent by typing it
   there (Claude Code, Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or
   a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right

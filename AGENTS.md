@@ -68,7 +68,9 @@ app every debug build is (`src-tauri/src/channel.rs`; README, "Dev and prod side
   bun scripts/dev-cdp.ts key Escape           # Enter, Escape, Tab, Backspace, arrows
   ```
 
-  A pane's text is drawn on a canvas, so check it with `shot`, not `eval`. Frontend edits show
+  A pane's text is drawn on a canvas, so check it with `shot`, not `eval`. From Git Bash, an
+  argument that starts with `/` (`type '/exit'`) is rewritten to a Windows path before the
+  script sees it: prefix the command with `MSYS_NO_PATHCONV=1`. Frontend edits show
   in Dev straight away; a Rust edit rebuilds and restarts it.
 - **Ports:** `tauri dev` serves the UI on 1420. While Dev is running, start the mock UI on
   another port: `bunx vite --port 1477`.

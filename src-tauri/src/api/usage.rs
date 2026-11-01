@@ -26,6 +26,38 @@ pub struct NoInput {}
 /// One reading at a time.
 static REFRESHING: AtomicBool = AtomicBool::new(false);
 
+/// The agents whose plan Gond can read.
+pub const PLAN_AGENTS: [&str; 6] = ["claude", "codex", "grok", "agy", "copilot", "cursor"];
+
+/// How often plan limits are read again while an agent with a plan runs.
+const EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Whether to read again now: an agent with a plan runs, and either one just started (that
+/// wasn't running at the last look) or the last reading is older than `EVERY`.
+fn due(running: &[String], before: &[String], since_last: Option<std::time::Duration>) -> bool {
+    let planned = |a: &String| PLAN_AGENTS.contains(&a.as_str());
+    let started = running.iter().any(|a| planned(a) && !before.contains(a));
+    running.iter().any(planned) && (started || since_last.is_none_or(|d| d >= EVERY))
+}
+
+/// Keeps the sidebar's plan figures current: every minute it looks at which agents run in the
+/// terminals, and reads their limits when one starts and every 5 minutes while one runs.
+pub fn watch(s: Services) {
+    std::thread::spawn(move || {
+        let mut before: Vec<String> = vec![];
+        let mut last: Option<std::time::Instant> = None;
+        loop {
+            let running = super::pty::running_agents(&s);
+            if due(&running, &before, last.map(|t| t.elapsed())) {
+                refresh(&s, crate::http::curl, crate::http::curl_post);
+                last = Some(std::time::Instant::now());
+            }
+            before = running;
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
+    });
+}
+
 /// The kept readings, one per agent; ones an account kept (by its id) are dropped.
 fn load(store: &Store) -> BTreeMap<String, Value> {
     let all: BTreeMap<String, Value> = store
@@ -88,7 +120,7 @@ pub fn refresh(s: &Services, fetch: crate::http::Fetch, post: crate::http::Post)
                 .map(std::path::PathBuf::from)
                 .or_else(|| dirs::home_dir().map(|h| h.join(dir)))
         };
-        for agent in ["claude", "codex", "grok", "agy", "copilot", "cursor"] {
+        for agent in PLAN_AGENTS {
             let windows = match agent {
                 "claude" => home("CLAUDE_CONFIG_DIR", ".claude")
                     .and_then(|c| crate::plan_usage::claude_token(&c))
@@ -150,6 +182,24 @@ pub fn register(r: &mut Registry<Services>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_when_a_planned_agent_starts_and_every_five_minutes() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let min = |m: u64| Some(std::time::Duration::from_secs(m * 60));
+        assert!(!due(&s(&[]), &s(&[]), None), "nothing runs");
+        assert!(!due(&s(&["aider"]), &s(&[]), None), "no plan to read");
+        assert!(due(&s(&["claude"]), &s(&[]), min(1)), "claude just started");
+        assert!(
+            !due(&s(&["claude"]), &s(&["claude"]), min(1)),
+            "read a minute ago"
+        );
+        assert!(
+            due(&s(&["claude"]), &s(&["claude"]), min(5)),
+            "five minutes on"
+        );
+        assert!(due(&s(&["codex"]), &s(&["codex"]), None), "never read");
+    }
 
     /// A reading is kept: after a restart it's back in the tree.
     #[test]

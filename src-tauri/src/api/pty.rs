@@ -104,6 +104,33 @@ fn cause(call: &Call<Services>, command: &str) -> Cause {
     }
 }
 
+/// Every agent Gond knows, built in and added: (id, command).
+pub fn known_agents(store: &crate::store::Store) -> Vec<(String, String)> {
+    let mut agents: Vec<(String, String)> = crate::agents::BUILT_IN
+        .iter()
+        .map(|(id, _, _, command)| (id.to_string(), command.to_string()))
+        .collect();
+    if let Ok(customs) = crate::agents::list_custom(store) {
+        agents.extend(customs.into_iter().map(|c| (c.id, c.command)));
+    }
+    agents
+}
+
+/// The agents running in any terminal right now (each once).
+pub fn running_agents(s: &Services) -> Vec<String> {
+    let procs = crate::agents::running::snapshot();
+    let agents = known_agents(&s.store);
+    let mut found: Vec<String> = s
+        .ptys
+        .pids()
+        .into_iter()
+        .filter_map(|pid| crate::agents::running::agent_under(pid, &procs, &agents))
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
 /// The owner key for a project's terminals: removing the project closes them.
 pub fn project_owner(project_id: &str) -> String {
     format!("project:{project_id}")
@@ -247,15 +274,12 @@ pub fn register(r: &mut Registry<Services>) {
             let Some(pid) = call.ctx.ptys.pid(&i.pty_id) else {
                 return Ok(None);
             };
-            let mut agents: Vec<(String, String)> = crate::agents::BUILT_IN
-                .iter()
-                .map(|(id, _, _, command)| (id.to_string(), command.to_string()))
-                .collect();
-            if let Ok(customs) = crate::agents::list_custom(&call.ctx.store) {
-                agents.extend(customs.into_iter().map(|c| (c.id, c.command)));
-            }
             let procs = crate::agents::running::snapshot();
-            Ok(crate::agents::running::agent_under(pid, &procs, &agents))
+            Ok(crate::agents::running::agent_under(
+                pid,
+                &procs,
+                &known_agents(&call.ctx.store),
+            ))
         },
     );
     r.add(

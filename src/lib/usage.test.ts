@@ -1,22 +1,41 @@
-import { expect, it } from "vitest";
-import { windowLine } from "./usage";
+import { describe, expect, it } from "vitest";
+import { tightest, type PlanUsage } from "./usage";
 
-it("a plan window reads as used, with when it resets", () => {
-  const now = new Date("2026-10-30T12:00:00");
-  const l = windowLine(
-    { name: "session", percentLeft: 94.4, resetsAt: "2026-10-30T15:40:00" },
-    now,
-  );
-  expect(l.label).toBe("Session");
-  expect(l.text).toBe("6% used");
-  expect(l.resets).toMatch(/^resets .*3:40/);
-  expect(windowLine({ name: "weekly", percentLeft: 53 }, now)).toMatchObject({
-    label: "Weekly",
-    text: "47% used",
-    resets: undefined,
+const now = new Date("2026-11-02T12:00:00Z");
+const plan = (windows: PlanUsage["windows"]): PlanUsage => ({
+  harness: "claude",
+  windows,
+  updatedAt: now.toISOString(),
+});
+
+describe("tightest", () => {
+  it("picks the window with the least left, and says how close it is", () => {
+    const t = tightest(
+      plan([
+        { name: "session", percentLeft: 70, resetsAt: "2026-11-02T15:00:00Z" },
+        { name: "weekly", percentLeft: 8, resetsAt: "2026-11-06T09:00:00Z" },
+      ]),
+      now,
+    );
+    expect(t).toMatchObject({ name: "weekly", left: 8, level: "low" });
+    expect(t?.resets).toMatch(/^resets /);
   });
-  expect(windowLine({ name: "weekly", percentLeft: -5 }, now)).toMatchObject({
-    left: 0,
-    used: 100,
+
+  it("ignores a window that has already reset, and marks a used-up one", () => {
+    expect(
+      tightest(
+        plan([
+          { name: "session", percentLeft: 0, resetsAt: "2026-11-02T11:00:00Z" },
+          { name: "weekly", percentLeft: 40 },
+        ]),
+        now,
+      ),
+    ).toMatchObject({ name: "weekly", level: "ok" });
+    expect(
+      tightest(plan([{ name: "session", percentLeft: 0, resetsAt: "2026-11-02T13:00:00Z" }]), now)
+        ?.level,
+    ).toBe("out");
+    expect(tightest(plan([]), now)).toBeUndefined();
+    expect(tightest(undefined, now)).toBeUndefined();
   });
 });
