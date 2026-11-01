@@ -390,6 +390,25 @@ export function Terminal({ paneId, fresh, open, active, onFocus, onShortcut }: P
             t.write("\r\n\x1b[2m[The process ended. Restart it from the pane's menu.]\x1b[0m\r\n");
           } else {
             refit();
+            // A row smaller, then back: the console and a full-screen agent redraw their
+            // screen over the replay, which may have started partway into one.
+            const id = found.ptyId;
+            if (t.rows > 2)
+              void callOrRun("pty_resize", "pty.resize", {
+                ptyId: id,
+                cols: t.cols,
+                rows: t.rows - 1,
+              })
+                .then(() =>
+                  new Promise((r) => window.setTimeout(r, 80)).then(() =>
+                    callOrRun("pty_resize", "pty.resize", {
+                      ptyId: id,
+                      cols: t.cols,
+                      rows: t.rows,
+                    }),
+                  ),
+                )
+                .catch(() => undefined);
           }
         } else {
           const back = shellsOnly()

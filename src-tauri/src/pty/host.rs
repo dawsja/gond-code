@@ -2,17 +2,25 @@
 //! Closing, quitting, crashing or updating Gond Code leaves its shells and the agents in them
 //! running; the next Gond Code connects again and each pane finds its terminal by its id.
 //!
-//! - It is `gond-code pty-host`, run from a copy of the exe in `%LOCALAPPDATA%\GondCode\host`
-//!   (`gond-code-host.exe`; Gond Code Dev's is `gond-code-dev-host.exe`), so the installer can
-//!   replace `gond-code.exe` while it runs, and a dev build can be rebuilt.
-//! - It listens on a named pipe only this Windows user can open (a Unix socket in the data
-//!   folder elsewhere), named for the channel, the user and the protocol version.
+//! - It is `gond-code pty-host run <build>`, run from a copy of the exe in
+//!   `%LOCALAPPDATA%\GondCode\host\<build>` (`gond-code-host.exe`; Gond Code Dev's is
+//!   `gond-code-dev-host.exe`), so the installer can replace `gond-code.exe` while it runs, and
+//!   a dev build can be rebuilt. A launcher (`pty-host detach`) starts it with nothing but NUL
+//!   for its input and output, and ends: the host is nobody's child.
+//! - **One host per build.** It listens on a named pipe only this Windows user can open (and
+//!   only at its integrity level or above), named for the channel, the user and the build (a
+//!   Unix socket in the data folder elsewhere), and says where it is in `host\live\<build>.json`.
+//!   A newer Gond Code starts its new terminals in its own build's host and finds the panes
+//!   still running in older builds' hosts there; an older host that a newer window has reached
+//!   ends once its last terminal has. So an update, or a change to this code, never ends a
+//!   terminal, and never strands one either.
 //! - One window at a time: a new connection takes over the output stream.
 //! - With no terminals and no window for 30 seconds it ends.
-//! - `gond-code pty-host stop` closes every terminal and ends it (the uninstaller does this).
+//! - `gond-code pty-host stop` closes every terminal in every build's host and ends them (the
+//!   uninstaller does this).
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -42,13 +50,13 @@ pub fn root() -> Option<PathBuf> {
     crate::appdata::local().map(|d| d.join("host"))
 }
 
-/// This user's host for this channel and protocol.
-pub fn endpoint() -> String {
+/// This user's host for this channel and `build`.
+pub fn endpoint_for(build: &str) -> String {
     #[cfg(windows)]
     {
         let sid = win::user_sid().unwrap_or_else(|| "user".into());
         format!(
-            r"\\.\pipe\{}-pty-{sid}-v{PROTOCOL}",
+            r"\\.\pipe\{}-pty-{sid}-{build}",
             crate::channel::CHANNEL.identifier()
         )
     }
@@ -56,35 +64,113 @@ pub fn endpoint() -> String {
     {
         crate::appdata::local()
             .unwrap_or_else(std::env::temp_dir)
-            .join(format!("pty-v{PROTOCOL}.sock"))
+            .join(format!("pty-{build}.sock"))
             .to_string_lossy()
             .into_owned()
     }
 }
 
-/// `gond-code pty-host [stop|detach]`.
+/// This build's host.
+pub fn endpoint() -> String {
+    endpoint_for(&build())
+}
+
+/// Where each running host says where it is: `host\live\<build>.json`.
+pub fn live_dir() -> Option<PathBuf> {
+    root().map(|r| r.join("live"))
+}
+
+/// A running host, as it describes itself in `live`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Live {
+    pub endpoint: String,
+    pub build: String,
+    pub pid: u32,
+    pub protocol: u32,
+}
+
+/// The hosts of every build that says it's running, from `dir` (`live_dir`). A record whose
+/// host isn't running any more (it was killed outright) is removed.
+pub fn running(dir: &std::path::Path) -> Vec<Live> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
+    let mut out = vec![];
+    for e in entries.flatten() {
+        let Some(l) = std::fs::read(e.path())
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Live>(&b).ok())
+        else {
+            continue;
+        };
+        if alive(l.pid) {
+            out.push(l);
+        } else {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+    out
+}
+
+/// Whether host process `pid` still runs.
+fn alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    return is_ours(pid);
+    #[cfg(not(windows))]
+    std::path::Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// The endpoints of running hosts of other builds than this one: the app reaches its panes
+/// still running there.
+pub fn older_endpoints() -> Vec<String> {
+    let own = build();
+    live_dir()
+        .map(|d| running(&d))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|l| l.build != own)
+        .map(|l| l.endpoint)
+        .collect()
+}
+
+/// `gond-code pty-host [run <build> | detach <build> | stop]`.
 pub fn main(args: &[String]) -> i32 {
+    let build_arg = || args.get(1).cloned().unwrap_or_else(build);
     match args.first().map(String::as_str) {
         // The app's launcher: starts the host and ends, so the host is nobody's child and a
         // "close this app and its children" (an installer, `tauri dev`) passes it by.
-        Some("detach") => match start(&["pty-host"]) {
+        Some("detach") => match start(&["pty-host", "run", &build_arg()]) {
             Ok(()) => 0,
             Err(e) => {
                 log(&format!("couldn't start the host: {e}"));
                 1
             }
         },
-        Some("stop") => match super::client::stop(&endpoint()) {
-            Ok(()) => 0,
-            Err(_) => 0, // none running: nothing to stop
-        },
-        _ => match serve(&endpoint(), IDLE) {
-            Ok(()) => 0,
-            Err(e) => {
-                log(&format!("host ended: {e}"));
-                1
+        // Every build's host, then whatever answers at this build's name.
+        Some("stop") => {
+            let mut ends: Vec<String> = live_dir()
+                .map(|d| running(&d))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|l| l.endpoint)
+                .collect();
+            ends.push(endpoint());
+            ends.dedup();
+            for e in ends {
+                let _ = super::client::stop(&e);
             }
-        },
+            0
+        }
+        _ => {
+            let build = build_arg();
+            match serve(&endpoint_for(&build), IDLE, &build, live_dir().as_deref()) {
+                Ok(()) => 0,
+                Err(e) => {
+                    log(&format!("host ended: {e}"));
+                    1
+                }
+            }
+        }
     }
 }
 
@@ -145,10 +231,21 @@ struct Host {
     out: Arc<Outbox>,
     next_conn: AtomicU64,
     stop: Notify,
+    /// The build this host runs.
+    build: String,
+    /// A window of another (newer) build has connected: this host takes nothing new from it
+    /// and ends once its last terminal has.
+    replaced: AtomicBool,
 }
 
-/// Runs a host on `endpoint` until it's told to stop, or has been idle for `idle`.
-pub fn serve(endpoint: &str, idle: Duration) -> std::io::Result<()> {
+/// Runs a host of `build` on `endpoint` until it's told to stop, or has been idle for
+/// `idle`; says where it is in `live` (`host\live`) while it runs.
+pub fn serve(
+    endpoint: &str,
+    idle: Duration,
+    build: &str,
+    live: Option<&std::path::Path>,
+) -> std::io::Result<()> {
     // Ctrl+C on, whatever started us: the shells inherit it, and Ctrl+C in a pane has to stop
     // what runs there.
     #[cfg(windows)]
@@ -167,10 +264,30 @@ pub fn serve(endpoint: &str, idle: Duration) -> std::io::Result<()> {
         out,
         next_conn: AtomicU64::new(1),
         stop: Notify::new(),
+        build: build.to_string(),
+        replaced: AtomicBool::new(false),
     });
-    log(&format!("host started on {endpoint}"));
+    #[cfg(windows)]
+    let job = win::job_note();
+    #[cfg(not(windows))]
+    let job = "";
+    log(&format!("host started on {endpoint}{job}"));
+    let here = live.map(|d| d.join(format!("{build}.json")));
+    if let Some(file) = &here {
+        let me = Live {
+            endpoint: endpoint.to_string(),
+            build: build.to_string(),
+            pid: std::process::id(),
+            protocol: PROTOCOL,
+        };
+        let _ = std::fs::create_dir_all(file.parent().unwrap_or(file));
+        let _ = std::fs::write(file, serde_json::to_vec(&me).unwrap_or_default());
+    }
     let result = rt.block_on(listen(endpoint, host.clone(), idle));
     host.mgr.close_all();
+    if let Some(file) = &here {
+        let _ = std::fs::remove_file(file);
+    }
     log("host stopped");
     result
 }
@@ -178,6 +295,7 @@ pub fn serve(endpoint: &str, idle: Duration) -> std::io::Result<()> {
 async fn listen(endpoint: &str, host: Arc<Host>, idle: Duration) -> std::io::Result<()> {
     let watch = host.clone();
     let idler = tokio::spawn(async move {
+        let mut empty_since: Option<Instant> = None;
         loop {
             tokio::time::sleep(Duration::from_millis(500).min(idle)).await;
             let alone = *watch
@@ -185,7 +303,17 @@ async fn listen(endpoint: &str, host: Arc<Host>, idle: Duration) -> std::io::Res
                 .alone_since
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            if watch.mgr.is_empty() && alone.is_some_and(|t| t.elapsed() >= idle) {
+            empty_since = if watch.mgr.is_empty() {
+                empty_since.or(Some(Instant::now()))
+            } else {
+                None
+            };
+            // No terminals for a while, and nobody here (or only a newer build, which starts
+            // its terminals in its own host).
+            let done = empty_since.is_some_and(|t| t.elapsed() >= idle)
+                && (alone.is_some_and(|t| t.elapsed() >= idle)
+                    || watch.replaced.load(Ordering::SeqCst));
+            if done {
                 watch.stop.notify_one();
                 return;
             }
@@ -286,8 +414,25 @@ where
 
     let mut lines = BufReader::new(rd).lines();
     while let Ok(Some(text)) = lines.next_line().await {
-        let Ok(env) = serde_json::from_str::<Envelope>(&text) else {
-            continue;
+        let env = match serde_json::from_str::<Envelope>(&text) {
+            Ok(env) => env,
+            // A newer app's request this host doesn't know: say so, so it isn't left waiting.
+            Err(e) => {
+                if let Some(id) = serde_json::from_str::<Value>(&text)
+                    .ok()
+                    .and_then(|v| v["id"].as_u64())
+                {
+                    let err = Failure::from(&AppError::Invalid(format!(
+                        "this terminal host doesn't know that request: {e}"
+                    )));
+                    let _ = tx.send(line(&FromHost::Reply {
+                        id,
+                        ok: Value::Null,
+                        err: Some(err),
+                    }));
+                }
+                continue;
+            }
         };
         let reply = |r: Result<Value, AppError>| {
             let (ok, err) = match r {
@@ -332,6 +477,17 @@ where
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 host.stop.notify_one();
             }
+            Request::Hello { build } => {
+                if build.as_deref().is_some_and(|b| b != host.build) {
+                    host.replaced.store(true, Ordering::SeqCst);
+                    log(&format!("a window of build {build:?} took over"));
+                }
+                reply(Ok(json!({
+                    "protocol": PROTOCOL,
+                    "build": host.build,
+                    "pid": std::process::id(),
+                })));
+            }
             req => reply(handle(&host.mgr, req)),
         }
     }
@@ -358,11 +514,6 @@ fn handle(mgr: &PtyManager, req: Request) -> Result<Value, AppError> {
         serde_json::to_value(x).unwrap_or_default()
     }
     Ok(match req {
-        Request::Hello => json!({
-            "protocol": PROTOCOL,
-            "build": build(),
-            "pid": std::process::id(),
-        }),
         Request::Spawn {
             owner,
             key,
@@ -395,12 +546,12 @@ fn handle(mgr: &PtyManager, req: Request) -> Result<Value, AppError> {
             Value::Null
         }
         Request::Prune { keep } => json!(mgr.prune(&keep)),
-        Request::Read { .. } | Request::Shutdown => Value::Null,
+        Request::Hello { .. } | Request::Read { .. } | Request::Shutdown => Value::Null,
     })
 }
 
-/// Which build of the exe this host runs: its size and modified time.
-fn build() -> String {
+/// Which build this exe is: its size and modified time.
+pub fn build() -> String {
     std::env::current_exe()
         .and_then(std::fs::metadata)
         .map(|m| stamp(&m))
@@ -433,14 +584,21 @@ pub fn launch() -> std::io::Result<()> {
         std::fs::rename(&part, &target)?;
     }
     // Older builds' copies, unless a host still runs from one.
+    let alive: Vec<String> = live_dir()
+        .map(|d| running(&d))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|l| l.build)
+        .collect();
     if let Ok(entries) = std::fs::read_dir(&root) {
         for e in entries.flatten() {
-            if e.path().is_dir() && e.file_name().to_string_lossy() != build {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if e.path().is_dir() && name != build && name != "live" && !alive.contains(&name) {
                 let _ = std::fs::remove_dir_all(e.path());
             }
         }
     }
-    let status = command(&target, &["pty-host", "detach"])?.status()?;
+    let status = command(&target, &["pty-host", "detach", &build])?.status()?;
     if status.success() {
         Ok(())
     } else {
@@ -450,11 +608,15 @@ pub fn launch() -> std::io::Result<()> {
     }
 }
 
-/// Runs this exe with `args`, detached (the launcher's half of `launch`).
+/// Runs this exe with `args`, detached (the launcher's half of `launch`). On Windows it hands
+/// down no handle but NUL for its input and output: whatever the app (or a terminal that
+/// started it) had open isn't kept open by the host for good.
 fn start(args: &[&str]) -> std::io::Result<()> {
-    command(&std::env::current_exe()?, args)?
-        .spawn()
-        .map(|_| ())
+    let exe = std::env::current_exe()?;
+    #[cfg(windows)]
+    return win::spawn_detached(&exe, args);
+    #[cfg(not(windows))]
+    command(&exe, args)?.spawn().map(|_| ())
 }
 
 /// `exe args`, detached from the console and from any job that lets it go; in the exe's
@@ -533,6 +695,174 @@ pub(crate) mod win {
         PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
+    /// What the host's log says about the job it runs in: a job that ends its processes when
+    /// it closes ends the terminals with it (a launcher that kept it from leaving).
+    pub fn job_note() -> &'static str {
+        use windows_sys::Win32::System::JobObjects::{
+            IsProcessInJob, JobObjectExtendedLimitInformation, QueryInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+        // SAFETY: plain queries about this process's own job, into structs we own.
+        unsafe {
+            let mut inside = 0;
+            if IsProcessInJob(GetCurrentProcess(), null_mut(), &mut inside) == 0 || inside == 0 {
+                return "";
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            let ok = QueryInformationJobObject(
+                null_mut(),
+                JobObjectExtendedLimitInformation,
+                (&raw mut info).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                null_mut(),
+            );
+            if ok != 0
+                && info.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE != 0
+            {
+                " (in a job that ends it when it closes: its terminals last as long as that job)"
+            } else {
+                " (in a job)"
+            }
+        }
+    }
+
+    /// Whether this process runs elevated (as administrator).
+    fn elevated() -> bool {
+        use windows_sys::Win32::Security::{TokenElevation, TOKEN_ELEVATION};
+        // SAFETY: a token handle we close, and an out-struct of the size we pass.
+        unsafe {
+            let mut token: HANDLE = null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return false;
+            }
+            let mut e: TOKEN_ELEVATION = std::mem::zeroed();
+            let mut n = 0u32;
+            let ok = GetTokenInformation(
+                token,
+                TokenElevation,
+                (&raw mut e).cast(),
+                std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                &mut n,
+            );
+            CloseHandle(token);
+            ok != 0 && e.TokenIsElevated != 0
+        }
+    }
+
+    /// Starts `exe args` detached from any console, out of any job that lets it go, with NUL
+    /// for its input and output and no other handle of ours: the standard spawn would hand
+    /// down every inheritable handle this process has, and the host would hold them open for
+    /// good.
+    pub fn spawn_detached(exe: &std::path::Path, args: &[&str]) -> std::io::Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{
+            SetHandleInformation, ERROR_ACCESS_DENIED, HANDLE_FLAG_INHERIT,
+        };
+        use windows_sys::Win32::System::Threading::{
+            CreateProcessW, DeleteProcThreadAttributeList, InitializeProcThreadAttributeList,
+            UpdateProcThreadAttribute, CREATE_BREAKAWAY_FROM_JOB, DETACHED_PROCESS,
+            EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+        };
+
+        let quote = |s: &str| {
+            if s.is_empty() || s.contains([' ', '\t', '"']) {
+                format!("\"{}\"", s.replace('"', "\\\""))
+            } else {
+                s.to_string()
+            }
+        };
+        let line = std::iter::once(quote(&exe.to_string_lossy()))
+            .chain(args.iter().map(|a| quote(a)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut line: Vec<u16> = std::ffi::OsStr::new(&line)
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let dir: Vec<u16> = exe
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let nul = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("NUL")?;
+        let h = nul.as_raw_handle() as HANDLE;
+        // SAFETY: an attribute list sized by its first call and freed below; a handle list of
+        // one live handle that outlives CreateProcessW; strings NUL-terminated and alive.
+        unsafe {
+            if SetHandleInformation(h, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut size = 0usize;
+            InitializeProcThreadAttributeList(null_mut(), 1, 0, &mut size);
+            let mut attrs = vec![0u8; size];
+            let list = attrs.as_mut_ptr() as LPPROC_THREAD_ATTRIBUTE_LIST;
+            if InitializeProcThreadAttributeList(list, 1, 0, &mut size) == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let handles = [h];
+            let ok = UpdateProcThreadAttribute(
+                list,
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+                handles.as_ptr().cast(),
+                std::mem::size_of_val(&handles),
+                null_mut(),
+                std::ptr::null(),
+            );
+            if ok == 0 {
+                DeleteProcThreadAttributeList(list);
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut si: STARTUPINFOEXW = std::mem::zeroed();
+            si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+            si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            si.StartupInfo.hStdInput = h;
+            si.StartupInfo.hStdOutput = h;
+            si.StartupInfo.hStdError = h;
+            si.lpAttributeList = list;
+            let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
+            let mut run = |flags: u32| {
+                CreateProcessW(
+                    std::ptr::null(),
+                    line.as_mut_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    1,
+                    flags,
+                    std::ptr::null(),
+                    dir.as_ptr(),
+                    &si.StartupInfo,
+                    &mut pi,
+                ) != 0
+            };
+            let base = EXTENDED_STARTUPINFO_PRESENT | DETACHED_PROCESS;
+            // A job that doesn't let it go refuses with access denied: then it lives in it.
+            let mut started = run(base | CREATE_BREAKAWAY_FROM_JOB);
+            if !started
+                && std::io::Error::last_os_error().raw_os_error()
+                    == Some(ERROR_ACCESS_DENIED as i32)
+            {
+                super::log("the job the app runs in won't let the host leave it");
+                started = run(base);
+            }
+            let err = std::io::Error::last_os_error();
+            DeleteProcThreadAttributeList(list);
+            if !started {
+                return Err(err);
+            }
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        }
+        Ok(())
+    }
+
     /// This process's user, as a SID string (`S-1-5-21-…`).
     pub fn user_sid() -> Option<String> {
         // SAFETY: a token handle we close, a buffer sized by the first call, and a string
@@ -573,7 +903,11 @@ pub(crate) mod win {
 
     impl Security {
         pub fn only(sid: &str) -> std::io::Result<Security> {
-            let sddl: Vec<u16> = format!("D:P(A;;GA;;;{sid})(A;;GA;;;SY)")
+            // This user and SYSTEM only; and nothing below our integrity level, so a program
+            // running at low integrity (a sandboxed browser's) can't drive the terminals, nor
+            // an unelevated one an elevated Gond's.
+            let level = if elevated() { "HI" } else { "ME" };
+            let sddl: Vec<u16> = format!("D:P(A;;GA;;;{sid})(A;;GA;;;SY)S:(ML;;NRNW;;;{level})")
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();

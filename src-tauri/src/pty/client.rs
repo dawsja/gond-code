@@ -73,6 +73,11 @@ impl HostClient {
         )
     }
 
+    /// The host this client talks to.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     /// Connects now (starting a host if needed); a connection that's up is kept.
     pub fn connect(&self) -> AppResult<()> {
         self.sender().map(|_| ())
@@ -85,6 +90,11 @@ impl HostClient {
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .is_some_and(|c| c.alive.load(Ordering::SeqCst))
+    }
+
+    /// Whether this app opened or attached `pty_id` through this host, and it still runs.
+    pub fn knows(&self, pty_id: &str) -> bool {
+        lock(&self.known).contains(pty_id)
     }
 
     /// Drops the connection; the host keeps every terminal running.
@@ -103,8 +113,15 @@ impl HostClient {
         let tx = c.tx.clone();
         *conn = Some(c);
         drop(conn);
-        let hello: Value = self.ask_on(&tx, Request::Hello, ANSWER)?;
-        if hello["protocol"] != PROTOCOL {
+        let hello: Value = self.ask_on(
+            &tx,
+            Request::Hello {
+                build: Some(super::host::build()),
+            },
+            ANSWER,
+        )?;
+        // Any host from protocol 1 on: requests are only ever added.
+        if hello["protocol"].as_u64().is_none_or(|p| p < 1) {
             self.disconnect();
             return Err(AppError::PtyFailed(format!(
                 "the terminal host speaks protocol {}, not {PROTOCOL}",
@@ -453,7 +470,13 @@ mod tests {
         let ep = endpoint(dir.path());
         let server_ep = ep.clone();
         let server = std::thread::spawn(move || {
-            crate::pty::host::serve(&server_ep, Duration::from_secs(60)).unwrap()
+            crate::pty::host::serve(
+                &server_ep,
+                Duration::from_secs(60),
+                &crate::pty::host::build(),
+                None,
+            )
+            .unwrap()
         });
         let shell = crate::pty::test_shell(dir.path());
 

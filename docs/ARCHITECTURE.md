@@ -44,25 +44,43 @@ runs nothing on an agent's behalf.
 ### The terminal host
 The terminals live in a background process so they outlive the app (`pty/host.rs`,
 `pty/client.rs`, `pty/hub.rs`, `pty/proto.rs`).
-- It's this exe run as `gond-code pty-host`, from a copy in `%LOCALAPPDATA%\GondCode\host\<build>`
-  named `gond-code-host.exe` (Dev: `gond-code-dev-host.exe`). The copy lets the installer
-  replace `gond-code.exe` and a dev build rebuild while it runs; its own name keeps the
-  installer's "close Gond Code" from matching it. A short-lived launcher (`pty-host detach`)
-  starts it, so it's nobody's child and a process-tree kill passes it by; it breaks away from
-  any job that allows it. It turns Ctrl+C handling back on, which its shells inherit.
-- It listens on a named pipe only this Windows user (and SYSTEM) can open, named for the
-  channel, the user's SID and the protocol version
-  (`\\.\pipe\app.gond.code-pty-<sid>-v1`); the app checks the pipe's server is the host
-  exe from that folder before it trusts it. Elsewhere it's a Unix socket in the data folder.
+- It's this exe run as `gond-code pty-host run <build>`, from a copy in
+  `%LOCALAPPDATA%\GondCode\host\<build>` named `gond-code-host.exe` (Dev:
+  `gond-code-dev-host.exe`); `<build>` is the exe's size and modified time. The copy lets the
+  installer replace `gond-code.exe` and a dev build rebuild while it runs; its own name keeps
+  the installer's "close Gond Code" from matching it.
+- A short-lived launcher (`pty-host detach`) starts it, so it's nobody's child and a
+  process-tree kill passes it by. The launcher hands it nothing but NUL for its input and output
+  (an explicit handle list, not the standard spawn's every inheritable handle) and breaks it
+  away from any job that allows it. A job that doesn't (`cargo run`, so `tauri dev`) keeps it,
+  and the host's log says so: there its terminals last as long as that job. The host turns
+  Ctrl+C handling back on, which its shells inherit.
+- **One host per build.** Its pipe is named for the channel, the user's SID and the build
+  (`\\.\pipe\app.gond.code-pty-<sid>-<build>`), and it writes `host\live\<build>.json` (its
+  endpoint, build, pid and protocol) while it runs. The app starts new terminals in its own
+  build's host. A pane that finds no terminal there looks in the older hosts `live` lists
+  (`Ptys::attach`), and every request for that terminal then goes to the host that has it.
+  An older host a newer window has reached (its `hello` names another build) ends once its last
+  terminal has. So neither an update nor a change to this code ends or strands a terminal.
+  Records of hosts that are gone are removed when read.
+- Only this Windows user and SYSTEM can open the pipe, and only from this integrity level up
+  (a low-integrity process can't drive it, nor an unelevated one an elevated Gond's). The app
+  checks the pipe's server is a host exe from that folder before it trusts it. Elsewhere it's
+  a Unix socket in the data folder.
 - One JSON message per line: requests with ids and their replies, and the output of every
-  terminal (`data` with its byte offset `end`, `exit`). A newer app with a different protocol
-  starts its own host; bump `proto::PROTOCOL` for any change an older host wouldn't understand.
+  terminal (`data` with its byte offset `end`, `exit`). Requests and fields are only ever added,
+  never changed or removed, so a newer app always talks to an older host; a host answers one it
+  doesn't know with an error. Bump `proto::PROTOCOL` when you add one.
+- Each terminal's program runs in its own job (`proctree::contain_pid`): closing the pane ends
+  everything it started, and if the host dies Windows closes the jobs and ends them too. No
+  agent or dev server is left running without a pane.
 - Each terminal keeps its last 2 MiB of raw output. `pty.attach` returns it with its `end`; the
-  pane draws it and skips `pty:data` up to that `end`. Output while no window is connected only
-  goes to that buffer.
+  pane draws it, skips `pty:data` up to that `end`, and resizes a row smaller and back so the
+  console and a full-screen agent redraw over it. Output while no window is connected only goes
+  to that buffer.
 - `pty.prune` (after the sessions load) closes terminals whose pane no longer exists.
 - With no terminals and no window for 30 s, the host ends. `gond-code pty-host stop` closes
-  everything and ends it; the uninstaller runs it (never an update).
+  everything in every build's host and ends them; the uninstaller runs it (never an update).
 - If the host can't be reached, `Ptys` runs terminals in the app as before, and `/ptyHost` is
   `false`. It logs to `host\host.log`.
 - Quitting detaches (Settings `keepTerminals`, default on) or closes them all.

@@ -156,6 +156,10 @@ struct Session {
     killer: Box<dyn ChildKiller + Send + Sync>,
     /// The program's process id (the shell's, for a plain terminal).
     pid: Option<u32>,
+    /// Its process tree (a job on Windows): dropping the session ends everything the program
+    /// started, and if the host itself dies, Windows closes the job and ends them too. No
+    /// agent or dev server is left running with no pane.
+    _tree: Option<crate::proctree::Guard>,
 }
 
 type Writer = Arc<Mutex<Box<dyn Write + Send>>>;
@@ -414,6 +418,7 @@ impl PtyManager {
                 writer,
                 killer: child.clone_killer(),
                 pid: child.process_id(),
+                _tree: child.process_id().map(crate::proctree::contain_pid),
             },
         );
 
@@ -764,6 +769,44 @@ pub(crate) mod tests {
         assert!(!mgr.holds(&b.pty_id));
         assert!(mgr.holds(&a2.pty_id));
         mgr.close_all();
+    }
+
+    /// Closing a pane ends what its shell started, not just the shell: no dev server or agent
+    /// is left running with nowhere to see it.
+    #[test]
+    fn closing_a_terminal_ends_what_it_started() {
+        let mgr = PtyManager::new(Arc::new(Recorder::default()));
+        let dir = tempfile::tempdir().unwrap();
+        let o = mgr
+            .spawn("home", None, &test_shell(dir.path()), 120, 24, true)
+            .unwrap();
+        let start = if cfg!(windows) {
+            "powershell -NoProfile -Command \"$p = Start-Process ping -ArgumentList '-n','120','127.0.0.1' -PassThru -WindowStyle Hidden; 'PID=' + $p.Id\"\r"
+        } else {
+            "sleep 120 & echo PID=$!\n"
+        };
+        mgr.write(&o.pty_id, start).unwrap();
+        let r = mgr
+            .read(
+                &o.pty_id,
+                None,
+                Some(r"PID=\d+"),
+                Some(Duration::from_secs(60)),
+            )
+            .unwrap();
+        assert_eq!(r.matched, Some(true), "{}", r.text);
+        let pid: u32 = regex::Regex::new(r"PID=(\d+)")
+            .unwrap()
+            .captures_iter(&r.text)
+            .last()
+            .and_then(|c| c[1].parse().ok())
+            .unwrap();
+        assert!(crate::proctree::tests::alive(pid), "the grandchild runs");
+        mgr.close(&o.pty_id).unwrap();
+        assert!(
+            crate::proctree::tests::gone_soon(pid),
+            "closing the pane ended it"
+        );
     }
 
     #[cfg(unix)]

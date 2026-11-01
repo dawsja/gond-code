@@ -2,8 +2,10 @@
 //! sends requests (`Envelope`), each with an id; the host answers each (`Reply`) and, in
 //! between, streams every terminal's output (`Data`) and end (`Exit`).
 //!
-//! The protocol's version is in the pipe's name, so an app only ever reaches a host that
-//! speaks its version. Bump `PROTOCOL` for any change an older host wouldn't understand.
+//! Requests and fields are only ever added, never changed or taken away: a newer app still
+//! talks to an older build's host (where its panes from before an update still run) with the
+//! requests that host knows, and a host answers a request it doesn't know with an error rather
+//! than silence. Bump `PROTOCOL` when you add one, so the app can tell.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,8 +18,12 @@ pub const PROTOCOL: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum Request {
-    /// → `{ protocol, build, pid }`.
-    Hello,
+    /// → `{ protocol, build, pid }`. `build`: the app's; a host of another build knows a newer
+    /// one has taken over, and ends once its last terminal has.
+    Hello {
+        #[serde(default)]
+        build: Option<String>,
+    },
     /// → `Opened`.
     #[serde(rename_all = "camelCase")]
     Spawn {

@@ -274,7 +274,7 @@ pub fn kill_tree(pid: u32) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
@@ -320,7 +320,7 @@ mod tests {
             .unwrap_or_else(|_| panic!("no pid in {line:?}"))
     }
 
-    fn alive(pid: u32) -> bool {
+    pub(crate) fn alive(pid: u32) -> bool {
         #[cfg(windows)]
         {
             let out = crate::process::command("tasklist")
@@ -342,7 +342,7 @@ mod tests {
         }
     }
 
-    fn gone_soon(pid: u32) -> bool {
+    pub(crate) fn gone_soon(pid: u32) -> bool {
         let until = Instant::now() + Duration::from_secs(15);
         while Instant::now() < until {
             if !alive(pid) {
