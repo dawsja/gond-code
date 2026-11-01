@@ -74,10 +74,14 @@ The terminals live in a background process so they outlive the app (`pty/host.rs
 - Each terminal's program runs in its own job (`proctree::contain_pid`): closing the pane ends
   everything it started, and if the host dies Windows closes the jobs and ends them too. No
   agent or dev server is left running without a pane.
-- Each terminal keeps its last 2 MiB of raw output. `pty.attach` returns it with its `end`; the
-  pane draws it, skips `pty:data` up to that `end`, and resizes a row smaller and back so the
-  console and a full-screen agent redraw over it. Output while no window is connected only goes
-  to that buffer.
+- Each terminal's output goes through a terminal parser in the host (`pty/screen.rs`, the
+  `vt100` crate), so the host knows its screen as it is: up to 4000 lines of history, the
+  visible screen (or a full-screen app's own screen), and the modes the program switched on
+  (bracketed paste, keypad and cursor keys, mouse mode and encoding, focus reporting, cursor
+  style). `pty.attach` returns escape codes that draw all of it into a fresh xterm.js, with its
+  `end`; the pane draws them, skips `pty:data` up to that `end`, and resizes a row smaller and
+  back so a full-screen agent redraws too. Output while no window is connected only goes to the
+  parser.
 - `pty.prune` (after the sessions load) closes terminals whose pane no longer exists.
 - With no terminals and no window for 30 s, the host ends. `gond-code pty-host stop` closes
   everything in every build's host and ends them; the uninstaller runs it (never an update).

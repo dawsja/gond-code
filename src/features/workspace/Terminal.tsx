@@ -112,7 +112,7 @@ const typingElsewhere = () => {
 
 /** `pty.attach`: a pane's terminal still running in the terminal host (Gond Code restarted,
  *  updated or crashed), with what it printed. */
-type Attached = { ptyId: string; replay: string; end: number; exited: boolean };
+type Attached = { ptyId: string; replay: string; end: number; exited: boolean; exact?: boolean };
 
 type Props = {
   paneId: string;
@@ -426,10 +426,10 @@ export function Terminal({
             t.write("\r\n\x1b[2m[The process ended. Restart it from the pane's menu.]\x1b[0m\r\n");
           } else {
             refit();
-            // A row smaller, then back: the console and a full-screen agent redraw their
-            // screen over the replay, which may have started partway into one.
+            // An older host's replay is raw output that may start partway into a screen: a row
+            // smaller, then back, has the console and a full-screen agent redraw over it.
             const id = found.ptyId;
-            if (t.rows > 2)
+            if (!found.exact && t.rows > 2)
               void callOrRun("pty_resize", "pty.resize", {
                 ptyId: id,
                 cols: t.cols,

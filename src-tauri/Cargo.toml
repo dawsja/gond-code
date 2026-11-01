@@ -35,6 +35,8 @@ sha2 = "=0.10.9"
 toml = "=0.9.8"
 tempfile = "=3.27.0"
 portable-pty = "=0.9.0"
+# Each terminal's screen in the terminal host, for a pane that attaches later.
+vt100 = "=0.18.1"
 # The terminal host's pipe (named pipes on Windows, a Unix socket elsewhere): already in the
 # tree through Tauri.
 tokio = { version = "=1.54.1", features = ["net", "io-util", "macros", "rt-multi-thread", "sync", "time"] }

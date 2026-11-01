@@ -2440,13 +2440,18 @@
     "outputSchema": {
       "$defs": {
         "Attached": {
-          "description": "A pane's terminal found again, with what it printed (its last 2 MiB, raw) to draw before\nwhat comes next.",
+          "description": "A pane's terminal found again, with escape codes that draw it as it is (history, screen,\nmodes, cursor) before what comes next.",
           "properties": {
             "end": {
-              "description": "The output length (bytes) the replay goes up to; `pty:data` past it is new.",
+              "description": "The output length (bytes) the redraw goes up to; `pty:data` past it is new.",
               "format": "uint64",
               "minimum": 0,
               "type": "integer"
+            },
+            "exact": {
+              "default": false,
+              "description": "`replay` draws the screen exactly. An older build's host leaves it out: its replay is the\ntail of the raw output, so the pane has the program redraw over it.",
+              "type": "boolean"
             },
             "exited": {
               "description": "The program has ended; its pane says so.",

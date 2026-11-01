@@ -4,7 +4,7 @@
 //! In the app the terminals live in the terminal host (`host.rs`), a background process the
 //! window connects to, so they outlive the app; `Ptys` (`hub.rs`) is what the app holds. A
 //! terminal opened for a pane carries the pane's id as its key, so a pane coming back after
-//! the app restarts finds its terminal (`attach`) and replays what it last printed.
+//! the app restarts finds its terminal (`attach`) and redraws it exactly (`screen.rs`).
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -22,6 +22,7 @@ pub mod client;
 pub mod host;
 pub mod hub;
 pub mod proto;
+pub mod screen;
 pub mod scrollback;
 pub use hub::Ptys;
 pub use scrollback::{PtyRead, Scrollback};
@@ -34,12 +35,10 @@ pub const READ_TIMEOUT_MAX: Duration = Duration::from_secs(120);
 const BATCH: Duration = Duration::from_millis(16);
 /// Flush early once this much output is waiting.
 const MAX_BATCH_BYTES: usize = 64 * 1024;
-/// How much of a terminal's raw output is kept to replay into a pane that attaches later.
-const REPLAY_CAP: usize = 2 * 1024 * 1024;
 
 /// Where session output goes (Tauri events in the app, the connected window from the
 /// terminal host, a buffer in tests). `end` is the terminal's output length in bytes after
-/// `data`: a pane that attaches drops what its replay already holds.
+/// `data`: a pane that attaches drops what its redraw already holds.
 pub trait PtySink: Send + Sync + 'static {
     fn data(&self, pty_id: &str, data: String, end: u64);
     fn exit(&self, pty_id: &str, code: Option<u32>);
@@ -104,8 +103,8 @@ pub struct Opened {
     pub pid: Option<u32>,
 }
 
-/// A pane's terminal found again, with what it printed (its last 2 MiB, raw) to draw before
-/// what comes next.
+/// A pane's terminal found again, with escape codes that draw it as it is (history, screen,
+/// modes, cursor) before what comes next.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Attached {
@@ -113,40 +112,14 @@ pub struct Attached {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
     pub replay: String,
-    /// The output length (bytes) the replay goes up to; `pty:data` past it is new.
+    /// The output length (bytes) the redraw goes up to; `pty:data` past it is new.
     pub end: u64,
     /// The program has ended; its pane says so.
     pub exited: bool,
-}
-
-/// A terminal's raw output: the last `REPLAY_CAP` bytes, starting on a new line where it can.
-#[derive(Default)]
-struct Replay {
-    buf: String,
-    end: u64,
-}
-
-impl Replay {
-    fn push(&mut self, chunk: &str) {
-        self.buf.push_str(chunk);
-        self.end += chunk.len() as u64;
-        if self.buf.len() > REPLAY_CAP {
-            let over = self.buf.len() - REPLAY_CAP;
-            // A new line, so the replay doesn't start inside an escape sequence.
-            let cut = self.buf[ceil_boundary(&self.buf, over)..]
-                .find('\n')
-                .filter(|i| *i < 64 * 1024)
-                .map(|i| ceil_boundary(&self.buf, over) + i + 1)
-                .unwrap_or_else(|| ceil_boundary(&self.buf, over));
-            self.buf.drain(..cut);
-        }
-    }
-}
-
-fn ceil_boundary(s: &str, i: usize) -> usize {
-    (i..=s.len())
-        .find(|i| s.is_char_boundary(*i))
-        .unwrap_or(s.len())
+    /// `replay` draws the screen exactly. An older build's host leaves it out: its replay is the
+    /// tail of the raw output, so the pane has the program redraw over it.
+    #[serde(default)]
+    pub exact: bool,
 }
 
 struct Session {
@@ -206,7 +179,7 @@ struct Kept {
     owner: String,
     key: Option<String>,
     scroll: Arc<Scrollback>,
-    replay: Arc<Mutex<Replay>>,
+    screen: Arc<Mutex<screen::ScreenState>>,
     pid: Option<u32>,
 }
 
@@ -320,14 +293,15 @@ impl PtyManager {
         let (id, kept) = scrolls
             .iter()
             .find(|(_, k)| k.key.as_deref() == Some(key))?;
-        // Under the replay's lock: output can't slip between the snapshot and `end`.
-        let r = kept.replay.lock().unwrap_or_else(|e| e.into_inner());
+        // Under the screen's lock: output can't slip between the drawing and `end`.
+        let mut sc = kept.screen.lock().unwrap_or_else(|e| e.into_inner());
         Some(Attached {
             pty_id: id.clone(),
             pid: kept.pid,
-            replay: r.buf.clone(),
-            end: r.end,
+            replay: sc.render(),
+            end: sc.end,
             exited: !self.is_live(id),
+            exact: true,
         })
     }
 
@@ -375,14 +349,14 @@ impl PtyManager {
 
         let (done_tx, done_rx) = mpsc::channel();
         let scroll = Arc::new(Scrollback::default());
-        let replay = Arc::new(Mutex::new(Replay::default()));
+        let screen = Arc::new(Mutex::new(screen::ScreenState::new(cols, rows)));
         self.scrolls().insert(
             id.clone(),
             Kept {
                 owner: thread_id.to_string(),
                 key: key.map(str::to_string),
                 scroll: scroll.clone(),
-                replay: replay.clone(),
+                screen: screen.clone(),
                 pid: child.process_id(),
             },
         );
@@ -401,11 +375,11 @@ impl PtyManager {
                     }
                 }
                 rscroll.push(&chunk);
-                // Sent under the replay's lock, so `attach` sees each chunk in exactly one of
-                // its replay and what follows it.
-                let mut r = replay.lock().unwrap_or_else(|e| e.into_inner());
-                r.push(&chunk);
-                sink.data(&rid, chunk, r.end)
+                // Sent under the screen's lock, so `attach` sees each chunk in exactly one of
+                // its redraw and what follows it.
+                let mut sc = screen.lock().unwrap_or_else(|e| e.into_inner());
+                sc.push(&chunk);
+                sink.data(&rid, chunk, sc.end)
             });
             let _ = done_tx.send(());
         });
@@ -450,7 +424,14 @@ impl PtyManager {
     pub fn resize(&self, pty_id: &str, cols: u16, rows: u16) -> AppResult<()> {
         let sessions = self.lock();
         let s = sessions.get(pty_id).ok_or_else(|| not_found(pty_id))?;
-        s.master.resize(size(cols, rows)).map_err(failed)
+        s.master.resize(size(cols, rows)).map_err(failed)?;
+        if let Some(k) = self.scrolls().get(pty_id) {
+            k.screen
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .resize(cols.max(1), rows.max(1));
+        }
+        Ok(())
     }
 
     /// Plain-text output after `since`; with `wait_for`, blocks until it matches,
@@ -674,18 +655,6 @@ pub(crate) mod tests {
         assert_eq!(utf8_boundary(&snow[..2]), 0);
     }
 
-    #[test]
-    fn replay_keeps_the_end_and_starts_on_a_line() {
-        let mut r = Replay::default();
-        let line = format!("{}\n", "x".repeat(1023));
-        for _ in 0..(REPLAY_CAP / 1024 + 10) {
-            r.push(&line);
-        }
-        assert!(r.buf.len() <= REPLAY_CAP);
-        assert!(r.buf.starts_with('x') && r.buf.ends_with('\n'));
-        assert_eq!(r.end, (REPLAY_CAP / 1024 + 10) as u64 * 1024);
-    }
-
     #[cfg(unix)]
     #[test]
     fn echoes_through_a_pty_and_reports_exit() {
@@ -754,7 +723,8 @@ pub(crate) mod tests {
         let at = mgr.attach("pane-a").unwrap();
         assert_eq!(at.pty_id, a.pty_id);
         assert!(!at.exited);
-        assert!(at.end >= at.replay.len() as u64);
+        // `end` counts what it printed; the redraw is escape codes drawing it, any length.
+        assert!(at.end > 0 && at.replay.contains("gond-attach"));
         assert!(mgr.attach("pane-z").is_none());
 
         // The pane restarted: a new terminal under the same key, the old one closed.
