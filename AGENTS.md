@@ -72,6 +72,8 @@ app every debug build is (`src-tauri/src/channel.rs`; README, "Dev and prod side
   bun scripts/dev-cdp.ts click .xterm-screen  # focus the pane, then:
   bun scripts/dev-cdp.ts type 'git status\n'  # type into it; \n presses Enter
   bun scripts/dev-cdp.ts key Escape           # Enter, Escape, Tab, Backspace, arrows
+  bun scripts/dev-cdp.ts drag 900,22 500,200  # press, move, let go (`hold` stays pressed)
+  bun scripts/dev-cdp.ts hover 135,455        # pointer there, for hover cards and tooltips
   ```
 
   A pane's text is drawn on a canvas, so check it with `shot`, not `eval`. From Git Bash, an

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ClipboardPasteIcon,
   CopyIcon,
@@ -24,7 +24,7 @@ import {
 import { ProviderIcon } from "@/components/brand/provider-icon";
 import type { AgentInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { panes, type Node, type Pane, type Layout } from "./layout";
+import { panes, type Node, type Pane, type Layout, type Side } from "./layout";
 import { useDropTarget } from "./dropTarget";
 import { usePaneAgents } from "./paneAgent";
 import { STATUS_LABEL, type PaneStatus, type Status } from "./status";
@@ -61,6 +61,56 @@ function measure(node: Node | null, r: Rect = { x: 0, y: 0, w: 1, h: 1 }) {
 
 const pct = (n: number) => `${n * 100}%`;
 
+/** Where a dragged pane lands: swapped with `id`, or beside it on a side. */
+type Landing = { id: string; to: Side | "swap" };
+
+/**
+ * The pane under (`x`, `y`), fractions of the folder, and where on it: a quarter in from an edge
+ * puts the dragged pane beside it on that side, the middle swaps the two.
+ */
+function landing(boxes: Map<string, Rect>, from: string, x: number, y: number) {
+  for (const [id, r] of boxes) {
+    if (id === from || x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) continue;
+    const fx = (x - r.x) / r.w;
+    const fy = (y - r.y) / r.h;
+    const edges: [Side, number][] = [
+      ["left", fx],
+      ["right", 1 - fx],
+      ["up", fy],
+      ["down", 1 - fy],
+    ];
+    const [side, d] = edges.reduce((a, b) => (b[1] < a[1] ? b : a));
+    return { id, to: d < 0.25 ? side : "swap" } satisfies Landing;
+  }
+  return undefined;
+}
+
+/** The part of a pane's box a landing fills: half of it for a side, all of it for a swap. */
+function landingBox(r: Rect, to: Landing["to"]): Rect {
+  switch (to) {
+    case "left":
+      return { ...r, w: r.w / 2 };
+    case "right":
+      return { ...r, x: r.x + r.w / 2, w: r.w / 2 };
+    case "up":
+      return { ...r, h: r.h / 2 };
+    case "down":
+      return { ...r, y: r.y + r.h / 2, h: r.h / 2 };
+    default:
+      return r;
+  }
+}
+
+const SIDE_WORD: Record<Side, string> = {
+  left: "to the left",
+  right: "to the right",
+  up: "above",
+  down: "below",
+};
+
+/** A pane being dragged by its header: which, its name, the pointer, and where it would land. */
+type Dragging = { id: string; name: string; px: number; py: number; over?: Landing };
+
 const STATUS_DOT: Record<Status, string> = {
   working: "bg-tone-info shadow-[0_0_0_3px_rgba(144,202,249,.15)]",
   needs: "bg-tone-warn",
@@ -80,10 +130,14 @@ export type PaneActions = {
   restart: (paneId: string) => void;
   openFolder: (projectId: string) => void;
   resize: (splitId: string, ratio: number) => void;
+  move: (paneId: string, target: string, to: Side | "swap") => void;
   agentRun: (paneId: string, run?: { ptyId: string; since: number; cwd?: string }) => void;
 };
 
-/** One folder's panes: split right and down, drag a divider to resize, right-click for the rest. */
+/**
+ * One folder's panes: split right and down, drag a divider to resize, drag a pane by its header
+ * onto another to swap them or put it beside it, right-click for the rest.
+ */
 export function Workspace({
   layout,
   visible,
@@ -132,6 +186,60 @@ export function Workspace({
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
+
+  // Dragging a pane by its header. It only starts past a few pixels, so a click still focuses.
+  const [moving, setMoving] = useState<Dragging>();
+  const stop = useRef<() => void>(undefined);
+  useEffect(() => () => stop.current?.(), []);
+  const grab = (p: Pane) => (e: React.PointerEvent) => {
+    if (e.button !== 0 || zoomed || list.length < 2) return;
+    if ((e.target as HTMLElement).closest("button, input")) return;
+    const el = box.current!;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const name = e.currentTarget.closest("section")?.getAttribute("aria-label") ?? "Terminal";
+    let state: Dragging | undefined;
+    const move = (ev: PointerEvent) => {
+      if (!state && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+      const r = el.getBoundingClientRect();
+      const x = (ev.clientX - r.left) / r.width;
+      const y = (ev.clientY - r.top) / r.height;
+      state = {
+        id: p.id,
+        name,
+        px: ev.clientX - r.left,
+        py: ev.clientY - r.top,
+        over: landing(boxes, p.id, x, y),
+      };
+      setMoving(state);
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("keydown", key, true);
+      stop.current = undefined;
+      setMoving(undefined);
+    };
+    const up = () => {
+      const over = state?.over;
+      end();
+      if (over) actions.move(p.id, over.id, over.to);
+    };
+    // Esc puts it back where it was.
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      end();
+    };
+    stop.current?.();
+    stop.current = end;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("keydown", key, true);
+  };
+  const target = moving?.over && boxes.get(moving.over.id);
+  const shade = target && moving?.over && landingBox(target, moving.over.to);
   // Each pane is its own card, 3px in from its box: 6px between panes and 6px from the window's
   // edge, so every border always shows.
   return (
@@ -165,6 +273,8 @@ export function Workspace({
                 visible={visible}
                 renaming={renaming === p.id}
                 onRenamed={(title) => onRenamed(p.id, title)}
+                dragging={moving?.id === p.id}
+                onGrab={grab(p)}
               />
             </div>
           );
@@ -191,6 +301,34 @@ export function Workspace({
               }
             />
           ))}
+        {moving && (
+          <div data-slot="pane-drag" className="absolute inset-0 z-30 cursor-grabbing">
+            {shade && (
+              <div
+                className="pointer-events-none absolute p-[3px] transition-[left,top,width,height] duration-100"
+                style={{
+                  left: pct(shade.x),
+                  top: pct(shade.y),
+                  width: pct(shade.w),
+                  height: pct(shade.h),
+                }}
+              >
+                <div className="size-full rounded-[10px] border-2 border-tint bg-tint/10" />
+              </div>
+            )}
+            <span
+              className="pointer-events-none absolute flex -translate-x-1/2 translate-y-3 items-center gap-1.5 rounded-full border border-tint-edge bg-black/85 px-3 py-1 text-[12px] font-medium whitespace-nowrap"
+              style={{ left: moving.px, top: moving.py }}
+            >
+              {moving.name}
+              {moving.over && (
+                <span className="text-muted-foreground">
+                  {moving.over.to === "swap" ? "swap" : SIDE_WORD[moving.over.to]}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -208,6 +346,8 @@ function PaneView({
   visible,
   renaming,
   onRenamed,
+  dragging,
+  onGrab,
 }: {
   pane: Pane;
   agents: AgentInfo[];
@@ -220,6 +360,9 @@ function PaneView({
   visible: boolean;
   renaming: boolean;
   onRenamed: (title: string) => void;
+  /** Being dragged by its header to another place. */
+  dragging: boolean;
+  onGrab: (e: React.PointerEvent) => void;
 }) {
   // The agent you started in its shell, while it runs.
   const running = usePaneAgents()[pane.id];
@@ -239,6 +382,7 @@ function PaneView({
           className={cn(
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-edge bg-black",
             focused && "border-tint-edge",
+            dragging && "opacity-50",
           )}
         >
           {dropping && (
@@ -253,6 +397,8 @@ function PaneView({
           )}
           <header
             onMouseDown={() => actions.focus(pane.id)}
+            onPointerDown={onGrab}
+            data-slot="pane-header"
             className={cn(
               "flex h-8 shrink-0 items-center gap-2 border-b border-border px-2.5 text-[12px] select-none",
               focused ? "bg-tint-wash/40" : "bg-[#070707]",

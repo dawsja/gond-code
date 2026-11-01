@@ -63,6 +63,46 @@ export function split(
   return walk(root);
 }
 
+/** Panes `a` and `b` trade places; the splits stay as they are. */
+export function swap(root: Node | null, a: string, b: string): Node | null {
+  const pa = find(root, a);
+  const pb = find(root, b);
+  if (!root || !pa || !pb || a === b) return root;
+  const walk = (n: Node): Node =>
+    n.kind === "pane"
+      ? n.id === a
+        ? pb
+        : n.id === b
+          ? pa
+          : n
+      : { ...n, a: walk(n.a), b: walk(n.b) };
+  return walk(root);
+}
+
+/** Which side of a pane another lands on when it's dropped by that edge. */
+export type Side = "left" | "right" | "up" | "down";
+
+/** Pane `id` taken out of its place and put beside pane `target`, on `side`, half and half. */
+export function moveBeside(root: Node | null, id: string, target: string, side: Side): Node | null {
+  const moving = find(root, id);
+  if (!root || !moving || id === target || !find(root, target)) return root;
+  const dir: Split["dir"] = side === "left" || side === "right" ? "right" : "down";
+  const first = side === "left" || side === "up";
+  const walk = (n: Node): Node => {
+    if (n.kind === "split") return { ...n, a: walk(n.a), b: walk(n.b) };
+    if (n.id !== target) return n;
+    return {
+      kind: "split",
+      id: newId(),
+      dir,
+      ratio: 0.5,
+      a: first ? moving : n,
+      b: first ? n : moving,
+    };
+  };
+  return walk(remove(root, id)!);
+}
+
 /** Without pane `id`: its sibling takes the split's place. */
 export function remove(root: Node | null, id: string): Node | null {
   if (!root) return null;

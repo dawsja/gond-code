@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { fromSaved, one, panes, remove, resize, split, type Node, type Pane } from "./layout";
+import {
+  fromSaved,
+  moveBeside,
+  one,
+  panes,
+  remove,
+  resize,
+  split,
+  swap,
+  type Node,
+  type Pane,
+} from "./layout";
 
 const pane = (id: string): Pane => ({ kind: "pane", id, projectId: "p" });
 
@@ -18,6 +29,35 @@ describe("a folder's panes", () => {
     root = remove(root, "claude");
     expect(root).toEqual(pane("grok"));
     expect(remove(root, "grok")).toBeNull();
+  });
+
+  it("drags a pane onto another: swapped in the middle, beside it at an edge", () => {
+    // Claude | (Codex over Grok)
+    let root: Node | null = split(pane("claude"), "claude", "right", pane("codex"));
+    root = split(root, "codex", "down", pane("grok"));
+    const swapped = swap(root, "claude", "grok");
+    expect(swapped).toMatchObject({
+      a: { id: "grok" },
+      b: { a: { id: "codex" }, b: { id: "claude" } },
+    });
+    expect(swap(root, "claude", "claude")).toBe(root);
+
+    // Grok dropped on Claude's left edge: Grok | Claude on the left, Codex alone on the right.
+    const moved = moveBeside(root, "grok", "claude", "left");
+    expect(moved).toMatchObject({
+      dir: "right",
+      a: { dir: "right", a: { id: "grok" }, b: { id: "claude" } },
+      b: { id: "codex" },
+    });
+    // Dropped on its own: nothing moves.
+    expect(moveBeside(root, "grok", "grok", "up")).toBe(root);
+    // Below the only other pane.
+    const two = split(pane("a"), "a", "right", pane("b"));
+    expect(moveBeside(two, "a", "b", "down")).toMatchObject({
+      dir: "down",
+      a: { id: "b" },
+      b: { id: "a" },
+    });
   });
 
   it("opens a layout saved per folder as one workspace, nothing missing", () => {

@@ -7,13 +7,16 @@ import {
   find,
   fromSaved,
   load,
+  moveBeside,
   newId,
   panes,
   remove,
   resize,
   save,
   split,
+  swap,
   update,
+  type Side,
   type Session,
   type Pane,
   type Saved,
@@ -304,6 +307,14 @@ export function useSessions({ projects }: { projects: Project[] }) {
         ),
       resize: (splitId: string, ratio: number) =>
         change((s) => ({ ...s, root: resize(s.root, splitId, ratio) })),
+      /** A pane dragged onto another: swapped with it, or put beside it on `side`. */
+      move: (paneId: string, target: string, to: Side | "swap") =>
+        change((s) => ({
+          ...s,
+          root:
+            to === "swap" ? swap(s.root, paneId, target) : moveBeside(s.root, paneId, target, to),
+          focus: paneId,
+        })),
     }),
 
     [focus, shortcut, change],

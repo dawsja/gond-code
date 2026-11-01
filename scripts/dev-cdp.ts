@@ -11,6 +11,10 @@
 //                                                `.xterm-screen` first); \n presses Enter
 // bun scripts/dev-cdp.ts key <Key>               presses one key: Enter, Escape, Tab, ArrowDown…,
 //                                                Ctrl+C (any Ctrl+<letter>)
+// bun scripts/dev-cdp.ts drag <x,y> <x,y> [hold]  presses at the first point, moves to the second
+//                                                and lets go (`hold`: stays pressed, for a shot)
+// bun scripts/dev-cdp.ts release <x,y>           lets go of a held drag there
+// bun scripts/dev-cdp.ts hover <x,y>             moves the pointer there, nothing pressed
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -78,6 +82,13 @@ const clickAt = async (find: string, what: string) => {
       clickCount: 1,
     });
 };
+const point = (s?: string) => {
+  const [x, y] = (s ?? "").split(",").map(Number);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`Not a point: ${s} (x,y)`);
+  return { x, y };
+};
+const mouse = (type: string, at: { x: number; y: number }, buttons = 1) =>
+  send("Input.dispatchMouseEvent", { type, ...at, button: "left", buttons, clickCount: 1 });
 const KEYS: Record<string, [string, number, string?]> = {
   Enter: ["Enter", 13, "\r"],
   Escape: ["Escape", 27],
@@ -149,8 +160,30 @@ switch (cmd) {
   case "key":
     await key(arg);
     break;
+  case "drag": {
+    const [from, to] = [point(rest[0]), point(rest[1])];
+    await mouse("mousePressed", from);
+    for (let i = 1; i <= 12; i++) {
+      const f = i / 12;
+      await mouse("mouseMoved", {
+        x: from.x + (to.x - from.x) * f,
+        y: from.y + (to.y - from.y) * f,
+      });
+      await sleep(16);
+    }
+    if (rest[2] !== "hold") await mouse("mouseReleased", to, 0);
+    break;
+  }
+  case "hover":
+    await mouse("mouseMoved", point(rest[0]), 0);
+    break;
+  case "release":
+    await mouse("mouseReleased", point(rest[0]), 0);
+    break;
   default:
-    console.error("Usage: bun scripts/dev-cdp.ts shot|eval|click|click-text|type|key <arg>");
+    console.error(
+      "Usage: bun scripts/dev-cdp.ts shot|eval|click|click-text|type|key|drag|release|hover <arg>",
+    );
     process.exit(2);
 }
 // Let the page react before the next command looks at it.
