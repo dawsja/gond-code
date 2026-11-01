@@ -104,10 +104,12 @@ export function KeyHelp({ run }: { run?: (c: Command) => void }) {
   const runnable = run ? groups.flatMap((g) => g.rows.filter((r) => r.run)) : [];
   const chosen = runnable[Math.min(sel, runnable.length - 1)];
 
+  // A command ran: it says where focus goes (a new pane, the rename box…), not the list.
+  const ran = useRef(false);
   const go = (r?: Row) => {
     if (!r?.run || !run) return;
+    ran.current = true;
     setOpen(false);
-    // Once the list has closed and given focus back to the pane.
     const c = r.run;
     window.setTimeout(() => run(c), 0);
   };
@@ -121,6 +123,10 @@ export function KeyHelp({ run }: { run?: (c: Command) => void }) {
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <DialogPrimitive.Content
           aria-describedby={undefined}
+          onCloseAutoFocus={(e) => {
+            if (ran.current) e.preventDefault();
+            ran.current = false;
+          }}
           className="fixed top-[14vh] left-1/2 z-50 flex max-h-[70vh] w-[520px] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-edge bg-card shadow-[0_24px_60px_rgba(0,0,0,.7)] outline-none"
         >
           <DialogPrimitive.Title className="sr-only">Commands</DialogPrimitive.Title>

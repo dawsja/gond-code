@@ -102,6 +102,14 @@ function logicalLines(t: XTerm): Line[] {
   return out;
 }
 
+/** Whether you're typing in a text field outside the terminals (a name you're giving a new
+ *  session): a terminal doesn't take focus from it when it opens or becomes the active one. */
+const typingElsewhere = () => {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el || el.closest(".xterm")) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+};
+
 /** `pty.attach`: a pane's terminal still running in the terminal host (Gond Code restarted,
  *  updated or crashed), with what it printed. */
 type Attached = { ptyId: string; replay: string; end: number; exited: boolean };
@@ -474,7 +482,7 @@ export function Terminal({
         early
           .filter((e) => e.ptyId === ptyId && (e.end === undefined || e.end > drawn))
           .forEach((e) => t.write(e.data));
-        if (live.current.active) t.focus();
+        if (live.current.active && !typingElsewhere()) t.focus();
       } catch (e) {
         t.write(`\x1b[31mCouldn't start: ${errorText(e)}\x1b[0m\r\n`);
         set("exited");
@@ -499,7 +507,7 @@ export function Terminal({
   }, [paneId]);
 
   useEffect(() => {
-    if (active) term.current?.focus();
+    if (active && !typingElsewhere()) term.current?.focus();
   }, [active]);
 
   // The padding sits outside the box xterm fits to: its fit reads the box's height and width,

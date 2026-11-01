@@ -187,11 +187,14 @@ export function Deck() {
     const pane = sp.current?.layout.focus;
     if (!pane) return;
     toWorkspace();
-    if (c === "copy") return handles.get(pane)?.copy();
-    if (c === "paste") return handles.get(pane)?.paste();
     if (c === "rename") return sp.actions.rename(pane);
-    if (c === "restart") return sp.actions.restart(pane);
-    sp.actions.shortcut(pane, c);
+    // Back to the pane's terminal; a split or close focuses the new or next pane itself.
+    const h = handles.get(pane);
+    if (c === "copy") h?.copy();
+    else if (c === "paste") h?.paste();
+    else if (c === "restart") return sp.actions.restart(pane);
+    else sp.actions.shortcut(pane, c);
+    if (c !== "close") h?.focus();
   };
 
   const projects = DEMO ? MOCK_PROJECTS : liveProjects;
