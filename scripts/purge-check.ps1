@@ -49,7 +49,11 @@ using System; using System.Runtime.InteropServices;
 public static class GondMouse {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   public static void Click(int x, int y) { SetCursorPos(x, y); mouse_event(2, 0, 0, 0, IntPtr.Zero); mouse_event(4, 0, 0, 0, IntPtr.Zero); }
+  // BM_GETCHECK: what the uninstaller itself reads when the page is left.
+  public static bool Checked(IntPtr h) { return SendMessage(h, 0x00F0, IntPtr.Zero, IntPtr.Zero).ToInt64() == 1; }
 }
 "@
 # A real click in the middle of a control: NSIS's controls don't all offer UIA patterns.
@@ -71,10 +75,17 @@ function Uninstall-With-Checkbox {
   $find = { param($name) $c = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::NameProperty), $name; $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $c) }
   $box = $null; for ($i = 0; $i -lt 20 -and -not $box; $i++) { Start-Sleep -Milliseconds 300; $box = & $find 'Delete the application data' }
   if (-not $box) { throw 'no "Delete the application data" checkbox' }
-  try { $win.SetFocus() } catch {}
-  Click-Element $box
-  $tp = $null; try { $tp = $box.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) } catch {}
-  Write-Host "checkbox: $(if ($tp) { $tp.Current.ToggleState } else { 'clicked' })"
+  # A click can land before the window is in front and miss; click again until the box reads ticked.
+  $boxHwnd = [IntPtr]$box.Current.NativeWindowHandle
+  $clicks = 0
+  while ($clicks -lt 5 -and -not [GondMouse]::Checked($boxHwnd)) {
+    [GondMouse]::SetForegroundWindow([IntPtr]$win.Current.NativeWindowHandle) | Out-Null
+    try { $win.SetFocus() } catch {}
+    Click-Element $box
+    $clicks++
+  }
+  Write-Host "checkbox: ticked=$([GondMouse]::Checked($boxHwnd)) after $clicks click(s)"
+  if (-not [GondMouse]::Checked($boxHwnd)) { throw 'the "Delete the application data" box never ticked' }
   Click-Element (& $find 'Uninstall')
   # The finish page: Close.
   for ($i = 0; $i -lt 60; $i++) {
