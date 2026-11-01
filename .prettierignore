@@ -1,0 +1,9 @@
+dist
+src-tauri/target
+src-tauri/gen
+src-tauri/icons
+bun.lock
+*.md
+design/dist
+design/shots
+src/lib/commands.generated.json

@@ -1,0 +1,18 @@
+{
+  "//": "Screens the layout check renders at every size: name -> URL search on the mock build. The app is the terminal workspace: sessions of agent panes, and Settings.",
+  "screens": {
+    "workspace": "",
+    "workspace-demo": "?demo",
+    "setup-toast": "?demo&toast",
+    "settings": "?demo&settings=general",
+    "usage": "?demo&settings=usage",
+    "harnesses": "?demo&settings=harnesses",
+    "connections": "?demo&settings=connections"
+  },
+  "sizes": [
+    [1024, 768],
+    [1366, 768],
+    [1920, 1080],
+    [2560, 1440]
+  ]
+}

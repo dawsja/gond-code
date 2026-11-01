@@ -1,0 +1,67 @@
+# Real harness installs on a fresh Windows runner, through Gond's install engine.
+# Manual: each run downloads every harness. Also runs on pushes to bridge/install-check-*.
+name: Install check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["bridge/install-check-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [claude, codex, agy, grok]
+        plan: ["0", "1"]
+        exclude:
+          - harness: agy # one plan: the vendor script
+            plan: "1"
+    steps:
+      - uses: actions/checkout@v4
+      # tauri-build wants the frontend's dist folder; the engine test doesn't use it, and
+      # leaving Bun off the runner keeps it closer to a clean PC.
+      - name: Placeholder dist
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force dist | Out-Null; "<!doctype html>" | Out-File dist/index.html
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: What's on the runner
+        shell: pwsh
+        run: |
+          foreach ($c in "winget","node","npm","bun","git") { "{0}: {1}" -f $c, ((Get-Command $c -ErrorAction SilentlyContinue).Source) }
+          try { winget --version } catch { "winget: none" }
+      - name: Install ${{ matrix.harness }} (plan ${{ matrix.plan }})
+        working-directory: src-tauri
+        env:
+          GOND_REAL_HARNESS: ${{ matrix.harness }}
+          GOND_REAL_PLAN: ${{ matrix.plan }}
+        run: cargo test --lib real_install -- --ignored --nocapture
+      - name: What the install left (for uninstall, #501)
+        if: always()
+        shell: pwsh
+        run: |
+          "== user PATH"; ([Environment]::GetEnvironmentVariable('Path','User') -split ';') | Where-Object { $_ }
+          "== uninstall entries"
+          foreach ($root in 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall') {
+            Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
+              Where-Object { "$($_.DisplayName) $($_.Publisher)" -match 'Claude|Anthropic|Codex|OpenAI|Antigravity|agy|Grok|xAI' } |
+              ForEach-Object { "{0} | {1} | {2} | loc={3} | un={4} | quiet={5}" -f $root, $_.PSChildName, $_.DisplayName, $_.InstallLocation, $_.UninstallString, $_.QuietUninstallString }
+          }
+          "== appx"; Get-AppxPackage | Where-Object { $_.Name -match 'Claude|Anthropic|Codex|OpenAI|Antigravity|Grok|xAI' } | ForEach-Object { "$($_.Name) $($_.InstallLocation)" }
+          "== folders"
+          $c = @("$env:USERPROFILE\.local","$env:USERPROFILE\.claude","$env:USERPROFILE\.claude.json","$env:USERPROFILE\.codex","$env:LOCALAPPDATA\agy","$env:USERPROFILE\.gemini","$env:USERPROFILE\.grok","$env:LOCALAPPDATA\Programs","$env:LOCALAPPDATA\Microsoft\WinGet\Packages","$env:LOCALAPPDATA\Microsoft\WinGet\Links","$env:APPDATA\npm","$env:LOCALAPPDATA\AnthropicClaude","$env:LOCALAPPDATA\claude","$env:LOCALAPPDATA\OpenAI","$env:LOCALAPPDATA\xAI","$env:LOCALAPPDATA\grok")
+          foreach ($d in $c) { if (Test-Path $d) { "-- $d"; Get-ChildItem $d -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 40 | ForEach-Object { "   " + $_.FullName.Replace($env:USERPROFILE,'~') } } }
+      - name: Uninstall ${{ matrix.harness }} (everything on plan 1)
+        working-directory: src-tauri
+        env:
+          GOND_REAL_HARNESS: ${{ matrix.harness }}
+          GOND_REAL_EVERYTHING: ${{ matrix.plan }}
+        run: cargo test --lib real_uninstall -- --ignored --nocapture

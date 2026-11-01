@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- A deliberately cramped page: every layout rule must fire on it, or the check is broken (#230). -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        margin: 0;
+        font:
+          14px "Segoe UI",
+          sans-serif;
+        background: #000;
+        color: #ededed;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- overflow: a flex child without min-width:0 pushes a long title out of its card -->
+    <div id="overflow" style="width: 200px; border: 1px solid #333">
+      <div style="white-space: nowrap">
+        gond/an-extremely-long-branch-name-that-cannot-possibly-fit
+      </div>
+    </div>
+    <!-- clipped: hidden overflow, no ellipsis -->
+    <div id="clipped" style="width: 120px; overflow: hidden; white-space: nowrap">
+      Share-link API with expiry and audit log
+    </div>
+    <!-- no-tooltip: ellipsis without a title -->
+    <div
+      id="no-tooltip"
+      style="width: 120px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis"
+    >
+      Share button on the draft toolbar
+    </div>
+    <!-- word-per-line + narrow-text: a lane squeezed to 48px -->
+    <div class="row">
+      <div data-layout="lane" style="width: 48px">Revoke link from the share menu</div>
+    </div>
+    <!-- nested-scroll: a vertical scroller inside a vertical scroller -->
+    <div style="height: 60px; overflow-y: auto">
+      <div style="height: 120px; overflow-y: auto">
+        <div style="height: 400px">inner</div>
+      </div>
+    </div>
+    <!-- page-x: wider than any window -->
+    <div style="width: 3000px; height: 4px; background: #222"></div>
+    <!-- logo-count: the mark twice -->
+    <img
+      data-slot="gond-mark"
+      width="24"
+      height="24"
+      alt="Gond Code"
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23fff'/%3E%3C/svg%3E"
+    />
+    <img
+      data-slot="gond-mark"
+      width="24"
+      height="24"
+      alt="Gond Code"
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23fff'/%3E%3C/svg%3E"
+    />
+    <!-- concentric: a square highlight in a pill track -->
+    <div style="display: inline-flex; padding: 4px; border-radius: 999px; background: #1a1a1a">
+      <span
+        style="
+          display: inline-flex;
+          align-items: center;
+          height: 32px;
+          padding: 0 12px;
+          border-radius: 8px;
+          background: #333;
+        "
+      >
+        Auto
+      </span>
+    </div>
+    <!-- control-clipped: a button taller than its overflow-hidden bar -->
+    <div style="height: 24px; overflow: hidden; display: flex; align-items: center">
+      <button style="height: 32px; border-radius: 999px; border: 1px solid #333">Command</button>
+    </div>
+    <!-- header-centred: an app header whose command field sits below its centre line -->
+    <header
+      data-entity="titlebar"
+      style="height: 40px; display: flex; align-items: flex-end; padding-bottom: 0"
+    >
+      <button style="height: 28px; border-radius: 999px">Tell the crew</button>
+    </header>
+    <!-- passes: truncated with a title, and a deliberate scroller -->
+    <div
+      style="width: 120px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis"
+      title="Fine"
+    >
+      Fine because it has a title tooltip
+    </div>
+    <div data-overflow="scroll" style="width: 120px; overflow-x: auto; white-space: nowrap">
+      a deliberate sideways scroller is fine
+    </div>
+    <!-- label-wrap: a menu item squeezed until its label breaks onto two lines -->
+    <div role="menu" style="width: 70px; background: #0e0e0e">
+      <div role="menuitem" id="label-wrap">Close thread</div>
+    </div>
+  </body>
+</html>

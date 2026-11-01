@@ -1,0 +1,303 @@
+/*
+ * Gond Code theme: dark only, near-black, in Gond's fonts,
+ * radii and tint. shadcn's semantic tokens carry the values, so shadcn components and ours
+ * pick them up without hard-coded colours: `primary` is the tint (primary actions),
+ * `secondary`/`accent`/`muted` the raised greys, `card`/`popover` the panels.
+ * Contrast is checked in theme.test.ts. The tint is `data-tint` on <html> (blue by default).
+ * Imported after Tailwind by src/styles/index.css.
+ */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Always dark: `dark:` variants apply everywhere (html also carries class="dark"). */
+@custom-variant dark (&:where(*));
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  /* Surface steps and edges of Gond's own components. */
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-edge: var(--edge);
+  --color-faint: var(--faint);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Gond extras: the tint's shades, status tones and named colours for code and badges. */
+  --color-tint: var(--tint);
+  --color-tint-wash: var(--tint-wash);
+  --color-tint-edge: var(--tint-edge);
+  --color-tint-ink: var(--tint-ink);
+  --color-tone-ok: var(--tone-ok);
+  --color-tone-warn: var(--tone-warn);
+  --color-tone-bad: var(--tone-bad);
+  --color-tone-info: var(--tone-info);
+  --color-status-running: var(--tone-info);
+  --color-status-waiting: var(--tone-warn);
+  --color-status-done: var(--tone-ok);
+  --color-status-error: var(--tone-bad);
+  --color-diff-added: color-mix(in srgb, var(--tone-ok) 16%, var(--background));
+  --color-diff-removed: color-mix(in srgb, var(--tone-bad) 16%, var(--background));
+  --color-mint: var(--mint);
+  --color-amber: var(--amber);
+  --color-sky: var(--sky);
+  --color-magenta: var(--magenta);
+  --color-grape: var(--grape);
+  --color-ember: var(--ember);
+
+  --animate-cog: cog-turn 9s linear infinite;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 16px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-4xl: 9999px;
+}
+
+:root {
+  color-scheme: dark;
+  --radius: 0.5rem;
+
+  /* Near-black surfaces. */
+  --background: #000000;
+  --foreground: #ededed;
+  --sidebar: #030303;
+  --card: #0e0e0e;
+  --card-foreground: var(--foreground);
+  --popover: #0e0e0e;
+  --popover-foreground: var(--foreground);
+  --secondary: #1a1a1a;
+  --secondary-foreground: var(--foreground);
+  --muted: #1a1a1a;
+  --muted-foreground: #8a8a8a;
+  --accent: #1e1e1e;
+  --accent-foreground: var(--foreground);
+  --border: #1c1c1c;
+  --border-subtle: #151515;
+  --raised: #141414;
+  --hover: #1a1a1a;
+  --edge: #262626;
+  --faint: #5a5a5a;
+  --input: #262626;
+  --ring: #5c5c5c;
+  --destructive: #e5484d;
+
+  /* The tint is the primary action (Send, Commit, Create PR). */
+  --primary: var(--tint-solid);
+  --primary-foreground: #ffffff;
+
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--tint-solid);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* Material 200-tone accents, from Gond's dark theme. */
+  --tone-ok: #a5d6a7;
+  --tone-warn: #ffe082;
+  --tone-bad: #ef9a9a;
+  --tone-info: #90caf9;
+  --mint: #81c995;
+  --amber: #fdd663;
+  --sky: #8ab4f8;
+  --magenta: #f28bca;
+  --grape: #c58af9;
+  --ember: #cf6679;
+  --ash: #6e6e6e;
+
+  /* Default tint (blue); each [data-tint] below replaces these. */
+  --tint: #2f6fd6;
+  --tint-solid: #2b61b9;
+  --tint-wash: #252f40;
+  --tint-edge: #3d5780;
+  --tint-ink: #8db0e8;
+
+  /* Each raised surface sets its own --surface (cut-out rings take its colour). */
+  --surface: var(--background);
+}
+
+/* Tints (Settings → Appearance), dark shades from Gond: white on --tint-solid clears 4.5:1. */
+[data-tint="blue"] {
+  --tint: #2f6fd6;
+  --tint-solid: #2b61b9;
+  --tint-wash: #252f40;
+  --tint-edge: #3d5780;
+  --tint-ink: #8db0e8;
+}
+[data-tint="purple"] {
+  --tint: #7650d8;
+  --tint-solid: #6747ba;
+  --tint-wash: #302a40;
+  --tint-edge: #5a4b81;
+  --tint-ink: #b49fea;
+}
+[data-tint="pink"] {
+  --tint: #cf3d85;
+  --tint-solid: #b33774;
+  --tint-wash: #3f2733;
+  --tint-edge: #7d4360;
+  --tint-ink: #e594bc;
+}
+[data-tint="red"] {
+  --tint: #d03a3a;
+  --tint-solid: #b33434;
+  --tint-wash: #3f2727;
+  --tint-edge: #7e4242;
+  --tint-ink: #e59393;
+}
+[data-tint="orange"] {
+  --tint: #e04e0a;
+  --tint-solid: #c1450b;
+  --tint-wash: #412a1f;
+  --tint-edge: #844a2f;
+  --tint-ink: #ee9e78;
+}
+[data-tint="amber"] {
+  --tint: #d98a08;
+  --tint-solid: #9f670b;
+  --tint-wash: #40331f;
+  --tint-edge: #81622e;
+  --tint-ink: #eabf77;
+}
+[data-tint="green"] {
+  --tint: #189c47;
+  --tint-solid: #17853e;
+  --tint-wash: #213629;
+  --tint-edge: #346947;
+  --tint-ink: #80c99a;
+}
+
+/* An agent's cog ring turns while it works (9s a turn); reduced motion keeps it still. */
+@keyframes cog-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* An install stage with no real percent (#507): a band slides across; never a frozen number. */
+@keyframes indeterminate {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans antialiased;
+    letter-spacing: -0.02em;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* An app, not a web page: its controls, labels and chrome don't
+     highlight when you drag across them. What you'd copy does: code,
+     fields, the terminal, and anything marked data-selectable (errors, paths). */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  input,
+  textarea,
+  [contenteditable="true"],
+  pre,
+  code,
+  .prose-chat,
+  .xterm,
+  [data-selectable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .prose-chat,
+  [data-selectable] {
+    cursor: text;
+  }
+  .prose-chat a,
+  .prose-chat button {
+    cursor: pointer;
+  }
+
+  code,
+  kbd,
+  pre {
+    @apply font-mono;
+    letter-spacing: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 600;
+  }
+}
+
+/* Thin, dark scrollbars that sit on the surface, not light native ones with arrows (Lumen, #184,
+   #273). WebView2 is Chromium: its ::-webkit-scrollbar parts draw no arrow buttons, but Chromium
+   ignores them wherever scrollbar-width/-color are set, so the standard properties are only the
+   fallback for engines without them. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--edge) padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--faint) padding-box;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--edge) transparent;
+  }
+}

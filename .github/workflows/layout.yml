@@ -1,0 +1,99 @@
+name: Layout
+
+#  the real Windows build: every screen in e2e/layout/screens.json at
+# 1024×768, 1366×768, 1920×1080 and 2560×1440, checked by e2e/layout/audit.js in the app's own
+# WebView2 (scripts/layout-check.ts over the DevTools port). Fails on text escaping its box,
+# sideways page scroll, nested scrollers, one-word-per-line wrapping, text boxes under 12ch and
+# columns under their minimum. Main is at zero, so any finding fails. No screenshots: the findings are in the job summary and the `layout` artifact.
+#
+# A required check on main, so it runs on every PR: `changes` decides whether the PR touches the
+# UI, and `layout` is skipped (which counts as passing) when it doesn't.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  changes:
+    name: layout changes
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.ui.outputs.ui }}
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Does this PR touch the UI?
+        id: ui
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then echo "ui=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename')
+          if echo "$files" | grep -qE '^(src/|index\.html$|package\.json$|bun\.lock|vite\.config\.ts$|e2e/layout/|src-tauri/tauri\.conf\.json$|src-tauri/src/(caption|window)\.rs$|scripts/layout-check\.ts$|\.github/workflows/layout\.yml$)'; then
+            echo "ui=true" >> "$GITHUB_OUTPUT"; echo "UI files changed: running the layout check"
+          else
+            echo "ui=false" >> "$GITHUB_OUTPUT"; echo "No UI files changed: layout is skipped"
+          fi
+
+  layout:
+    name: layout
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: windows
+          save-if: false
+      - run: bun install --frozen-lockfile
+      # Tauri passes its own WebView2 arguments, so the DevTools port goes in through the window
+      # config, for this build only: every window as in tauri.conf.json, plus the port.
+      - name: Build (debug, mock data, dev-mode frontend for the screen flags)
+        shell: bash
+        env:
+          VITE_GOND_MOCK: "1"
+          NODE_ENV: development
+        run: |
+          bun -e "const c = await Bun.file('src-tauri/tauri.conf.json').json(); const windows = c.app.windows.map((w) => ({ ...w, additionalBrowserArgs: [w.additionalBrowserArgs ?? '--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection', '--remote-debugging-port=9222'].join(' ') })); await Bun.write('layout-tauri.json', JSON.stringify({ app: { windows } }));"
+          bun x tauri build --debug --no-bundle --config layout-tauri.json
+          mkdir -p "$RUNNER_TEMP/app" && cp src-tauri/target/debug/gond-code.exe "$RUNNER_TEMP/app/gond-code.exe"
+          # The Gond mark appears exactly once: in the folded Gond bar when the app draws it
+          # (data-caption="folded"), or not in-app at all under Windows' own caption, which shows the
+          # icon ("native"). The audit reads data-caption from the page, i.e. what window_info told
+          # the app, not tauri.conf.json (decorations stays true even with the folded bar). This
+          # value is only the fallback for pages without a title bar.
+          echo "MAX_MARKS=1" >> "$GITHUB_ENV"
+      # Renders and audits; any finding (or a broken audit's self-test) fails.
+      - name: Check every screen at every size
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath "$env:RUNNER_TEMP/app/gond-code.exe" -PassThru
+          try { bun scripts/layout-check.ts --port 9222 --max-marks $env:MAX_MARKS --out layout; $code = $LASTEXITCODE } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+          if (Test-Path layout/summary.md) { Get-Content layout/summary.md | Add-Content $env:GITHUB_STEP_SUMMARY }
+          exit $code
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: layout
+          path: layout/
+          if-no-files-found: warn
+          retention-days: 14

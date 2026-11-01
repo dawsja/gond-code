@@ -1,0 +1,90 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gond Code",
+  "version": "0.1.0",
+  "identifier": "app.gond.code",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Gond Code",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 720,
+        "decorations": true,
+        "theme": "Dark",
+        "shadow": true,
+        "transparent": false,
+        "center": true,
+        "visible": false
+      }
+    ],
+    "withGlobalTauri": false,
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$DATA/GondCode/attachments/**", "$DATA/gond-code/attachments/**"]
+      },
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-src": "'none'",
+        "form-action": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost ws://localhost:1420 ws://localhost:1421 http://localhost:1420",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-src": "'none'",
+        "form-action": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0M0NDMkM1QjhFQTM1MzkKUldRNU5lcTR4Y0k4Vkh2R0QzelNMTnc4b3orUkQyM0IxS2x0SmtQT0p5R0NJM3pxYVF5KzJVZmoK",
+      "endpoints": ["https://github.com/dawsja/gond-code/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

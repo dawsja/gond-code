@@ -1,0 +1,110 @@
+name: Release
+
+# A pushed tag v1.2.3 builds the signed Windows installer at that version and puts it, with
+# latest.json, on a draft GitHub Release with notes from docs/releases/. A person publishes it.
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - run: bun install --frozen-lockfile
+      # The tag is the version: the tree's tauri.conf.json may lag behind it.
+      - name: Version from the tag
+        shell: bash
+        run: bun -e "const f = 'src-tauri/tauri.conf.json'; const p = await Bun.file(f).json(); p.version = process.env.GITHUB_REF_NAME.slice(1); await Bun.write(f, JSON.stringify(p, null, 2) + '\n');"
+      - name: Build unsigned without the signing key
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then exit 0; fi
+          echo "No TAURI_SIGNING_PRIVATE_KEY: building without updater artifacts."
+          bun -e "const f = 'src-tauri/tauri.conf.json'; const p = await Bun.file(f).json(); if (p.bundle) p.bundle.createUpdaterArtifacts = false; await Bun.write(f, JSON.stringify(p, null, 2) + '\n');"
+      - run: bun run dist:win
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gond-code-release
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Check out first: checkout clears the workspace, so the installer is downloaded after it.
+      # The notes: docs/releases/<version>.md when it's written (an rc falls back to its release's
+      # file), otherwise GitHub's list of what merged since the previous tag, never since the start.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: gond-code-release
+          path: release
+      # A re-run of a tag replaces the draft's files rather than failing on them.
+      - name: Draft the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=""
+          [[ "$TAG" == *-* ]] && prerelease="--prerelease"
+          version=${TAG#v}
+          notes=()
+          for f in "docs/releases/$version.md" "docs/releases/${version%%-*}.md"; do
+            if [ -f "$f" ]; then notes=(--notes-file "$f"); echo "Notes from $f"; break; fi
+          done
+          if [ ${#notes[@]} -eq 0 ]; then
+            prev=$(git tag --list 'v*' --sort=-v:refname --merged "$TAG" | grep -vxF "$TAG" | head -n 1 || true)
+            if [ -n "$prev" ]; then
+              notes=(--generate-notes --notes-start-tag "$prev"); echo "Notes generated since $prev"
+            else
+              notes=(--generate-notes); echo "No earlier tag: notes generated from the start"
+            fi
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber --repo "$GITHUB_REPOSITORY"
+            [ "${notes[0]}" = --notes-file ] && gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" "${notes[@]}"
+          else
+            gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --draft $prerelease \
+              --title "Gond Code $TAG" "${notes[@]}" --verify-tag
+          fi
+      # The updater reads latest.json from this repo's latest published release: a draft or
+      # an rc (prerelease) never reaches installed apps until a person publishes a final release.
+      - name: Updater manifest (latest.json)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: bash scripts/publish-release.sh

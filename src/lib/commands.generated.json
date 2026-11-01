@@ -1,0 +1,4177 @@
+[
+  {
+    "name": "account.add",
+    "summary": "Add an account (a sign-in, an API key, a token or a gateway)",
+    "risk": "dynamic",
+    "riskNote": "outward when it sets a custom endpoint (base URL)",
+    "humanOnly": true,
+    "inputSchema": {
+      "$defs": {
+        "AccountKind": {
+          "oneOf": [
+            {
+              "enum": [
+                "apiKey"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "oauth",
+              "description": "The harness's own sign-in (subscription), run in a Gond-owned config dir.",
+              "type": "string"
+            },
+            {
+              "const": "token",
+              "description": "A long-lived token from the harness (e.g. `claude setup-token`).",
+              "type": "string"
+            },
+            {
+              "const": "gateway",
+              "description": "An enterprise gateway: `endpoint` plus a key.",
+              "type": "string"
+            }
+          ]
+        },
+        "AccountOptions": {
+          "additionalProperties": false,
+          "description": "How an API account talks to its endpoint (OpenAI and Anthropic API URLs, or any\ncompatible one). No secrets here: only the key is secret, and it lives in the vault.",
+          "properties": {
+            "azureApiVersion": {
+              "description": "Azure OpenAI's `api-version` query parameter; set means the endpoint is Azure.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bearer": {
+              "description": "Send the key as `Authorization: Bearer` instead of the provider's own header\n(Anthropic `x-api-key`): most proxies and gateways (LiteLLM, OpenRouter) want this.",
+              "type": "boolean"
+            },
+            "cloud": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Cloud"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Claude through a cloud: AWS Bedrock or Google Vertex AI."
+            },
+            "headers": {
+              "additionalProperties": {
+                "$ref": "#/$defs/HeaderValue"
+              },
+              "description": "Extra request headers (same shape as MCP servers): a plain value, or\n`{ secret }`, whose value goes to Credential Manager and reads back as `{ secret: true }`.",
+              "type": "object"
+            },
+            "organization": {
+              "description": "OpenAI organisation and project ids (`OpenAI-Organization`, `OpenAI-Project`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pricing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Pricing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What this account pays, for harnesses that don't report a cost. Gond\nnever guesses prices: without it, those threads show tokens only."
+            },
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "wireApi": {
+              "description": "For Codex: `responses` or `chat`. Default: `responses` on api.openai.com and Azure,\n`chat` on any other OpenAI-compatible endpoint.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "Cloud": {
+          "oneOf": [
+            {
+              "description": "The key is a Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`).",
+              "properties": {
+                "kind": {
+                  "const": "bedrock",
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "region"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Vertex uses the machine's Google credentials (ADC); no key in Gond.",
+              "properties": {
+                "kind": {
+                  "const": "vertex",
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "region",
+                "project"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "HeaderValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "properties": {
+                "secret": {
+                  "$ref": "#/$defs/SecretSlot"
+                }
+              },
+              "required": [
+                "secret"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Pricing": {
+          "additionalProperties": false,
+          "description": "US dollars per million tokens.",
+          "properties": {
+            "inputPerMtok": {
+              "format": "double",
+              "type": "number"
+            },
+            "outputPerMtok": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "inputPerMtok",
+            "outputPerMtok"
+          ],
+          "type": "object"
+        },
+        "SecretSlot": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "A header's secret: the value on the way in, `true` once it's in the vault."
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "What `account.add` takes. The secret goes straight into the vault.",
+      "properties": {
+        "endpoint": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "harness": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AccountKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/$defs/AccountOptions",
+          "default": {}
+        },
+        "secret": {
+          "description": "A `Secret`, so `{:?}` never prints it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "harness",
+        "label",
+        "kind"
+      ],
+      "title": "NewAccount",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "AccountKind": {
+          "oneOf": [
+            {
+              "enum": [
+                "apiKey"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "oauth",
+              "description": "The harness's own sign-in (subscription), run in a Gond-owned config dir.",
+              "type": "string"
+            },
+            {
+              "const": "token",
+              "description": "A long-lived token from the harness (e.g. `claude setup-token`).",
+              "type": "string"
+            },
+            {
+              "const": "gateway",
+              "description": "An enterprise gateway: `endpoint` plus a key.",
+              "type": "string"
+            }
+          ]
+        },
+        "AccountOptions": {
+          "additionalProperties": false,
+          "description": "How an API account talks to its endpoint (OpenAI and Anthropic API URLs, or any\ncompatible one). No secrets here: only the key is secret, and it lives in the vault.",
+          "properties": {
+            "azureApiVersion": {
+              "description": "Azure OpenAI's `api-version` query parameter; set means the endpoint is Azure.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bearer": {
+              "description": "Send the key as `Authorization: Bearer` instead of the provider's own header\n(Anthropic `x-api-key`): most proxies and gateways (LiteLLM, OpenRouter) want this.",
+              "type": "boolean"
+            },
+            "cloud": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Cloud"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Claude through a cloud: AWS Bedrock or Google Vertex AI."
+            },
+            "headers": {
+              "additionalProperties": {
+                "$ref": "#/$defs/HeaderValue"
+              },
+              "description": "Extra request headers (same shape as MCP servers): a plain value, or\n`{ secret }`, whose value goes to Credential Manager and reads back as `{ secret: true }`.",
+              "type": "object"
+            },
+            "organization": {
+              "description": "OpenAI organisation and project ids (`OpenAI-Organization`, `OpenAI-Project`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pricing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Pricing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What this account pays, for harnesses that don't report a cost. Gond\nnever guesses prices: without it, those threads show tokens only."
+            },
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "wireApi": {
+              "description": "For Codex: `responses` or `chat`. Default: `responses` on api.openai.com and Azure,\n`chat` on any other OpenAI-compatible endpoint.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "Cloud": {
+          "oneOf": [
+            {
+              "description": "The key is a Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`).",
+              "properties": {
+                "kind": {
+                  "const": "bedrock",
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "region"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Vertex uses the machine's Google credentials (ADC); no key in Gond.",
+              "properties": {
+                "kind": {
+                  "const": "vertex",
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "region",
+                "project"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "HeaderValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "properties": {
+                "secret": {
+                  "$ref": "#/$defs/SecretSlot"
+                }
+              },
+              "required": [
+                "secret"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "Pricing": {
+          "additionalProperties": false,
+          "description": "US dollars per million tokens.",
+          "properties": {
+            "inputPerMtok": {
+              "format": "double",
+              "type": "number"
+            },
+            "outputPerMtok": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "inputPerMtok",
+            "outputPerMtok"
+          ],
+          "type": "object"
+        },
+        "SecretSlot": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "A header's secret: the value on the way in, `true` once it's in the vault."
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "createdAt": {
+          "type": "string"
+        },
+        "endpoint": {
+          "description": "The base URL, for API accounts on a custom endpoint and gateways.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "harness": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "identity": {
+          "description": "Who it signs in as: \"sam@example.com · Claude Max\" for a sign-in, or\n\"anthropic key …a1b2 at api.example.com\" for a key. Same harness and identity =\nthe same account, so signing in twice updates instead of duplicating.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "isDefault": {
+          "default": false,
+          "description": "The account new threads on this harness use when none is picked.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/AccountKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/$defs/AccountOptions"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "harness",
+        "provider",
+        "label",
+        "kind",
+        "createdAt"
+      ],
+      "title": "Account",
+      "type": "object"
+    }
+  },
+  {
+    "name": "account.discover",
+    "summary": "Look for the agents' own sign-ins again (a login made since Gond Code started)",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "title": "DiscoverInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "uint",
+      "minimum": 0,
+      "title": "uint",
+      "type": "integer"
+    }
+  },
+  {
+    "name": "account.kinds",
+    "summary": "Which account kinds a harness takes, and how many sign-ins",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "harness"
+      ],
+      "title": "HarnessInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "AccountKind": {
+          "oneOf": [
+            {
+              "enum": [
+                "apiKey"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "oauth",
+              "description": "The harness's own sign-in (subscription), run in a Gond-owned config dir.",
+              "type": "string"
+            },
+            {
+              "const": "token",
+              "description": "A long-lived token from the harness (e.g. `claude setup-token`).",
+              "type": "string"
+            },
+            {
+              "const": "gateway",
+              "description": "An enterprise gateway: `endpoint` plus a key.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "What a harness accepts, for the account manager.",
+      "properties": {
+        "kinds": {
+          "items": {
+            "$ref": "#/$defs/AccountKind"
+          },
+          "type": "array"
+        },
+        "maxOauth": {
+          "description": "How many sign-ins it can hold side by side; `1` for agy (one per Windows user).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "kinds"
+      ],
+      "title": "Kinds",
+      "type": "object"
+    }
+  },
+  {
+    "name": "account.signIn",
+    "summary": "Sign a sign-in account in: the harness's own login, in the background",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "cols": {
+          "description": "Default 100.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rows": {
+          "description": "Default 30.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accountId"
+      ],
+      "title": "SignInInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "jobId": {
+          "description": "Follow it at `/signins/{jobId}`: `{ status, url?, code?, message?, ptyId }`. None for\nan agent with one sign-in per Windows user (agy): its own CLI is in the terminal.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ptyId": {
+          "description": "The login's hidden terminal, for a card that has to fall back to showing it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ptyId"
+      ],
+      "title": "SignedIn",
+      "type": "object"
+    }
+  },
+  {
+    "name": "account.signIn.cancel",
+    "summary": "Stop a background sign-in",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ],
+      "title": "SignInJobInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "account.signIn.code",
+    "summary": "Give a background sign-in the code the browser showed",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "The code the browser showed after signing in.",
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "code"
+      ],
+      "title": "SignInCodeInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "account.test",
+    "summary": "Test connection: list an API account's models from its endpoint",
+    "risk": "dynamic",
+    "riskNote": "outward for a draft (its key goes to a host not yet approved)",
+    "humanOnly": true,
+    "inputSchema": {
+      "$defs": {
+        "AccountKind": {
+          "oneOf": [
+            {
+              "enum": [
+                "apiKey"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "oauth",
+              "description": "The harness's own sign-in (subscription), run in a Gond-owned config dir.",
+              "type": "string"
+            },
+            {
+              "const": "token",
+              "description": "A long-lived token from the harness (e.g. `claude setup-token`).",
+              "type": "string"
+            },
+            {
+              "const": "gateway",
+              "description": "An enterprise gateway: `endpoint` plus a key.",
+              "type": "string"
+            }
+          ]
+        },
+        "AccountOptions": {
+          "additionalProperties": false,
+          "description": "How an API account talks to its endpoint (OpenAI and Anthropic API URLs, or any\ncompatible one). No secrets here: only the key is secret, and it lives in the vault.",
+          "properties": {
+            "azureApiVersion": {
+              "description": "Azure OpenAI's `api-version` query parameter; set means the endpoint is Azure.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bearer": {
+              "description": "Send the key as `Authorization: Bearer` instead of the provider's own header\n(Anthropic `x-api-key`): most proxies and gateways (LiteLLM, OpenRouter) want this.",
+              "type": "boolean"
+            },
+            "cloud": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Cloud"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Claude through a cloud: AWS Bedrock or Google Vertex AI."
+            },
+            "headers": {
+              "additionalProperties": {
+                "$ref": "#/$defs/HeaderValue"
+              },
+              "description": "Extra request headers (same shape as MCP servers): a plain value, or\n`{ secret }`, whose value goes to Credential Manager and reads back as `{ secret: true }`.",
+              "type": "object"
+            },
+            "organization": {
+              "description": "OpenAI organisation and project ids (`OpenAI-Organization`, `OpenAI-Project`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pricing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Pricing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What this account pays, for harnesses that don't report a cost. Gond\nnever guesses prices: without it, those threads show tokens only."
+            },
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "wireApi": {
+              "description": "For Codex: `responses` or `chat`. Default: `responses` on api.openai.com and Azure,\n`chat` on any other OpenAI-compatible endpoint.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "Cloud": {
+          "oneOf": [
+            {
+              "description": "The key is a Bedrock API key (`AWS_BEARER_TOKEN_BEDROCK`).",
+              "properties": {
+                "kind": {
+                  "const": "bedrock",
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "region"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Vertex uses the machine's Google credentials (ADC); no key in Gond.",
+              "properties": {
+                "kind": {
+                  "const": "vertex",
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "region": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "region",
+                "project"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "HeaderValue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "properties": {
+                "secret": {
+                  "$ref": "#/$defs/SecretSlot"
+                }
+              },
+              "required": [
+                "secret"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "NewAccount": {
+          "additionalProperties": false,
+          "description": "What `account.add` takes. The secret goes straight into the vault.",
+          "properties": {
+            "endpoint": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "harness": {
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/AccountKind"
+            },
+            "label": {
+              "type": "string"
+            },
+            "options": {
+              "$ref": "#/$defs/AccountOptions",
+              "default": {}
+            },
+            "secret": {
+              "description": "A `Secret`, so `{:?}` never prints it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "harness",
+            "label",
+            "kind"
+          ],
+          "type": "object"
+        },
+        "Pricing": {
+          "additionalProperties": false,
+          "description": "US dollars per million tokens.",
+          "properties": {
+            "inputPerMtok": {
+              "format": "double",
+              "type": "number"
+            },
+            "outputPerMtok": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "inputPerMtok",
+            "outputPerMtok"
+          ],
+          "type": "object"
+        },
+        "SecretSlot": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "A header's secret: the value on the way in, `true` once it's in the vault."
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "properties": {
+            "accountId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accountId"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/NewAccount"
+        }
+      ],
+      "description": "`account.test`: a saved account, or the Add dialog's draft fields.",
+      "title": "TestInput"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "TestResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent.custom.delete",
+    "summary": "Delete a custom agent",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "CustomDeleteInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "agent.custom.save",
+    "summary": "Add or update a custom agent (a command that takes the prompt)",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$defs": {
+        "CustomAgent": {
+          "properties": {
+            "args": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "id": {
+              "default": "",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "promptVia": {
+              "$ref": "#/$defs/PromptVia",
+              "default": "arg",
+              "description": "How the prompt reaches the command."
+            },
+            "provider": {
+              "description": "Brand icon key for the UI; none shows a neutral glyph.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "command"
+          ],
+          "type": "object"
+        },
+        "PromptVia": {
+          "description": "`arg` appends the prompt as the last argument; `stdin` writes it to stdin and\ncloses it. Either way it is also in `GOND_CODE_PROMPT`.",
+          "enum": [
+            "arg",
+            "stdin"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/CustomAgent"
+        }
+      },
+      "required": [
+        "agent"
+      ],
+      "title": "CustomSaveInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "PromptVia": {
+          "description": "`arg` appends the prompt as the last argument; `stdin` writes it to stdin and\ncloses it. Either way it is also in `GOND_CODE_PROMPT`.",
+          "enum": [
+            "arg",
+            "stdin"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "type": "string"
+        },
+        "id": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "promptVia": {
+          "$ref": "#/$defs/PromptVia",
+          "default": "arg",
+          "description": "How the prompt reaches the command."
+        },
+        "provider": {
+          "description": "Brand icon key for the UI; none shows a neutral glyph.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "command"
+      ],
+      "title": "CustomAgent",
+      "type": "object"
+    }
+  },
+  {
+    "name": "agent.detect",
+    "summary": "Which agent CLIs are installed, with their versions",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "AgentInfo": {
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "installed": {
+              "type": "boolean"
+            },
+            "kind": {
+              "$ref": "#/$defs/AgentKind"
+            },
+            "name": {
+              "type": "string"
+            },
+            "provider": {
+              "description": "Brand icon key (@lobehub/icons), e.g. \"claude\", \"codex\"; unknown → neutral glyph.",
+              "type": "string"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "provider",
+            "name",
+            "command",
+            "installed"
+          ],
+          "type": "object"
+        },
+        "AgentKind": {
+          "enum": [
+            "claude",
+            "codex",
+            "agy",
+            "grok",
+            "opencode",
+            "pi",
+            "custom"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/AgentInfo"
+      },
+      "title": "Array_of_AgentInfo",
+      "type": "array"
+    }
+  },
+  {
+    "name": "app.update.check",
+    "summary": "Look for a newer Gond Code now; the answer lands in /update",
+    "risk": "outward",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "app.update.install",
+    "summary": "Download the newer Gond Code, then restart into it where you left off",
+    "risk": "outward",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "app.update.status",
+    "summary": "This version, the newer one available if any, and how a check or download is going",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "AnyValue"
+    }
+  },
+  {
+    "name": "app.version",
+    "summary": "The app's version",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "string",
+      "type": "string"
+    }
+  },
+  {
+    "name": "folder.open",
+    "summary": "Open a folder's project in File Explorer",
+    "risk": "read",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "title": "FolderInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "git.identity",
+    "summary": "Git's user.name and user.email, and a suggestion from GitHub if unset",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Identity": {
+          "properties": {
+            "email": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "current": {
+          "$ref": "#/$defs/Identity",
+          "description": "What Git's global config says now."
+        },
+        "needed": {
+          "description": "True when user.name or user.email is unset, so commits would fail.",
+          "type": "boolean"
+        },
+        "suggested": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "From the active github.com account, when `needed` and gh is signed in."
+        }
+      },
+      "required": [
+        "current",
+        "needed"
+      ],
+      "title": "IdentityStatus",
+      "type": "object"
+    }
+  },
+  {
+    "name": "git.identity.set",
+    "summary": "Set Git's global user.name and user.email",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "email"
+      ],
+      "title": "SetInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "Identity",
+      "type": "object"
+    }
+  },
+  {
+    "name": "github.login.token",
+    "summary": "Sign in to GitHub with a personal access token",
+    "risk": "outward",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token": {
+          "description": "A personal access token (scopes repo, workflow, read:org). Piped to gh on stdin.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "TokenInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "active": {
+          "description": "The account gh (and so Git) uses for this host.",
+          "type": "boolean"
+        },
+        "host": {
+          "type": "string"
+        },
+        "login": {
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "login",
+        "host",
+        "active",
+        "scopes"
+      ],
+      "title": "GithubAccount",
+      "type": "object"
+    }
+  },
+  {
+    "name": "github.login.web",
+    "summary": "Sign in to GitHub with the browser: returns the one-time code to enter",
+    "risk": "outward",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": null,
+          "description": "Defaults to github.com.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "HostInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "A browser sign-in waiting for the human to enter `user_code` at `verification_uri`.",
+      "properties": {
+        "expiresAt": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "userCode": {
+          "type": "string"
+        },
+        "verificationUri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "userCode",
+        "verificationUri",
+        "expiresAt"
+      ],
+      "title": "Pending",
+      "type": "object"
+    }
+  },
+  {
+    "name": "github.logout",
+    "summary": "Sign a GitHub account out of the GitHub CLI",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "login": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "login"
+      ],
+      "title": "AccountInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "GithubAccount": {
+          "properties": {
+            "active": {
+              "description": "The account gh (and so Git) uses for this host.",
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "login": {
+              "type": "string"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "login",
+            "host",
+            "active",
+            "scopes"
+          ],
+          "type": "object"
+        },
+        "Pending": {
+          "description": "A browser sign-in waiting for the human to enter `user_code` at `verification_uri`.",
+          "properties": {
+            "expiresAt": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "userCode": {
+              "type": "string"
+            },
+            "verificationUri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "host",
+            "userCode",
+            "verificationUri",
+            "expiresAt"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/GithubAccount"
+          },
+          "type": "array"
+        },
+        "ghInstalled": {
+          "type": "boolean"
+        },
+        "ghVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loginError": {
+          "description": "Why the last browser sign-in didn't finish, in one sentence; cleared by the next one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pending"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ghInstalled",
+        "accounts"
+      ],
+      "title": "GithubStatus",
+      "type": "object"
+    }
+  },
+  {
+    "name": "github.status",
+    "summary": "GitHub CLI: installed?, signed-in accounts and any sign-in in progress",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": null,
+          "description": "Defaults to github.com.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "HostInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "GithubAccount": {
+          "properties": {
+            "active": {
+              "description": "The account gh (and so Git) uses for this host.",
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "login": {
+              "type": "string"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "login",
+            "host",
+            "active",
+            "scopes"
+          ],
+          "type": "object"
+        },
+        "Pending": {
+          "description": "A browser sign-in waiting for the human to enter `user_code` at `verification_uri`.",
+          "properties": {
+            "expiresAt": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "userCode": {
+              "type": "string"
+            },
+            "verificationUri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "host",
+            "userCode",
+            "verificationUri",
+            "expiresAt"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/GithubAccount"
+          },
+          "type": "array"
+        },
+        "ghInstalled": {
+          "type": "boolean"
+        },
+        "ghVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loginError": {
+          "description": "Why the last browser sign-in didn't finish, in one sentence; cleared by the next one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pending"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ghInstalled",
+        "accounts"
+      ],
+      "title": "GithubStatus",
+      "type": "object"
+    }
+  },
+  {
+    "name": "github.switch",
+    "summary": "Make another signed-in GitHub account the active one",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "login": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "login"
+      ],
+      "title": "AccountInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "GithubAccount": {
+          "properties": {
+            "active": {
+              "description": "The account gh (and so Git) uses for this host.",
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "login": {
+              "type": "string"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "login",
+            "host",
+            "active",
+            "scopes"
+          ],
+          "type": "object"
+        },
+        "Pending": {
+          "description": "A browser sign-in waiting for the human to enter `user_code` at `verification_uri`.",
+          "properties": {
+            "expiresAt": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            },
+            "userCode": {
+              "type": "string"
+            },
+            "verificationUri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "host",
+            "userCode",
+            "verificationUri",
+            "expiresAt"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/GithubAccount"
+          },
+          "type": "array"
+        },
+        "ghInstalled": {
+          "type": "boolean"
+        },
+        "ghVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loginError": {
+          "description": "Why the last browser sign-in didn't finish, in one sentence; cleared by the next one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pending"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ghInstalled",
+        "accounts"
+      ],
+      "title": "GithubStatus",
+      "type": "object"
+    }
+  },
+  {
+    "name": "harness.check",
+    "summary": "Installed vs latest version per harness, with the changelog (offline: latest unknown)",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Check": {
+          "description": "What `harness.check` returns per harness.",
+          "properties": {
+            "changelog": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "installed": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "latest": {
+              "description": "`None` when the harness doesn't publish one, or the lookup failed (offline).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "updateAvailable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "updateAvailable",
+            "changelog"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "title": "Array_of_Check",
+      "type": "array"
+    }
+  },
+  {
+    "name": "harness.install",
+    "summary": "Install a harness in the background, with any prerequisites, in one job",
+    "risk": "outward",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "harnessId": {
+          "type": "string"
+        },
+        "machineScope": {
+          "default": false,
+          "description": "Install winget steps for all users (one Windows prompt). Only after a per-user\nattempt reported `machineScopeAvailable` and the human chose it.",
+          "type": "boolean"
+        },
+        "planIndex": {
+          "default": null,
+          "description": "Which of `harness.plan`'s install plans; default the first (best).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "harnessId"
+      ],
+      "title": "InstallInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Plan": {
+          "description": "One way to run an install or update. Never a shell string we build from input:\nthe program and its arguments are fixed per harness.",
+          "properties": {
+            "addsToPath": {
+              "description": "A folder under the user's profile the installer puts the program in without adding\nit to PATH (Claude's script: `.local\\\\bin`). Gond adds it to the user PATH after.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "from": {
+              "description": "Where the code comes , for the approval card.",
+              "type": "string"
+            },
+            "program": {
+              "type": "string"
+            },
+            "provides": {
+              "description": "The command this plan installs. After the step Gond looks for it, so a job never\nreports success while the card still says \"Not installed\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/Source"
+            }
+          },
+          "required": [
+            "source",
+            "program",
+            "args",
+            "from"
+          ],
+          "type": "object"
+        },
+        "Source": {
+          "description": "How a harness got onto this machine, read from where its binary lives.",
+          "oneOf": [
+            {
+              "enum": [
+                "winget"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "vendor",
+              "description": "The vendor's own installer (`irm … | iex`), usually self-updating.",
+              "type": "string"
+            },
+            {
+              "const": "bun",
+              "description": "A package from the npm registry, installed with `bun add -g`.",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Found on PATH, but not in a place we recognise (npm, scoop, a manual copy …).",
+              "type": "string"
+            },
+            {
+              "const": "gond",
+              "description": "A step Gond does itself (an uninstall's file and PATH clean-up).",
+              "type": "string"
+            },
+            {
+              "const": "download",
+              "description": "The vendor's official release, downloaded and checksum-verified by Gond, for when\nwinget is missing (`fallback`). `args[0]` is the prerequisite's id.",
+              "type": "string"
+            }
+          ]
+        },
+        "Step": {
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            }
+          },
+          "required": [
+            "label",
+            "plan"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "jobId": {
+          "description": "Follow it at `/installs/{jobId}`.",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "jobId",
+        "steps"
+      ],
+      "title": "Started",
+      "type": "object"
+    }
+  },
+  {
+    "name": "harness.uninstall",
+    "summary": "Uninstall a harness: every install of it, its PATH entries, and optionally its settings",
+    "risk": "destructive",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "harnessId": {
+          "type": "string"
+        },
+        "keepData": {
+          "default": true,
+          "description": "Keep its settings and sign-ins, and Gond's accounts for it (default true). `false`\nis \"Remove everything\".",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "harnessId"
+      ],
+      "title": "UninstallInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Plan": {
+          "description": "One way to run an install or update. Never a shell string we build from input:\nthe program and its arguments are fixed per harness.",
+          "properties": {
+            "addsToPath": {
+              "description": "A folder under the user's profile the installer puts the program in without adding\nit to PATH (Claude's script: `.local\\\\bin`). Gond adds it to the user PATH after.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "from": {
+              "description": "Where the code comes , for the approval card.",
+              "type": "string"
+            },
+            "program": {
+              "type": "string"
+            },
+            "provides": {
+              "description": "The command this plan installs. After the step Gond looks for it, so a job never\nreports success while the card still says \"Not installed\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/Source"
+            }
+          },
+          "required": [
+            "source",
+            "program",
+            "args",
+            "from"
+          ],
+          "type": "object"
+        },
+        "Source": {
+          "description": "How a harness got onto this machine, read from where its binary lives.",
+          "oneOf": [
+            {
+              "enum": [
+                "winget"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "vendor",
+              "description": "The vendor's own installer (`irm … | iex`), usually self-updating.",
+              "type": "string"
+            },
+            {
+              "const": "bun",
+              "description": "A package from the npm registry, installed with `bun add -g`.",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Found on PATH, but not in a place we recognise (npm, scoop, a manual copy …).",
+              "type": "string"
+            },
+            {
+              "const": "gond",
+              "description": "A step Gond does itself (an uninstall's file and PATH clean-up).",
+              "type": "string"
+            },
+            {
+              "const": "download",
+              "description": "The vendor's official release, downloaded and checksum-verified by Gond, for when\nwinget is missing (`fallback`). `args[0]` is the prerequisite's id.",
+              "type": "string"
+            }
+          ]
+        },
+        "Step": {
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            }
+          },
+          "required": [
+            "label",
+            "plan"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "jobId": {
+          "description": "Follow it at `/installs/{jobId}`.",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "jobId",
+        "steps"
+      ],
+      "title": "Started",
+      "type": "object"
+    }
+  },
+  {
+    "name": "harness.uninstallPlan",
+    "summary": "What uninstalling a harness would remove, for the confirm card",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "harnessId": {
+          "type": "string"
+        },
+        "keepData": {
+          "default": true,
+          "description": "Keep its settings and sign-ins, and Gond's accounts for it (default true). `false`\nis \"Remove everything\".",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "harnessId"
+      ],
+      "title": "UninstallInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Plan": {
+          "description": "One way to run an install or update. Never a shell string we build from input:\nthe program and its arguments are fixed per harness.",
+          "properties": {
+            "addsToPath": {
+              "description": "A folder under the user's profile the installer puts the program in without adding\nit to PATH (Claude's script: `.local\\\\bin`). Gond adds it to the user PATH after.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "from": {
+              "description": "Where the code comes , for the approval card.",
+              "type": "string"
+            },
+            "program": {
+              "type": "string"
+            },
+            "provides": {
+              "description": "The command this plan installs. After the step Gond looks for it, so a job never\nreports success while the card still says \"Not installed\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/Source"
+            }
+          },
+          "required": [
+            "source",
+            "program",
+            "args",
+            "from"
+          ],
+          "type": "object"
+        },
+        "Source": {
+          "description": "How a harness got onto this machine, read from where its binary lives.",
+          "oneOf": [
+            {
+              "enum": [
+                "winget"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "vendor",
+              "description": "The vendor's own installer (`irm … | iex`), usually self-updating.",
+              "type": "string"
+            },
+            {
+              "const": "bun",
+              "description": "A package from the npm registry, installed with `bun add -g`.",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Found on PATH, but not in a place we recognise (npm, scoop, a manual copy …).",
+              "type": "string"
+            },
+            {
+              "const": "gond",
+              "description": "A step Gond does itself (an uninstall's file and PATH clean-up).",
+              "type": "string"
+            },
+            {
+              "const": "download",
+              "description": "The vendor's official release, downloaded and checksum-verified by Gond, for when\nwinget is missing (`fallback`). `args[0]` is the prerequisite's id.",
+              "type": "string"
+            }
+          ]
+        },
+        "Step": {
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            }
+          },
+          "required": [
+            "label",
+            "plan"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`harness.uninstallPlan`: the confirm card's list, plus what blocks or adds to it.",
+      "properties": {
+        "accounts": {
+          "description": "Gond accounts for this harness (\"Remove everything\" deletes them).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deletes": {
+          "description": "Every file and folder that will be deleted, exactly.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "harnessId": {
+          "type": "string"
+        },
+        "keepData": {
+          "description": "`false`: settings, sign-ins and Gond's accounts go too (\"Remove everything\").",
+          "type": "boolean"
+        },
+        "methods": {
+          "description": "The install methods found: winget, vendor, bun, npm.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pathEntries": {
+          "description": "User PATH entries that will be removed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "running": {
+          "description": "Agents of this harness running now; uninstall refuses until they stop.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "harnessId",
+        "methods",
+        "steps",
+        "deletes",
+        "pathEntries",
+        "keepData",
+        "running",
+        "accounts"
+      ],
+      "title": "UninstallPreview",
+      "type": "object"
+    }
+  },
+  {
+    "name": "harness.update",
+    "summary": "Update a harness the way it was installed, in the background",
+    "risk": "outward",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "harnessId": {
+          "description": "A catalog id: \"claude\", \"codex\", \"agy\" or \"grok\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "harnessId"
+      ],
+      "title": "PlanInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Plan": {
+          "description": "One way to run an install or update. Never a shell string we build from input:\nthe program and its arguments are fixed per harness.",
+          "properties": {
+            "addsToPath": {
+              "description": "A folder under the user's profile the installer puts the program in without adding\nit to PATH (Claude's script: `.local\\\\bin`). Gond adds it to the user PATH after.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "from": {
+              "description": "Where the code comes , for the approval card.",
+              "type": "string"
+            },
+            "program": {
+              "type": "string"
+            },
+            "provides": {
+              "description": "The command this plan installs. After the step Gond looks for it, so a job never\nreports success while the card still says \"Not installed\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/Source"
+            }
+          },
+          "required": [
+            "source",
+            "program",
+            "args",
+            "from"
+          ],
+          "type": "object"
+        },
+        "Source": {
+          "description": "How a harness got onto this machine, read from where its binary lives.",
+          "oneOf": [
+            {
+              "enum": [
+                "winget"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "vendor",
+              "description": "The vendor's own installer (`irm … | iex`), usually self-updating.",
+              "type": "string"
+            },
+            {
+              "const": "bun",
+              "description": "A package from the npm registry, installed with `bun add -g`.",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Found on PATH, but not in a place we recognise (npm, scoop, a manual copy …).",
+              "type": "string"
+            },
+            {
+              "const": "gond",
+              "description": "A step Gond does itself (an uninstall's file and PATH clean-up).",
+              "type": "string"
+            },
+            {
+              "const": "download",
+              "description": "The vendor's official release, downloaded and checksum-verified by Gond, for when\nwinget is missing (`fallback`). `args[0]` is the prerequisite's id.",
+              "type": "string"
+            }
+          ]
+        },
+        "Step": {
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            }
+          },
+          "required": [
+            "label",
+            "plan"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "jobId": {
+          "description": "Follow it at `/installs/{jobId}`.",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "jobId",
+        "steps"
+      ],
+      "title": "Started",
+      "type": "object"
+    }
+  },
+  {
+    "name": "install.cancel",
+    "summary": "Stop a running install job (its current step's whole process tree)",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ],
+      "title": "JobInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "layout.focus",
+    "summary": "Show the workspace, or a section of Settings",
+    "risk": "read",
+    "humanOnly": true,
+    "inputSchema": {
+      "$defs": {
+        "Panel": {
+          "oneOf": [
+            {
+              "enum": [
+                "settings"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "chat",
+              "description": "The sessions' panes. Saved as `\"chat\"`, the name it had before the terminal workspace.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "entityId": {
+          "default": null,
+          "description": "Settings' section (\"general\", \"usage\", \"harnesses\", \"connections\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "panel": {
+          "$ref": "#/$defs/Panel"
+        }
+      },
+      "required": [
+        "panel"
+      ],
+      "title": "FocusInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "model.list",
+    "summary": "A harness's models and the thinking levels each one takes",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "description": "An API account whose Test connection listed its endpoint's models: those come\nback instead, with the catalog's thinking levels where the id is known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "harness": {
+          "description": "An agent id: \"claude\", \"codex\", or a custom agent's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "harness"
+      ],
+      "title": "HarnessInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Level": {
+          "description": "Thinking or reasoning effort, the union of every harness's vocabulary.",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "ModelInfo": {
+          "properties": {
+            "contextLimit": {
+              "description": "The context window in tokens, where it's known; the Context meter shows\ntokens only without it.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "What goes to the harness (`--model` / `-m`).",
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "provider": {
+              "description": "Brand icon key for the model family.",
+              "type": "string"
+            },
+            "thinking": {
+              "$ref": "#/$defs/ThinkingSupport"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "provider",
+            "thinking"
+          ],
+          "type": "object"
+        },
+        "ThinkingSupport": {
+          "properties": {
+            "default": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Level"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The harness's own default for this model, named in the picker; `None` = unknown."
+            },
+            "levels": {
+              "items": {
+                "$ref": "#/$defs/Level"
+              },
+              "type": "array"
+            },
+            "note": {
+              "description": "A note the picker shows beside a level, e.g. Codex's `ultra`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "via": {
+              "$ref": "#/$defs/ThinkingVia"
+            }
+          },
+          "required": [
+            "levels",
+            "via"
+          ],
+          "type": "object"
+        },
+        "ThinkingVia": {
+          "description": "How the harness takes the level.",
+          "oneOf": [
+            {
+              "const": "flag",
+              "description": "A command-line flag (Claude `--effort`, Codex `-c model_reasoning_effort`).",
+              "type": "string"
+            },
+            {
+              "const": "config",
+              "description": "Written into the account's Gond-owned config for the run (Kimi).",
+              "type": "string"
+            },
+            {
+              "const": "modelSlug",
+              "description": "Part of the model id (Cursor).",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/ModelInfo"
+      },
+      "title": "Array_of_ModelInfo",
+      "type": "array"
+    }
+  },
+  {
+    "name": "pane.screen.save",
+    "summary": "Keep a shell pane's screen and folder until it opens again",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "default": null,
+          "description": "The folder its shell was in, read from its prompt.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "screen": {
+          "description": "The terminal's screen and scrollback, as xterm serialises it (colours kept).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "paneId",
+        "screen"
+      ],
+      "title": "ScreenInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "pane.screen.take",
+    "summary": "A shell pane's saved screen and folder, once: reading it removes it",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "paneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "title": "PaneInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Screen": {
+          "description": "A shell pane's screen and folder, saved before a restart into an update.",
+          "properties": {
+            "cwd": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "screen": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "screen"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Screen"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nullable_Screen"
+    }
+  },
+  {
+    "name": "pane.start",
+    "summary": "Start a pane's agent: its own interactive CLI on the thread's session (account, model, mode), in a terminal that runs until the pane closes",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cols": {
+          "description": "Default 120.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rows": {
+          "description": "Default 32.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "SessionInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "ptyId": {
+          "type": "string"
+        },
+        "shell": {
+          "description": "The shell a plain terminal runs (shell.list id), for its pane to reopen the same one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ptyId"
+      ],
+      "title": "Opened",
+      "type": "object"
+    }
+  },
+  {
+    "name": "prereq.install",
+    "summary": "Install missing prerequisites in one background job",
+    "risk": "outward",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "machineScope": {
+          "default": false,
+          "description": "As `harness.install`'s `machineScope`.",
+          "type": "boolean"
+        },
+        "prereqs": {
+          "description": "Prerequisite ids from `prereq.list` (\"git\", \"gh\", \"node\", \"bun\"). Installed ones\nare skipped.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "prereqs"
+      ],
+      "title": "SetupInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Plan": {
+          "description": "One way to run an install or update. Never a shell string we build from input:\nthe program and its arguments are fixed per harness.",
+          "properties": {
+            "addsToPath": {
+              "description": "A folder under the user's profile the installer puts the program in without adding\nit to PATH (Claude's script: `.local\\\\bin`). Gond adds it to the user PATH after.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "from": {
+              "description": "Where the code comes , for the approval card.",
+              "type": "string"
+            },
+            "program": {
+              "type": "string"
+            },
+            "provides": {
+              "description": "The command this plan installs. After the step Gond looks for it, so a job never\nreports success while the card still says \"Not installed\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "$ref": "#/$defs/Source"
+            }
+          },
+          "required": [
+            "source",
+            "program",
+            "args",
+            "from"
+          ],
+          "type": "object"
+        },
+        "Source": {
+          "description": "How a harness got onto this machine, read from where its binary lives.",
+          "oneOf": [
+            {
+              "enum": [
+                "winget"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "vendor",
+              "description": "The vendor's own installer (`irm … | iex`), usually self-updating.",
+              "type": "string"
+            },
+            {
+              "const": "bun",
+              "description": "A package from the npm registry, installed with `bun add -g`.",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "description": "Found on PATH, but not in a place we recognise (npm, scoop, a manual copy …).",
+              "type": "string"
+            },
+            {
+              "const": "gond",
+              "description": "A step Gond does itself (an uninstall's file and PATH clean-up).",
+              "type": "string"
+            },
+            {
+              "const": "download",
+              "description": "The vendor's official release, downloaded and checksum-verified by Gond, for when\nwinget is missing (`fallback`). `args[0]` is the prerequisite's id.",
+              "type": "string"
+            }
+          ]
+        },
+        "Step": {
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            }
+          },
+          "required": [
+            "label",
+            "plan"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "jobId": {
+          "description": "Follow it at `/installs/{jobId}`.",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "jobId",
+        "steps"
+      ],
+      "title": "Started",
+      "type": "object"
+    }
+  },
+  {
+    "name": "prereq.list",
+    "summary": "Tools harnesses and projects need (Git, GitHub CLI, Node.js, Bun): installed?",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Prereq": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "installed": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "installed"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/Prereq"
+      },
+      "title": "Array_of_Prereq",
+      "type": "array"
+    }
+  },
+  {
+    "name": "project.add",
+    "summary": "Add a git repository as a project",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path of a git repository.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "PathInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "addedAt": {
+          "type": "string"
+        },
+        "defaultBranch": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastOpenedAt": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "path",
+        "defaultBranch",
+        "addedAt",
+        "lastOpenedAt"
+      ],
+      "title": "Project",
+      "type": "object"
+    }
+  },
+  {
+    "name": "project.list",
+    "summary": "Projects, most recently opened first",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Project": {
+          "properties": {
+            "addedAt": {
+              "type": "string"
+            },
+            "defaultBranch": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastOpenedAt": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "path",
+            "defaultBranch",
+            "addedAt",
+            "lastOpenedAt"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/Project"
+      },
+      "title": "Array_of_Project",
+      "type": "array"
+    }
+  },
+  {
+    "name": "project.remove",
+    "summary": "Remove a project from Gond (its repo stays on disk)",
+    "risk": "dynamic",
+    "riskNote": "destructive with archiveThreads (stops its agents)",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "archiveThreads": {
+          "default": false,
+          "description": "Stop and archive its threads first; without it, live threads make this `invalid`.",
+          "type": "boolean"
+        },
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "title": "RemoveInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "project.touch",
+    "summary": "Mark a project as just opened",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId"
+      ],
+      "title": "ProjectInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "pty.close",
+    "summary": "Close a terminal",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "ptyId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ptyId"
+      ],
+      "title": "PtyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "pty.open",
+    "summary": "Open a terminal in a thread's worktree or at a project's root",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cols": {
+          "description": "Default 120.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cwd": {
+          "description": "Start in this folder instead (a shell coming back after an update, where it was).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "projectId": {
+          "description": "...or this project's folder; with neither, your home folder.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rows": {
+          "description": "Default 32.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "shell": {
+          "description": "A shell.list id (`pwsh`, `cmd`, `wsl:Ubuntu`…), so a pane keeps the shell it had; none\n(or one no longer on this PC) = the one picked in Settings → General.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "threadId": {
+          "description": "Open in this thread's folder...",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "OpenInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "ptyId": {
+          "type": "string"
+        },
+        "shell": {
+          "description": "The shell a plain terminal runs (shell.list id), for its pane to reopen the same one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ptyId"
+      ],
+      "title": "Opened",
+      "type": "object"
+    }
+  },
+  {
+    "name": "pty.read",
+    "summary": "A terminal's output as plain text, optionally waiting for a match",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "ptyId": {
+          "type": "string"
+        },
+        "since": {
+          "description": "Only output after this offset (from a previous read).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timeoutMs": {
+          "description": "How long `waitFor` waits; default 10 000, max 120 000.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "waitFor": {
+          "description": "Wait until the new output matches this regex.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ptyId"
+      ],
+      "title": "ReadInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "exitCode": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exited": {
+          "type": "boolean"
+        },
+        "matched": {
+          "description": "Set when `waitFor` was given: whether it matched.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "offset": {
+          "description": "Pass back as `since` to get only what's new.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "description": "`since` was older than what's kept; `text` starts at the oldest kept char.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "offset",
+        "exited",
+        "truncated"
+      ],
+      "title": "PtyRead",
+      "type": "object"
+    }
+  },
+  {
+    "name": "pty.resize",
+    "summary": "Resize a terminal",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "cols": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ptyId": {
+          "type": "string"
+        },
+        "rows": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ptyId",
+        "cols",
+        "rows"
+      ],
+      "title": "ResizeInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "pty.write",
+    "summary": "Type into a terminal",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "UTF-8 text; end a command with \"\\r\".",
+          "type": "string"
+        },
+        "ptyId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ptyId",
+        "data"
+      ],
+      "title": "WriteInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "sessions.get",
+    "summary": "Every session and its panes, as saved",
+    "risk": "read",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "AnyValue"
+    }
+  },
+  {
+    "name": "sessions.set",
+    "summary": "Save every session and its panes",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "description": "Every session (a named group of panes) and the one you're in, as the app keeps them."
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "title": "SessionsInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "settings.get",
+    "summary": "The app's settings",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Tint": {
+          "enum": [
+            "blue",
+            "green",
+            "purple",
+            "pink",
+            "amber",
+            "orange",
+            "red"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "closeToTray": {
+          "default": true,
+          "description": "The window's X hides Gond Code to the tray, so its agents keep working; Quit is in\nthe tray menu. Off: X quits.",
+          "type": "boolean"
+        },
+        "shell": {
+          "description": "A plain terminal's shell (`shells::list` ids: `pwsh`, `cmd`, `wsl:Ubuntu`…); none =\nPowerShell 7, else Windows PowerShell, else Command Prompt.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tint": {
+          "$ref": "#/$defs/Tint"
+        }
+      },
+      "required": [
+        "tint"
+      ],
+      "title": "Settings",
+      "type": "object"
+    }
+  },
+  {
+    "name": "settings.set",
+    "summary": "Change settings (partial patch)",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$defs": {
+        "Patch": {
+          "additionalProperties": false,
+          "description": "What `settings.set` takes: every key typed, nothing else (the exported schema has\n`additionalProperties: false`, so a stray key fails the UI's contract test too).\n`null` clears an optional key.",
+          "properties": {
+            "closeToTray": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "shell": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tint": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Tint"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "type": "object"
+        },
+        "Tint": {
+          "enum": [
+            "blue",
+            "green",
+            "purple",
+            "pink",
+            "amber",
+            "orange",
+            "red"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "patch": {
+          "$ref": "#/$defs/Patch",
+          "description": "Partial `Settings`: only its own keys, typed."
+        }
+      },
+      "required": [
+        "patch"
+      ],
+      "title": "SettingsPatch",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Tint": {
+          "enum": [
+            "blue",
+            "green",
+            "purple",
+            "pink",
+            "amber",
+            "orange",
+            "red"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "closeToTray": {
+          "default": true,
+          "description": "The window's X hides Gond Code to the tray, so its agents keep working; Quit is in\nthe tray menu. Off: X quits.",
+          "type": "boolean"
+        },
+        "shell": {
+          "description": "A plain terminal's shell (`shells::list` ids: `pwsh`, `cmd`, `wsl:Ubuntu`…); none =\nPowerShell 7, else Windows PowerShell, else Command Prompt.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tint": {
+          "$ref": "#/$defs/Tint"
+        }
+      },
+      "required": [
+        "tint"
+      ],
+      "title": "Settings",
+      "type": "object"
+    }
+  },
+  {
+    "name": "shell.list",
+    "summary": "The shells a plain terminal can run on this PC (PowerShell, Command Prompt, Git Bash, WSL distributions)",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Shell": {
+          "description": "One shell: its id in Settings (`pwsh`, `wsl:Ubuntu`…), its name, and how it starts.",
+          "properties": {
+            "args": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "program": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "program",
+            "args"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "$ref": "#/$defs/Shell"
+      },
+      "title": "Array_of_Shell",
+      "type": "array"
+    }
+  },
+  {
+    "name": "speech.disable",
+    "summary": "Turn speech to text off: stop any download and delete the model",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "speech.enable",
+    "summary": "Turn speech to text on: download the model (731 MB) to this PC",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "speech.transcribe",
+    "summary": "Text from a recording: 16 kHz mono f32 samples, base64",
+    "risk": "read",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "description": "16 kHz mono samples as little-endian f32, base64.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "audio"
+      ],
+      "title": "TranscribeInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "string",
+      "type": "string"
+    }
+  },
+  {
+    "name": "thread.archive",
+    "summary": "Close a thread (its pane closed): its terminals end",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "thread.create",
+    "summary": "Save a pane's agent: which agent, its account, model and thinking level, in the project's folder",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$defs": {
+        "Level": {
+          "description": "Thinking or reasoning effort, the union of every harness's vocabulary.",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "description": "Run as this account; omitted = the harness's own sign-in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "model": {
+          "description": "A model from `model.list`; omitted = the harness default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A thinking level the model takes (`model.list`); needs `model`."
+        },
+        "title": {
+          "description": "Defaults to the agent's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "projectId",
+        "agentId"
+      ],
+      "title": "CreateInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Level": {
+          "description": "Thinking or reasoning effort, the union of every harness's vocabulary.",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "Plan": {
+          "properties": {
+            "steps": {
+              "items": {
+                "$ref": "#/$defs/PlanStep"
+              },
+              "type": "array"
+            },
+            "updatedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "steps",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "PlanStep": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "state": {
+              "$ref": "#/$defs/StepState"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "text",
+            "state"
+          ],
+          "type": "object"
+        },
+        "Role": {
+          "oneOf": [
+            {
+              "enum": [
+                "builder",
+                "reviewer",
+                "researcher",
+                "judge"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "chat",
+              "description": "Gond in the Chat space: talks with the human and starts a crew for the work.",
+              "type": "string"
+            }
+          ]
+        },
+        "StepState": {
+          "enum": [
+            "done",
+            "now",
+            "next"
+          ],
+          "type": "string"
+        },
+        "ThreadStatus": {
+          "enum": [
+            "starting",
+            "running",
+            "waiting",
+            "done",
+            "error",
+            "stopped"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "accountId": {
+          "description": "The account the agent runs as; `None` = the harness's own sign-in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentSessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "archivedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseBranch": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "groupId": {
+          "description": "The crew it was started with (`thread.createMany`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "handle": {
+          "description": "The agent's name everywhere: cards, Talk, @mentions.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "description": "Model and thinking level for every turn; `None` = the harness default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parentThreadId": {
+          "description": "The thread whose agent created this one; `None` for the human's threads.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Plan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent's own plan (`thread.plan.set`)."
+        },
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Role"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The agent's role in its crew; `None` = builder. Stored only: what a role\nmay do is enforced at spawn."
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ThreadStatus"
+        },
+        "taskId": {
+          "description": "The task that crew works on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Level"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "worktreePath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "agentId",
+        "title",
+        "slug",
+        "branch",
+        "baseBranch",
+        "worktreePath",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "Thread",
+      "type": "object"
+    }
+  },
+  {
+    "name": "usage.refresh",
+    "summary": "Read every signed-in account's plan limits (percent used, when it resets) now",
+    "risk": "read",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  }
+]

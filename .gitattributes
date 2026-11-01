@@ -1,0 +1,2 @@
+# Brand files are pinned by hash (docs/brand.sha256): never convert their line endings.
+docs/gond*.svg -text

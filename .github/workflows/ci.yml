@@ -1,0 +1,214 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to a PR cancels the run it supersedes. Every main commit gets its own group, so
+# its run always finishes: a group holds only one pending run, so a queue on main still dropped
+# runs whenever merges came quickly, and a cancelled main run never saves the Rust cache that
+# every PR restores (and leaves no full run to tag an rc from).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # No debug info in CI's dev builds: faster links, a smaller cache.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  # Job ids and names are stable: branch protection requires them by name.
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev libssl-dev libxdo-dev build-essential patchelf
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # Only main saves the cache; PRs restore main's instead of each writing (and evicting) their own.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      # The official Gond logo and the app icons made from it.
+      - name: Brand check
+        run: bash scripts/check-brand.sh
+      # Gemini CLI is removed; Google models run through agy.
+      - name: No Gemini CLI
+        run: bash scripts/check-no-gemini-cli.sh
+      # Every child process starts through crate::process::command: no console windows.
+      - name: No console windows
+        run: bash scripts/check-no-console.sh
+      - run: bun run typecheck
+      - run: bun run lint
+      # tauri::generate_context! needs the frontend's dist to exist before cargo compiles.
+      - run: bun run build
+      # vitest and cargo test as separate steps: a hung vitest worker fails here, in minutes,
+      # instead of holding the job until its timeout.
+      - name: vitest
+        run: bun x vitest run
+        timeout-minutes: 8
+      - name: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+
+  windows:
+    name: windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      # Only main saves the cache; PRs restore main's instead of each writing (and evicting) their own.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # Shared with layout.yml, which restores this cache for its debug build.
+          shared-key: windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # No Bun cache here: restoring it on Windows (~30 s) is slower than a fresh install (~7 s).
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # vitest and cargo test as separate steps: a hung vitest worker fails here, in minutes,
+      # instead of holding the job until its timeout.
+      - name: vitest
+        run: bun x vitest run
+        timeout-minutes: 8
+      - name: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      # Only a release tag sets a release version (release.yml). Every other installer is
+      # <version>-dev.<run>: it sorts below the release and its rc's, and says which run made it.
+      - name: Dev version for this build
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          bun -e "const f = 'src-tauri/tauri.conf.json'; const p = await Bun.file(f).json(); p.version = p.version.split('-')[0] + '-dev.' + process.env.GITHUB_RUN_NUMBER; await Bun.write(f, JSON.stringify(p, null, 2) + '\n'); console.log('Version ' + p.version);"
+      # The NSIS installer (a release build) is made on main, tags and manual runs; PRs stop at the
+      # debug build and tests above, which is what takes the job from ~17 to a few minutes.
+      # Updater signatures need the repo's signing key; without it (forks, before the key exists) build unsigned.
+      - name: Build unsigned without the signing key
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then exit 0; fi
+          echo "No TAURI_SIGNING_PRIVATE_KEY: building without updater artifacts."
+          bun -e "const f = 'src-tauri/tauri.conf.json'; const p = await Bun.file(f).json(); if (p.bundle) p.bundle.createUpdaterArtifacts = false; await Bun.write(f, JSON.stringify(p, null, 2) + '\\n');"
+      # The frontend is already built above, so the bundler skips its beforeBuildCommand.
+      - name: Build the NSIS installer
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: bun run dist:win --config '{"build":{"beforeBuildCommand":""}}'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gond-code-windows-nsis
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  # #507: a real winget download through the pseudo console must report real progress
+  # (at least 3 increasing percents), not 0 then 100. Downloads Git's installer only.
+  install-fallback:
+    name: install fallback
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Real network and three vendors' downloads: non-blocking until it has been stable.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Git, GitHub CLI and Node without winget
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib real_installs_without_winget -- --ignored --nocapture
+
+  winget-progress:
+    name: winget progress
+    runs-on: windows-latest
+    timeout-minutes: 20
+    # Real network and the live winget source: non-blocking until it has been stable for a
+    # while (Atlas). A failure still shows on the job; it doesn't turn the run red.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: windows
+          save-if: false
+      - name: winget is there
+        shell: pwsh
+        run: winget --version
+      - name: Real download progress
+        # One retry: the live winget source and CDN are occasionally slow or flaky.
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib real_winget_download_reports_progress -- --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Retrying once"
+            cargo test --manifest-path src-tauri/Cargo.toml --lib real_winget_download_reports_progress -- --ignored --nocapture
+          }
+      - name: Codex repairs itself after its files are removed
+        # One retry: the live winget source and CDN are occasionally slow or flaky.
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib real_codex_repairs_after_its_files_are_removed -- --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Retrying once"
+            cargo test --manifest-path src-tauri/Cargo.toml --lib real_codex_repairs_after_its_files_are_removed -- --ignored --nocapture
+          }
+
+  # Installs the installer this run built, launches it, and uninstalls it.
+  smoke:
+    name: smoke
+    needs: windows
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: gond-code-windows-nsis
+          path: installer
+      - name: Install, launch, uninstall
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem installer -Filter *-setup.exe | Select-Object -First 1
+          ./scripts/smoke-windows.ps1 -Installer $installer.FullName -AliveSeconds 10
+      # Uninstall's "Delete the application data" removes Gond Code's own data and nothing else.
+      - name: Uninstall with and without deleting the app data
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem installer -Filter *-setup.exe | Select-Object -First 1
+          ./scripts/purge-check.ps1 -Installer $installer.FullName
