@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { isRegistered, liveBackend, runCommand } from "@/lib/appState";
 import { Switch } from "@/components/ui/switch";
+import { useAppName } from "@/lib/appName";
 import { TINTS } from "@/lib/theme";
 import { fontStack, TERMINAL_FONTS } from "@/lib/terminalFont";
 import { SpeechSetting } from "@/features/speech/SpeechSetting";
@@ -132,6 +133,7 @@ function FontPicker({
 /** Settings → General: the tint, the default shell, the terminal font, speech to text and
  *  closing the window. */
 export function GeneralSettings({ settings, onChange, version }: Props) {
+  const name = useAppName();
   return (
     <section aria-label="General" className="flex max-w-xl flex-col gap-5">
       <header>
@@ -187,7 +189,11 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
           </span>
         </label>
       </Field>
-      {version && <p className="text-xs text-muted-foreground">Gond Code {version}</p>}
+      {version && (
+        <p className="text-xs text-muted-foreground">
+          {name} {version}
+        </p>
+      )}
     </section>
   );
 }

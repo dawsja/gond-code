@@ -47,6 +47,23 @@ app every debug build is (`src-tauri/src/channel.rs`; README, "Dev and prod side
 - **Dev shares the PC.** An agent that Dev installs, updates or uninstalls (Settings → Agents) is
   installed, updated or uninstalled for prod too. Don't uninstall agents from Dev unless asked.
 - **Dev doesn't update itself.** Settings → Updates says so, and `app.update.*` answers `invalid`.
+- **See and drive Dev's UI** (screenshots, clicks, typing in a pane) without the user's mouse
+  or keyboard: start Dev with `bun run dev:debug` instead of `bun run tauri dev`. That's the
+  same Dev, with WebView2's DevTools on 127.0.0.1:9223 (`GOND_CDP_PORT` to change). Then use
+  `scripts/dev-cdp.ts`, which only ever attaches to Dev's page:
+
+  ```sh
+  bun scripts/dev-cdp.ts shot <file.png>      # screenshot; keep it out of the repo
+  bun scripts/dev-cdp.ts eval '<js>'          # run JS in the page, print the result
+  bun scripts/dev-cdp.ts click '<selector>'   # e.g. '[data-arg="terminalFont"]'
+  bun scripts/dev-cdp.ts click-text Settings  # a button, link or menu item by its exact text
+  bun scripts/dev-cdp.ts click .xterm-screen  # focus the pane, then:
+  bun scripts/dev-cdp.ts type 'git status\n'  # type into it; \n presses Enter
+  bun scripts/dev-cdp.ts key Escape           # Enter, Escape, Tab, Backspace, arrows
+  ```
+
+  A pane's text is drawn on a canvas, so check it with `shot`, not `eval`. Frontend edits show
+  in Dev straight away; a Rust edit rebuilds and restarts it.
 - **Ports:** `tauri dev` serves the UI on 1420. While Dev is running, start the mock UI on
   another port: `bunx vite --port 1477`.
 - **A running Dev locks `target\debug\gond-code.exe`:** stop Dev before a standalone

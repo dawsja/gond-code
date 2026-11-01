@@ -12,6 +12,7 @@
     "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml --all",
     "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "tauri": "tauri",
+    "dev:debug": "bun scripts/dev-debug.ts",
     "icons": "tauri icon docs/gond-code-1024.png -o src-tauri/icons",
     "dist:win": "tauri build --bundles nsis"
   },

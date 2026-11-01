@@ -43,6 +43,7 @@ You need [Bun](https://bun.sh) and Rust stable ([rustup](https://rustup.rs)). Us
 ```sh
 bun install
 bun run tauri dev     # Gond Code Dev, with hot reload (see below)
+bun run dev:debug     # the same, with DevTools on 127.0.0.1:9223 (scripts/dev-cdp.ts drives it)
 bun run dev           # the UI alone in a browser, on mock data
 bun run typecheck     # tsc --noEmit
 bun run lint          # eslint, prettier --check, cargo fmt --check
