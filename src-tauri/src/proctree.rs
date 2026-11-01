@@ -141,10 +141,20 @@ impl Tree {
         }
         #[cfg(unix)]
         {
+            let quiet = |c: &mut std::process::Command| {
+                c.stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+            };
             let mut c = crate::process::command("kill");
-            c.args(["-s", "KILL", "--", &format!("-{}", self.pid)])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null());
+            c.args(["-s", "KILL", "--", &format!("-{}", self.pid)]);
+            quiet(&mut c);
+            let _ = c.status();
+            // A terminal's shell leads its own session, and with job control on (it runs on a
+            // terminal) each `cmd &` gets a process group of its own: the session holds them all.
+            // For a child that isn't a session leader, no session has its pid: nothing matches.
+            let mut c = crate::process::command("pkill");
+            c.args(["-KILL", "-s", &self.pid.to_string()]);
+            quiet(&mut c);
             let _ = c.status();
         }
         #[cfg(not(any(windows, unix)))]

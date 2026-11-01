@@ -63,11 +63,15 @@ function Click-Element($e) {
   Start-Sleep -Milliseconds 400
 }
 
+# NSIS runs the uninstaller again from %TEMP% and the first copy exits at once: Un_A.exe in
+# NSIS 3, Au_.exe before it. Either one still running means the uninstall isn't done.
+function Uninstalling { [bool](Get-Process -Name 'Un_A', 'Au_' -ErrorAction SilentlyContinue) }
+
 function Uninstall-With-Checkbox {
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
   $u = Start-Process (Join-Path $installDir 'uninstall.exe') -PassThru
   $root = [System.Windows.Automation.AutomationElement]::RootElement
-  # NSIS re-launches the uninstaller from %TEMP% (Au_.exe), so find its window by title, not pid.
+  # NSIS re-launches the uninstaller from %TEMP%, so find its window by title, not pid.
   $tops = { $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -like 'Gond Code*Uninstall*' } }
   $win = $null
   for ($i = 0; $i -lt 60 -and -not $win; $i++) { Start-Sleep -Milliseconds 500; $win = & $tops | Select-Object -First 1 }
@@ -87,16 +91,17 @@ function Uninstall-With-Checkbox {
   Write-Host "checkbox: ticked=$([GondMouse]::Checked($boxHwnd)) after $clicks click(s)"
   if (-not [GondMouse]::Checked($boxHwnd)) { throw 'the "Delete the application data" box never ticked' }
   Click-Element (& $find 'Uninstall')
-  # The finish page: Close.
-  for ($i = 0; $i -lt 60; $i++) {
+  # Done when its window is gone: Close (enabled once everything ran, the data purge included)
+  # ends it. A click on Close while it's still working does nothing, so keep watching.
+  for ($i = 0; $i -lt 120; $i++) {
     Start-Sleep -Milliseconds 500
-    if (-not (Get-Process Au_ -ErrorAction SilentlyContinue)) { break }
+    if (-not (& $tops | Select-Object -First 1)) { break }
     $close = & $find 'Close'
-    if ($close -and $close.Current.IsEnabled) { Click-Element $close; break }
+    if ($close -and $close.Current.IsEnabled) { Click-Element $close }
   }
   $u.WaitForExit(30000) | Out-Null
-  # The uninstaller re-launches itself from %TEMP% (Au_.exe); wait for every copy.
-  for ($i = 0; $i -lt 60 -and (Get-Process Au_ -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
+  # The uninstaller re-launches itself from %TEMP%; wait for every copy.
+  for ($i = 0; $i -lt 60 -and (Uninstalling); $i++) { Start-Sleep -Milliseconds 500 }
 }
 
 function Survivors($pass) {
@@ -110,7 +115,7 @@ Install; Seed
 Check 'seeded: database exists' (Test-Path $db) $db
 Check 'seeded: GondCode credential exists' (Has-Cred $cred) $cred
 Start-Process (Join-Path $installDir 'uninstall.exe') -ArgumentList '/S' -Wait | Out-Null
-for ($i = 0; $i -lt 60 -and (Get-Process Au_ -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
+for ($i = 0; $i -lt 60 -and (Uninstalling); $i++) { Start-Sleep -Milliseconds 500 }
 Check 'unticked: database kept' (Test-Path $db) $db
 Check 'unticked: local data kept' (Test-Path $local) $local
 Check 'unticked: credential kept' (Has-Cred $cred) $cred
@@ -136,7 +141,7 @@ Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; Start-Sleep 2
 # 4. Scripted: /S /PURGE does the same as the ticked box.
 Seed
 Start-Process (Join-Path $installDir 'uninstall.exe') -ArgumentList '/S', '/PURGE' -Wait | Out-Null
-for ($i = 0; $i -lt 60 -and (Get-Process Au_ -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
+for ($i = 0; $i -lt 60 -and (Uninstalling); $i++) { Start-Sleep -Milliseconds 500 }
 Check '/PURGE: database gone' (-not (Test-Path $db)) $db
 Check '/PURGE: credential gone' (-not (Has-Cred $cred)) $cred
 Survivors '/PURGE'
