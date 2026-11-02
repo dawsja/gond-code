@@ -72,6 +72,7 @@ jobs:
       - name: cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
       # The remote host (WSL, SSH machines) as it runs there: on Linux. From its own folder, so
       # cargo reads its config (`--cfg gond_remote`).
       - name: gond-remote clippy and tests
@@ -79,7 +80,6 @@ jobs:
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo test
-        working-directory: src-tauri
 
   windows:
     name: windows
