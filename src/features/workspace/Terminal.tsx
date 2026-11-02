@@ -17,7 +17,7 @@ import { fileLinks } from "./fileLinks";
 import { paneFolder, setPaneFolder } from "./paneFolder";
 import { searchLines, type Hit, type Line } from "./scrollbackSearch";
 import { promptFolder } from "./prompt";
-import { asks, setStatus, type Status } from "./status";
+import { asks, atInput, fromTitle, setStatus, typed, type Status } from "./status";
 
 /**
  * Colours in the spirit of Alacritty and Ghostty: a true black ground, soft but saturated ANSI colours in
@@ -267,10 +267,18 @@ export function Terminal({
     };
     // The sound for an agent that's done or needs you (Settings → General → Sounds), queued in
     // Rust. Not for a question already on screen when the pane opened, nor one you're looking at.
+    // It waits a second and plays only if the pane still says so: a status that flickers
+    // makes one sound at most, and a newer one replaces it.
+    let pendingCue = 0;
     const cue = (s: "done" | "needs") => {
-      if (ticks < 6 || (s === "needs" && live.current.active && document.hasFocus())) return;
-      if (liveBackend() && isRegistered("sound.play"))
-        runCommand("sound.play", { cue: s }).catch(() => undefined);
+      window.clearTimeout(pendingCue);
+      if (ticks < 6) return;
+      pendingCue = window.setTimeout(() => {
+        if (disposed || state !== s) return;
+        if (s === "needs" && live.current.active && document.hasFocus()) return;
+        if (liveBackend() && isRegistered("sound.play"))
+          runCommand("sound.play", { cue: s }).catch(() => undefined);
+      }, 1000);
     };
     const lines = () => {
       const b = t.buffer.active;
@@ -290,6 +298,17 @@ export function Terminal({
         out.push(b.getLine(y)?.translateToString(true) ?? "");
       return out.join("\n");
     };
+    // Every row on screen, top to bottom.
+    const visible = () => {
+      const b = t.buffer.active;
+      return Array.from(
+        { length: t.rows },
+        (_, y) => b.getLine(b.baseY + y)?.translateToString(true) ?? "",
+      );
+    };
+    // The title the agent last set (Claude Code's and Codex's say what they're doing).
+    let title = "";
+    t.onTitleChange((s) => (title = s));
 
     // Before a restart into an update, a shell keeps its screen (colours and scrollback) and the
     // folder its prompt shows, to come back as it was. One running an agent comes back as its
@@ -317,6 +336,8 @@ export function Terminal({
           agent = next;
           setPaneAgent(paneId, agent);
           busySince = 0;
+          // A title from before is the shell's or the last agent's.
+          title = "";
           set("idle");
           if (agent) agentSince = attached && !had ? 0 : Date.now();
           // It started (keep how to resume it) or ended (nothing to resume).
@@ -345,13 +366,21 @@ export function Terminal({
         return;
       }
       const now = Date.now();
+      // What the agent's title says comes first: it's the agent's own word.
+      const said = fromTitle(agent, title);
       // A question on screen is the agent waiting for you, even while it redraws (Codex's
-      // folder-trust prompt animates).
-      if (asks(screen())) {
+      // folder-trust prompt animates); not while its title says it's working, nor while
+      // Claude Code's input box is waiting for you.
+      if (said === "needs" || (said !== "working" && asks(screen()) && !atInput(visible()))) {
         busySince = 0;
         return set("needs");
       }
-      const printing = now - lastOut < 1500;
+      if (said === "working") {
+        if (!busySince) busySince = now;
+        if (state !== "working") set("working");
+        return;
+      }
+      const printing = said !== "idle" && now - lastOut < 1500;
       if (printing) {
         if (!busySince) busySince = now;
         if (state !== "working" && now - busySince > 700) set("working");
@@ -421,8 +450,11 @@ export function Terminal({
       // xterm's hidden input, named for agents and the legibility audit.
       t.textarea?.setAttribute("data-local", "pane.input");
       t.onData((data) => {
+        // What comes back straight after is an echo or a redraw, not the agent working.
         lastKey = Date.now();
-        if (state === "done" || state === "needs") set("idle");
+        // Focus reports and the like are the terminal answering, not you: they don't touch
+        // the status (a pane asking you something flapped to Idle each time focus moved).
+        if (typed(data) && (state === "done" || state === "needs")) set("idle");
         if (ptyId) callOrRun("pty_write", "pty.write", { ptyId, data }).catch(() => undefined);
       });
       try {
@@ -510,6 +542,7 @@ export function Terminal({
 
     return () => {
       disposed = true;
+      window.clearTimeout(pendingCue);
       stopSaving();
       stopFont();
       window.clearInterval(tick);

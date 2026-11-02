@@ -116,5 +116,61 @@ describe("an agent waiting on you", () => {
     expect(asks("Trust this folder? Codex can read, edit…\n› 1. Trust and continue")).toBe(true);
     expect(asks("Allow edit k8s/web.yaml?  [y] yes  [n] no")).toBe(true);
     expect(asks("✻ Animating… (38s · esc to interrupt)")).toBe(false);
+    expect(
+      asks(
+        "Accessing workspace…\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm · Esc to cancel",
+      ),
+    ).toBe(true);
+  });
+
+  it("isn't the agent's own reply, idle at its input", async () => {
+    const { asks } = await import("./status");
+    const idle =
+      "● Would you like to approve the next step?\n\n✻ Churned for 2s\n────\n❯ \n────\n⏵⏵ auto mode on";
+    expect(asks(idle)).toBe(false);
+  });
+
+  it("isn't a choice in the conversation above Claude Code's waiting input box", async () => {
+    const { atInput } = await import("./status");
+    const rule = "─".repeat(40);
+    const reply = ["● ok", "  ❯ 1. Yes [y/n]", "", rule, "❯ ", rule, "  ⏸ manual mode on"];
+    expect(atInput(reply)).toBe(true);
+    // A permission prompt replaces the box, with its own footer.
+    const asking = [
+      rule,
+      " Do you want to create see.txt?",
+      " ❯ 1. Yes",
+      "   3. No",
+      "",
+      " Esc to cancel",
+    ];
+    expect(atInput(asking)).toBe(false);
+    expect(atInput([...reply, "Enter to confirm · Esc to cancel"])).toBe(false);
+  });
+
+  it("is read first from the title Claude Code and Codex set", async () => {
+    const { fromTitle } = await import("./status");
+    expect(fromTitle("claude", "◐ Bye.txt file creation")).toBe("working");
+    expect(fromTitle("claude", "⠋ Fixing tests")).toBe("working");
+    expect(fromTitle("claude", "✳ Bye.txt file creation")).toBe("idle");
+    expect(fromTitle("claude", "Claude Code")).toBeUndefined();
+    expect(fromTitle("codex", "⠹ gond-code")).toBe("working");
+    expect(fromTitle("codex", "Action Required · gond-code")).toBe("needs");
+    expect(fromTitle("codex", "gond-code")).toBe("idle");
+    expect(fromTitle("opencode", "⠋ busy")).toBeUndefined();
+  });
+
+  it("isn't moved by the terminal's own focus and cursor reports", async () => {
+    const { typed } = await import("./status");
+    for (const report of [
+      "\x1b[I",
+      "\x1b[O",
+      "\x1b[O\x1b[I",
+      "\x1b[12;40R",
+      "\x1b[?1;2c",
+      "\x1b]11;rgb:0000/0000/0000\x1b\\",
+    ])
+      expect(typed(report)).toBe(false);
+    for (const key of ["y", "\r", "\x1b", "\x1b[A", "1", "hello"]) expect(typed(key)).toBe(true);
   });
 });

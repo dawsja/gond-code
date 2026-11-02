@@ -10,15 +10,21 @@ every agent by what it's doing.
   saved to `sessions.json` beside the database, so the app reopens as you left it.
 - **Agents.** The sidebar lists every agent pane in every session, grouped by status: **Needs
   you**, **Working**, **Done**, **Idle** (and Exited), with how long it has been in that status.
-  Gond reads the status from each terminal's output, as you would: output still coming means
-  working, a question on screen ("Do you want to…", "[y/n]", at the bottom of the pane or where
-  the agent's cursor is) means it needs you. After its name,
+  Gond reads the status from each terminal, as you would. Claude Code and Codex say it in the
+  title they set (a spinner while working, Claude's `✳` when it's done, Codex's "Action
+  Required"), and that comes first. Otherwise output still coming means working, and a question
+  on screen (its choices, `❯ 1. Yes`, "[y/n]", "Enter to confirm", at the bottom of the pane or
+  where the agent's cursor is) means it needs you. A question only in words ("Would you like
+  to…"), or a choice in the conversation above Claude Code's waiting input box, is the agent's
+  reply, not a prompt, and moving focus between panes or apps never changes a status. After its name,
   an agent with a plan has a usage icon, amber when a window is at 10% or less and red when one
   is used up; hovering it shows every limit of the plan with its bar and when it resets. Gond
   warns once as it gets low and once when it runs out. While one runs, Gond reads its plan when it starts and every 5 minutes.
 - **Sounds.** A chime when an agent finishes while you're in another pane or another app, and an
   alert when one asks you something (not the pane you're typing in). They work from the tray too.
-  Several at once play one after another; one already waiting isn't repeated. Both are made by
+  Each waits a second and plays only if the agent still says so, so a status that flickers
+  makes one sound at most. Several at once play one after another; one already waiting isn't
+  repeated. Both are made by
   the app (no audio files) and played by Windows directly, with no process per sound. Settings →
   General → Sounds turns them off.
 - **Panes.** Each pane is a terminal in your default shell. You start an agent by typing it
