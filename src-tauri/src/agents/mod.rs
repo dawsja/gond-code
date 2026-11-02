@@ -92,7 +92,7 @@ pub fn built_in() -> impl Iterator<Item = (&'static str, &'static str, &'static 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
-    /// "session" | "weekly" | "monthly"
+    /// "session" | "daily" | "weekly" | "monthly"
     pub name: String,
     /// A window the plan scopes, e.g. "Weekly · Fable" (one model's week); none for the plan's own.
     #[serde(skip_serializing_if = "Option::is_none")]

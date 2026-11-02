@@ -32,3 +32,9 @@ flags = ["--conversation"]
 home = ["~/.gemini/antigravity-cli"]
 # conversation_summaries.db, its workspace URIs.
 store = { kind = "reader", name = "agy" }
+
+[status]
+# It reports its state to the terminal (OSC 7501: working, waiting for you, done) once it
+# knows the terminal supports it. Its check is a query whose answer Windows' console host
+# turns into keystrokes (it froze), so it's told instead.
+env = { AGY_CLI_OSC7501 = "on" }

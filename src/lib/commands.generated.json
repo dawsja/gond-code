@@ -217,6 +217,30 @@
           "additionalProperties": false,
           "description": "How its status shows, for the pane (`status.ts`).",
           "properties": {
+            "busy": {
+              "default": [],
+              "description": "Its own working line's words (regular expressions, any case): on screen, it's working,\nas a title that says so would tell (Pi's spinner and \"Working\").",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "busy_examples": {
+              "description": "Lines its working line shows, as on screen: each must match one of `busy` (checked by\nthe tests).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "writeOnly": true
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Environment variables every pane sets, so the agent reports its state when it's started\nthere (Antigravity's `AGY_CLI_OSC7501 = \"on\"`: its support check can't be answered\nthrough Windows' console host).",
+              "type": "object",
+              "writeOnly": true
+            },
             "examples": {
               "description": "Lines its prompts show, as you'd see them on screen: each must match one of `prompts`\n(checked by the tests, so a pattern that stops matching is caught).",
               "items": {
@@ -1755,7 +1779,7 @@
       "additionalProperties": false,
       "properties": {
         "harnessId": {
-          "description": "A catalog id: \"claude\", \"codex\", \"agy\", \"grok\", \"opencode\", \"pi\", \"copilot\" or \"cursor\".",
+          "description": "A catalog id: \"claude\", \"codex\", \"agy\", \"grok\", \"opencode\", \"pi\" or \"devin\".",
           "type": "string"
         }
       },

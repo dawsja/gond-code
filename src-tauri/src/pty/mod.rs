@@ -353,6 +353,13 @@ impl PtyManager {
         // (OSC 7501), which Gond reads.
         cmd.env("TERM_PROGRAM", "gond-code");
         cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+        // What an agent's file asks of every pane so it reports its state there.
+        for (k, v) in crate::agents::spec::all()
+            .iter()
+            .flat_map(|s| &s.status.env)
+        {
+            cmd.env(k, v);
+        }
         let pair = native_pty_system()
             .openpty(size(cols, rows))
             .map_err(failed)?;

@@ -5,10 +5,12 @@ import type { AgentInfo, AgentStatus } from "./types";
 
 /** An agent's status facts, with its prompts compiled. */
 export type StatusSpec = {
-  /** Its title's reader in `status.ts` (`claude`, `codex`, `minimax`). */
+  /** Its title's reader in `status.ts` (`claude`, `codex`, `grok`). */
   title?: string;
   /** Its prompts' own words: on screen, it needs you. */
   prompts?: RegExp;
+  /** Its own working line's words: on screen, it's working. */
+  busy?: RegExp;
   /** Where it asks: the pane's bottom and cursor rows, or anywhere on screen. */
   scan: "bottom" | "screen";
   /** The key it pastes an image on. */
@@ -19,17 +21,22 @@ const DEFAULT: StatusSpec = { scan: "screen", paste: "ctrl+v" };
 
 let specs: Record<string, StatusSpec> = {};
 
-function compile(s: AgentStatus): StatusSpec {
-  let prompts: RegExp | undefined;
+/** Patterns as one RegExp (any case, a line at a time); none for a pattern this browser can't
+ * read, so the generic signs still count. */
+function joined(patterns: string[] | undefined): RegExp | undefined {
+  if (!patterns?.length) return undefined;
   try {
-    prompts = s.prompts.length ? new RegExp(s.prompts.join("|"), "im") : undefined;
+    return new RegExp(patterns.join("|"), "im");
   } catch {
-    // A pattern this browser can't read: the agent's generic prompts still count.
-    prompts = undefined;
+    return undefined;
   }
+}
+
+function compile(s: AgentStatus): StatusSpec {
   return {
     title: s.title ?? undefined,
-    prompts,
+    prompts: joined(s.prompts),
+    busy: joined(s.busy),
     scan: s.scan === "bottom" ? "bottom" : "screen",
     paste: s.paste === "alt+v" ? "alt+v" : "ctrl+v",
   };

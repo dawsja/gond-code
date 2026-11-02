@@ -26,6 +26,7 @@ import {
   atInput,
   fromProgram,
   fromTitle,
+  ownRecord,
   setStatus,
   typed,
   type Signal,
@@ -345,12 +346,17 @@ export function Terminal({
         (_, y) => b.getLine(b.baseY + y)?.translateToString(true) ?? "",
       );
     };
-    // The title the agent last set (Claude Code's and Codex's say what they're doing).
+    // The title the agent last set (Claude Code's, Codex's and Grok's say what they're doing).
     let title = "";
     t.onTitleChange((s) => (title = s));
-    // What MiniMax Code and Devin report of themselves on OSC 7501: working, blocked on you, idle.
+    // What an agent reports of itself on OSC 7501, the program status protocol (Devin,
+    // Antigravity): working, blocked on you, idle. Only the agent's own record counts: one with
+    // an `id` is a session's or a subagent's. Its support query (`OSC 7501 ; ?`) goes
+    // unanswered: through Windows' console host the answer arrives as keystrokes (Antigravity
+    // froze on it); an agent that asks is told by its file's `env` instead.
     let program: Signal | undefined;
     t.parser.registerOscHandler(7501, (data) => {
+      if (data.trim() === "?" || !ownRecord(data)) return true;
       program = fromProgram(data);
       return true;
     });
@@ -415,13 +421,15 @@ export function Terminal({
       // How this agent shows its status (its file's `[status]` in agents/).
       const how = statusSpec(agent);
       // What the agent reports, or its title says, comes first: it's the agent's own word.
-      const said = program ?? fromTitle(how.title, title);
+      // Then its own working line on screen (Pi's spinner and "Working").
+      const said =
+        program ??
+        fromTitle(how.title, title) ??
+        (how.busy?.test(visible().join("\n")) ? "working" : undefined);
       // A question on screen is the agent waiting for you, even while it redraws (Codex's
       // folder-trust prompt animates); not while its title says it's working, nor while
-      // Claude Code's input box is waiting for you (another agent draws its prompt between
-      // rules too: Kimi Code's "Trust this folder?"). An agent asks at the bottom or at the
-      // cursor (`scan = "bottom"`: Claude Code, Codex) or anywhere on screen (Kimi Code's at
-      // the top).
+      // Claude Code's input box is waiting for you. An agent asks at the bottom or at the
+      // cursor (`scan = "bottom"`: Claude Code, Codex) or anywhere on screen.
       const waiting = how.title === "claude" && atInput(visible());
       const shown = how.scan === "bottom" ? screen() : visible().join("\n");
       if (said === "needs" || (said !== "working" && asks(shown, how.prompts) && !waiting)) {

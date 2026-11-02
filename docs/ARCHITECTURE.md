@@ -38,9 +38,9 @@ runs nothing on an agent's behalf.
    `pty.attach` for a terminal still running under its id, and only opens a new one if there
    is none.
 4. Every 2 s the pane asks `pty.agent` which agent runs under its shell (`agents/running.rs`,
-   by program name in the shell's process tree; MiniMax Code's `mcode`, Node running its script,
-   by the script's folder). While one does, the pane shows it, reads Working / Needs you / Done
-   (`status.ts`: the agent's title, its OSC 7501 report, then the screen), and the sidebar lists
+   by program name in the shell's process tree). While one does, the pane shows it, reads Working / Needs you / Done
+   (`status.ts`: the agent's OSC 7501 report, its title, its own working line, then the
+   screen), and the sidebar lists
    it. Panes run with `TERM_PROGRAM=gond-code`: without it Devin takes ConPTY for the old
    console host and sends no OSC 7501.
 
@@ -153,16 +153,10 @@ Rust finds the agent under the pane's shell, reads the folder it really runs in 
 An agent started on one (`--resume <id>`, `--session <id>`…) names it on its command line, read
 the same way. Otherwise it's the newest in the agent's own store, in its folder, changed since it
 started, that another pane doesn't have: Claude Code's `projects/<folder>/<id>.jsonl`, Codex's
-`sessions/…/rollout-…-<id>.jsonl`, Copilot's `session-state/<id>/workspace.yaml` (or exactly the
-one whose `inuse.<pid>.lock` names the process), Cursor's `chats/<hash>/<id>/meta.json`, Grok's
-`sessions/<folder>/<id>/summary.json`, opencode's `opencode.db` (`session` table), Pi's
-`sessions/--<folder>--/<time>_<id>.jsonl`, Antigravity's `conversation_summaries.db`, Droid's
-`sessions/<folder>/<id>.jsonl` (its first line names the folder), Kimi Code's
-`session_index.jsonl`, MiniMax Code's `v2/sqlite/runtime-state.sqlite`, Hermes' `state.db` (the
-folder from the Python its `hermes.exe` launcher starts: the launcher's own is `%TEMP%`), Kilo
-Code's `kilo.db` (opencode's), Devin's `%APPDATA%\devin\cli\sessions.db` and Cline's
-`data/db/sessions.db`. Each
-format was read off a real install. The pane keeps
+`sessions/…/rollout-…-<id>.jsonl`, Grok's `sessions/<folder>/<id>/summary.json`, opencode's
+`opencode.db` (`session` table), Pi's `sessions/--<folder>--/<time>_<id>.jsonl`, Antigravity's
+`conversation_summaries.db` and Devin's `%APPDATA%\devin\cli\sessions.db`. Each format was read
+off a real install. The pane keeps
 `{ agent, session, command, cwd }` as `resume` in `sessions.json`. A pane that opens without its
 terminal (`pty.attach` finds none) starts its shell in `cwd` and types `command` once the prompt
 shows. Quitting the agent, or Restart, clears it.

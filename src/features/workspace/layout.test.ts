@@ -125,10 +125,10 @@ describe("an agent waiting on you", () => {
 
   it("is seen in an agent's own prompt words, from its file", async () => {
     const { asks } = await import("./status");
-    // Kimi Code's, as agents/kimi.toml says them; every agent's file has examples the Rust
-    // tests check against its patterns.
-    const kimi = new RegExp(["approve (once|for this session)", "↵ confirm"].join("|"), "im");
-    expect(asks("✓ Approve for this session\n↵ confirm · esc deny", kimi)).toBe(true);
+    // Devin's, as agents/devin.toml says them; every agent's file has examples the Rust tests
+    // check against its patterns.
+    const devin = new RegExp(["↵ confirm", "trust the authors of this directory"].join("|"), "im");
+    expect(asks("Do you trust the authors of this directory?", devin)).toBe(true);
     // Without its words, only the shapes every agent shares count.
     expect(asks("Run this command?\n▶ 1. Approve once")).toBe(true);
     expect(asks("Approve once, it said.")).toBe(false);
@@ -173,19 +173,32 @@ describe("an agent waiting on you", () => {
     expect(fromTitle("codex", "Action Required · gond-code")).toBe("needs");
     expect(fromTitle("codex", "gond-code")).toBe("idle");
     expect(fromTitle("opencode", "⠋ busy")).toBeUndefined();
-    expect(fromTitle("minimax", "Working | gond (mvs_1234) | MCode")).toBe("working");
-    expect(fromTitle("minimax", "Needs approval | gond | MCode")).toBe("needs");
-    expect(fromTitle("minimax", "Done | gond | MCode")).toBe("idle");
-    expect(fromTitle("minimax", "MCode")).toBeUndefined();
+    // Grok Build's, as it set them on 2026-11-02.
+    expect(fromTitle("grok", "⠙ - Waiting for response… - Simple OK reply - grok")).toBe("working");
+    expect(fromTitle("grok", "⚠ Action Required - ⠋ - Running tool - grok")).toBe("needs");
+    expect(fromTitle("grok", "grok")).toBe("idle");
+    expect(fromTitle("grok", "Simple OK reply - grok")).toBe("idle");
+    expect(fromTitle("grok", "PS C:\\Users\\me")).toBeUndefined();
   });
 
-  it("is read from what MiniMax Code and Devin report on OSC 7501", async () => {
+  it("is the agent's own OSC 7501 record, not a session's or a subagent's", async () => {
+    const { ownRecord } = await import("./status");
+    expect(ownRecord("state=working:app=grok-build")).toBe(true);
+    expect(ownRecord("state=blocked:id=s1/task-2:kind=permission")).toBe(false);
+    expect(ownRecord("state=clear:id=s1")).toBe(false);
+  });
+
+  it("is read from what Devin reports on OSC 7501", async () => {
     const { fromProgram } = await import("./status");
-    expect(fromProgram("state=working:app=mcode")).toBe("working");
+    expect(fromProgram("state=working:app=devin")).toBe("working");
     expect(fromProgram("state=blocked:kind=permission:app=devin")).toBe("needs");
-    expect(fromProgram("state=idle:app=mcode")).toBe("idle");
+    expect(fromProgram("state=idle:app=devin")).toBe("idle");
     expect(fromProgram("state=done:app=devin:msg=Finished")).toBe("idle");
     expect(fromProgram("state=clear")).toBeUndefined();
+    // Pairs in any order; a base64 `msg` can end in `=`.
+    expect(fromProgram("app=grok-build:msg=V29ya2luZw==:state=blocked:kind=question")).toBe(
+      "needs",
+    );
     expect(fromProgram("nonsense")).toBeUndefined();
   });
 

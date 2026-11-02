@@ -5,15 +5,11 @@
 //!   and reset (the 5-hour session, the week, and the week per model).
 //! - Codex: its app server's `account/rateLimits/read`, asked once (`codex app-server`).
 //! - Grok: `grok_usage` (its billing).
-//! - GitHub Copilot: `GET api.github.com/copilot_internal/user` with the sign-in's GitHub
-//!   token, as Copilot's `/usage` does: the month's AI credits (and chat and completions on
-//!   plans that limit them), resetting on the plan's date.
-//! - Cursor: `DashboardService/GetCurrentPeriodUsage` with its sign-in's access token
-//!   (`%APPDATA%\Cursor\auth.json`), as its `/usage` does: the month's included usage, and
-//!   its Auto and API shares.
 //! - Antigravity: Google's Cloud Code API, as agy's `/usage` does, with agy's own sign-in from Credential Manager (`gemini:antigravity`):
 //!   `loadCodeAssist` for the project, then `retrieveUserQuotaSummary` (each model group's
 //!   5-hour and weekly limits) and `retrieveUserQuota` (the Gemini models' share).
+//! - Devin: Windsurf's `GetUserStatus` with its sign-in's API key, as its `/usage` does: the
+//!   day's and the week's quota.
 //!
 //! Tokens are never refreshed here: an expired one means no reading until the agent renews
 //! it.
@@ -336,406 +332,88 @@ fn codex_limits(r: &serde_json::Value) -> Vec<crate::agents::UsageWindow> {
     out
 }
 
-const COPILOT_USER: &str = "https://api.github.com/copilot_internal/user";
-const CURSOR_USAGE: &str =
-    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
-
-/// Copilot's windows from `copilot_internal/user`: each quota that isn't unlimited, the AI
-/// credits (`premium_interactions`) as the month's plan and chat and completions by name.
-pub fn copilot_windows(v: &Value) -> Vec<UsageWindow> {
-    let resets = v["quota_reset_date_utc"].as_str();
-    let mut out = vec![];
-    for (id, label) in [
-        ("premium_interactions", None),
-        ("chat", Some("Monthly · Chat")),
-        ("completions", Some("Monthly · Completions")),
-    ] {
-        let q = &v["quota_snapshots"][id];
-        if q.is_null() || q["unlimited"].as_bool() == Some(true) {
-            continue;
-        }
-        let Some(left) = q["percent_remaining"].as_f64() else {
-            continue;
-        };
-        if q["entitlement"].as_f64() == Some(0.0) {
-            continue;
-        }
-        out.push(window(
-            "monthly",
-            label.map(String::from),
-            100.0 - left,
-            resets,
-        ));
-    }
-    out
-}
-
-/// The Credential Manager targets Copilot keeps a user's sign-in under, best first
-/// (recorded with Copilot CLI 1.0.105): `<host>:<login>.copilot-cli` and
-/// `<host>:<login>:github.copilot-cli`.
-pub fn copilot_targets(host: &str, login: &str) -> [String; 2] {
-    [
-        format!("{host}:{login}.copilot-cli"),
-        format!("{host}:{login}:github.copilot-cli"),
-    ]
-}
-
-/// The GitHub token Copilot is signed in with in `home`: its config's last signed-in user's,
-/// from Credential Manager.
-pub fn copilot_token(home: &Path) -> Option<String> {
-    let (host, login) = copilot_user(home)?;
-    copilot_targets(&host, &login)
-        .into_iter()
-        .find_map(|t| copilot_token_from(&crate::credentials::read(&t)?))
-}
-
-/// Who Copilot last signed in as in `home` (`config.json`, which allows `//` comments):
-/// `(host, login)`.
-pub fn copilot_user(home: &Path) -> Option<(String, String)> {
-    let text = std::fs::read_to_string(home.join("config.json")).ok()?;
-    let json: String = text
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        );
-    let config: Value = serde_json::from_str(&json).ok()?;
-    let user = &config["lastLoggedInUser"];
-    let login = user["login"].as_str().filter(|l| !l.trim().is_empty())?;
-    let host = user["host"].as_str().unwrap_or("https://github.com");
-    Some((host.to_string(), login.to_string()))
-}
-
-/// A stored Copilot credential: the token itself, or JSON holding it. Copilot writes it as
-/// UTF-16 (Windows' own strings), so read as UTF-8 every other byte is a NUL: tokens are
-/// ASCII, so dropping them gives the token back.
-fn copilot_token_from(raw: &str) -> Option<String> {
-    let raw = raw.replace('\0', "");
-    let raw = raw.trim();
-    if raw.starts_with('{') {
-        let v: Value = serde_json::from_str(raw).ok()?;
-        return ["token", "accessToken", "access_token"]
-            .iter()
-            .find_map(|k| v[*k].as_str())
-            .filter(|t| !t.trim().is_empty())
-            .map(String::from);
-    }
-    (!raw.is_empty()).then(|| raw.to_string())
-}
-
-/// Copilot's plan limits with a GitHub `token` (Copilot's own sign-in, or a token
-/// account's).
-pub fn copilot(token: &str, fetch: Fetch) -> Vec<UsageWindow> {
-    let req = Request {
-        url: COPILOT_USER.into(),
-        headers: vec![
-            ("Authorization".into(), format!("token {token}")),
-            ("Accept".into(), "application/json".into()),
-            ("User-Agent".into(), "gond-code".into()),
-        ],
-    };
-    match fetch(&req, TIMEOUT) {
-        Ok((200, body)) => copilot_windows(&serde_json::from_str(&body).unwrap_or_default()),
-        _ => vec![],
-    }
-}
-
-/// Cursor's sign-in access token (`<APPDATA>\Cursor\auth.json`), unless it has expired.
-pub fn cursor_token(roaming: &Path) -> Option<String> {
-    let v: Value = serde_json::from_str(
-        &std::fs::read_to_string(roaming.join("Cursor").join("auth.json")).ok()?,
-    )
-    .ok()?;
-    let token = v["accessToken"].as_str().filter(|t| !t.trim().is_empty())?;
-    jwt_live(token).then(|| token.to_string())
-}
-
-/// Whether a JWT's `exp` is still ahead; a token without one counts as live.
-fn jwt_live(token: &str) -> bool {
-    use base64::Engine;
-    let claims = token
-        .split('.')
-        .nth(1)
-        .and_then(|p| {
-            base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(p)
-                .ok()
-        })
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
-    let exp = claims.as_ref().and_then(|c| c["exp"].as_i64());
-    exp.is_none_or(|e| e > time::OffsetDateTime::now_utc().unix_timestamp())
-}
-
-/// Cursor's windows from `GetCurrentPeriodUsage`: the billing cycle's included usage, and
-/// the Auto and API shares when the plan splits them, resetting at the cycle's end. The
-/// cycle is a month on paid plans and a week on others, so it's named by its length.
-pub fn cursor_windows(v: &Value) -> Vec<UsageWindow> {
-    let plan = &v["planUsage"];
-    if !plan.is_object() {
-        return vec![];
-    }
-    let num = |x: &Value| {
-        x.as_f64()
-            .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
-    };
-    let (start, end) = (num(&v["billingCycleStart"]), num(&v["billingCycleEnd"]));
-    let resets = end
-        .filter(|ms| *ms > 0.0)
-        .and_then(|ms| time::OffsetDateTime::from_unix_timestamp((ms / 1000.0) as i64).ok())
-        .and_then(|t| {
-            t.format(&time::format_description::well_known::Rfc3339)
-                .ok()
-        });
-    const DAY_MS: f64 = 86_400_000.0;
-    let (name, title) = match (start, end) {
-        (Some(s), Some(e)) if e > s && e - s <= 8.0 * DAY_MS => ("weekly", "Weekly"),
-        _ => ("monthly", "Monthly"),
-    };
-    // As Cursor's own `/usage`: the percent it sends, else included spend over the limit.
-    let total = num(&plan["totalPercentUsed"]).or_else(|| {
-        let limit = num(&plan["limit"]).filter(|l| *l > 0.0)?;
-        Some(num(&plan["includedSpend"]).unwrap_or(0.0) / limit * 100.0)
-    });
-    let mut out = vec![];
-    if let Some(used) = total {
-        out.push(window(name, None, used, resets.as_deref()));
-    }
-    for (field, share) in [("autoPercentUsed", "Auto"), ("apiPercentUsed", "API")] {
-        if let Some(used) = num(&plan[field]) {
-            let label = format!("{title} · {share}");
-            out.push(window(name, Some(label), used, resets.as_deref()));
-        }
-    }
-    out
-}
-
-/// Cursor's plan limits with its sign-in's access token.
-pub fn cursor(token: &str, post: Post) -> Vec<UsageWindow> {
-    let req = Request {
-        url: CURSOR_USAGE.into(),
-        headers: vec![
-            ("Authorization".into(), format!("Bearer {token}")),
-            ("Content-Type".into(), "application/json".into()),
-            ("Connect-Protocol-Version".into(), "1".into()),
-        ],
-    };
-    match post(&req, "{}", TIMEOUT) {
-        Ok((200, body)) => cursor_windows(&serde_json::from_str(&body).unwrap_or_default()),
-        _ => vec![],
-    }
-}
-
-/// An RFC 3339 time, or one in milliseconds since 1970, as RFC 3339.
-fn rfc3339(v: &Value) -> Option<String> {
-    if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-        return Some(s.to_string());
-    }
-    let ms = v.as_f64().filter(|ms| *ms > 0.0)?;
-    time::OffsetDateTime::from_unix_timestamp((ms / 1000.0) as i64)
+/// Devin's sign-in (`<dir>\credentials.toml`, `%APPDATA%\devin` on Windows): its Windsurf API
+/// key, and the server it signed in to.
+pub fn devin_token(dir: &Path) -> Option<(String, String)> {
+    let v: toml::Table = std::fs::read_to_string(dir.join("credentials.toml"))
         .ok()?
-        .format(&time::format_description::well_known::Rfc3339)
-        .ok()
+        .parse()
+        .ok()?;
+    // At the top, or in a table of its own.
+    let creds = std::iter::once(&v)
+        .chain(v.values().filter_map(|t| t.as_table()))
+        .find(|t| {
+            t.get("windsurf_api_key")
+                .and_then(|k| k.as_str())
+                .is_some_and(|k| !k.is_empty())
+        })?;
+    let key = creds["windsurf_api_key"].as_str()?.to_string();
+    let server = creds
+        .get("api_server_url")
+        .and_then(|s| s.as_str())
+        .filter(|u| u.starts_with("https://"))
+        .unwrap_or("https://server.codeium.com")
+        .trim_end_matches('/')
+        .to_string();
+    Some((key, server))
 }
 
-/// Kimi Code's sign-in (`<home>\credentials\kimi-code*.json`, the newest), unless it has
-/// expired, and the API its region uses.
-pub fn kimi_token(home: &Path) -> Option<(String, &'static str)> {
-    let newest = std::fs::read_dir(home.join("credentials"))
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("kimi-code") && n.ends_with(".json"))
-        })
-        .max_by_key(|p| p.metadata().and_then(|m| m.modified()).ok())?;
-    let v: Value = serde_json::from_slice(&std::fs::read(newest).ok()?).ok()?;
-    let token = v["access_token"].as_str().filter(|t| !t.is_empty())?;
-    let expires = v["expires_at"].as_i64().unwrap_or(i64::MAX);
-    if expires <= time::OffsetDateTime::now_utc().unix_timestamp() {
-        return None;
-    }
-    // `global` signs in at kimi.ai; mainland China at kimi.com.
-    let region = std::fs::read_to_string(home.join("region")).unwrap_or_default();
-    let api = if region.trim() == "mainland-cn" {
-        "https://api.kimi.com"
-    } else {
-        "https://api.kimi.ai"
-    };
-    Some((token.to_string(), api))
-}
-
-/// Kimi Code's windows from `/coding/v1/usages`, as its `/usage` shows them: the 5 hours, the
-/// week and the month the plan has.
-pub fn kimi_windows(v: &Value) -> Vec<UsageWindow> {
-    let u = &v["usages"];
+/// Devin's windows from Windsurf's `GetUserStatus`, as its `/usage` shows them: the day and the
+/// week (each left out when the plan hides it). An empty quota is left out of the answer, so a
+/// window with a reset time and no percent has none left.
+pub fn devin_windows(v: &Value) -> Vec<UsageWindow> {
+    let plan = &v["userStatus"]["planStatus"];
+    let num = |x: &Value| x.as_f64().or_else(|| x.as_str()?.parse().ok());
     [
-        ("limit_5h", "session", None),
-        ("limit_7d", "weekly", None),
-        ("limit_month_total", "monthly", None),
+        ("daily", "dailyQuota", "hideDailyQuota"),
+        ("weekly", "weeklyQuota", "hideWeeklyQuota"),
     ]
     .into_iter()
-    .filter_map(|(field, name, label): (&str, &str, Option<String>)| {
-        let w = &u[field];
-        let used = w["used_ratio"].as_f64()?;
+    .filter(|(_, _, hide)| plan["planInfo"][hide].as_bool() != Some(true))
+    .filter_map(|(name, quota, _)| {
+        let left = num(&plan[format!("{quota}RemainingPercent")]);
+        let reset = num(&plan[format!("{quota}ResetAtUnix")]).filter(|s| *s > 0.0);
+        if left.is_none() && reset.is_none() {
+            return None;
+        }
+        let resets = reset
+            .and_then(|s| time::OffsetDateTime::from_unix_timestamp(s as i64).ok())
+            .and_then(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .ok()
+            });
         Some(window(
             name,
-            label,
-            used * 100.0,
-            rfc3339(&w["reset_time"]).as_deref(),
+            None,
+            100.0 - left.unwrap_or(0.0),
+            resets.as_deref(),
         ))
     })
     .collect()
 }
 
-/// Kimi Code's plan limits.
-pub fn kimi(token: &str, api: &str, fetch: Fetch) -> Vec<UsageWindow> {
+/// Devin's plan limits: Windsurf's `GetUserStatus`, which Devin's `/usage` reads too. The
+/// server wants the caller's name and version (an answer of 400 without them): Devin's own,
+/// `version` the one installed.
+pub fn devin(key: &str, server: &str, version: &str, post: Post) -> Vec<UsageWindow> {
     let req = Request {
-        url: format!("{api}/coding/v1/usages"),
+        url: format!("{server}/exa.seat_management_pb.SeatManagementService/GetUserStatus"),
         headers: vec![
-            ("Authorization".into(), format!("Bearer {token}")),
-            ("Accept".into(), "application/json".into()),
+            ("Content-Type".into(), "application/json".into()),
+            ("Connect-Protocol-Version".into(), "1".into()),
         ],
     };
-    match fetch(&req, TIMEOUT) {
-        Ok((200, body)) => kimi_windows(&serde_json::from_str(&body).unwrap_or_default()),
-        _ => vec![],
-    }
-}
-
-/// MiniMax Code's sign-in (`<data>\auth\prod\<region>\mcode-public\auth.json`), unless it has
-/// expired, and the platform its region uses.
-pub fn minimax_token(data: &Path) -> Option<(String, &'static str)> {
-    let now_ms = time::OffsetDateTime::now_utc().unix_timestamp() * 1000;
-    [
-        ("en", "https://platform.minimax.io"),
-        ("cn", "https://www.minimaxi.com"),
-    ]
-    .into_iter()
-    .find_map(|(region, api)| {
-        let f = data
-            .join("auth")
-            .join("prod")
-            .join(region)
-            .join("mcode-public")
-            .join("auth.json");
-        let v: Value = serde_json::from_slice(&std::fs::read(f).ok()?).ok()?;
-        let rec = v["records"].as_object()?.values().find(|r| {
-            r["accessToken"].as_str().is_some_and(|t| !t.is_empty())
-                && r["expiresAtMs"].as_i64().unwrap_or(i64::MAX) > now_ms
-        })?;
-        Some((rec["accessToken"].as_str()?.to_string(), api))
-    })
-}
-
-/// MiniMax Code's windows from `coding_plan/remains`: the 5-hour interval and the week, as
-/// its `/status` shows them (the first model's: the plan's own).
-pub fn minimax_windows(v: &Value) -> Vec<UsageWindow> {
-    if v["base_resp"]["status_code"].as_i64().unwrap_or(0) != 0 {
-        return vec![];
-    }
-    let Some(m) = v["model_remains"].as_array().and_then(|a| a.first()) else {
-        return vec![];
-    };
-    let mut out = vec![];
-    for (left, end, name) in [
-        ("current_interval_remaining_percent", "end_time", "session"),
-        (
-            "current_weekly_remaining_percent",
-            "weekly_end_time",
-            "weekly",
-        ),
-    ] {
-        if let Some(left) = m[left].as_f64() {
-            out.push(window(
-                name,
-                None,
-                100.0 - left,
-                rfc3339(&m[end]).as_deref(),
-            ));
-        }
-    }
-    out
-}
-
-/// MiniMax Code's plan limits.
-pub fn minimax(token: &str, api: &str, fetch: Fetch) -> Vec<UsageWindow> {
-    let req = Request {
-        url: format!("{api}/v1/api/openplatform/coding_plan/remains"),
-        headers: vec![
-            ("Authorization".into(), format!("Bearer {token}")),
-            ("Accept".into(), "application/json".into()),
-        ],
-    };
-    match fetch(&req, TIMEOUT) {
-        Ok((200, body)) => minimax_windows(&serde_json::from_str(&body).unwrap_or_default()),
-        _ => vec![],
-    }
-}
-
-/// Hermes' Nous Portal sign-in (`<home>\auth.json`), unless it has expired, and its portal.
-pub fn hermes_token(home: &Path) -> Option<(String, String)> {
-    let v: Value = serde_json::from_slice(&std::fs::read(home.join("auth.json")).ok()?).ok()?;
-    let nous = &v["providers"]["nous"];
-    let token = nous["access_token"].as_str().filter(|t| !t.is_empty())?;
-    let expired = nous["expires_at"]
-        .as_str()
-        .and_then(|e| {
-            time::OffsetDateTime::parse(e, &time::format_description::well_known::Rfc3339).ok()
-        })
-        .is_some_and(|e| e <= time::OffsetDateTime::now_utc());
-    if expired {
-        return None;
-    }
-    let portal = nous["portal_base_url"]
-        .as_str()
-        .filter(|u| u.starts_with("https://"))
-        .unwrap_or("https://portal.nousresearch.com")
-        .trim_end_matches('/')
-        .to_string();
-    Some((token.to_string(), portal))
-}
-
-/// Hermes' windows from the Portal's account: its subscription's usage gauges (`used_bp`, in
-/// hundredths of a percent). None without a subscription.
-pub fn hermes_windows(v: &Value) -> Vec<UsageWindow> {
-    let Some(gauges) = v["usage_window"]["gauges"].as_array() else {
-        return vec![];
-    };
-    gauges
-        .iter()
-        .filter_map(|g| {
-            let used = g["used_bp"].as_f64()? / 100.0;
-            let label = g["label"].as_str().map(String::from);
-            let name = match g["scope"].as_str().or(g["id"].as_str()).unwrap_or("") {
-                s if s.contains("week") => "weekly",
-                s if s.contains("month") => "monthly",
-                _ => "session",
-            };
-            Some(window(
-                name,
-                label,
-                used,
-                rfc3339(&g["resets_at_ms"]).as_deref(),
-            ))
-        })
-        .collect()
-}
-
-/// Hermes' plan limits on the Nous Portal.
-pub fn hermes(token: &str, portal: &str, fetch: Fetch) -> Vec<UsageWindow> {
-    let req = Request {
-        url: format!("{portal}/api/oauth/account"),
-        headers: vec![
-            ("Authorization".into(), format!("Bearer {token}")),
-            ("Accept".into(), "application/json".into()),
-        ],
-    };
-    match fetch(&req, TIMEOUT) {
-        Ok((200, body)) => hermes_windows(&serde_json::from_str(&body).unwrap_or_default()),
+    let body = json!({ "metadata": {
+        "apiKey": key,
+        "ideName": "devin-cli",
+        "ideVersion": version,
+        "extensionName": "devin-cli",
+        "extensionVersion": version,
+        "locale": "en",
+    }})
+    .to_string();
+    match post(&req, &body, TIMEOUT) {
+        Ok((200, body)) => devin_windows(&serde_json::from_str(&body).unwrap_or_default()),
         _ => vec![],
     }
 }
@@ -744,49 +422,35 @@ pub fn hermes(token: &str, portal: &str, fetch: Fetch) -> Vec<UsageWindow> {
 mod tests {
     use super::*;
 
-    /// The answers Kimi Code's, MiniMax Code's and the Nous Portal's endpoints gave on
-    /// 2026-11-02, trimmed (a Kimi plan with 5 hours and a month; a MiniMax plan untouched; a
-    /// Portal account without a subscription), and a Portal one with gauges.
+    /// Windsurf's GetUserStatus answer for Devin, trimmed: a day partly used, a week used up
+    /// (proto3 JSON leaves the zero out, and its reset time is a string), and a plan hiding
+    /// its day.
     #[test]
-    fn kimi_minimax_and_hermes_limits_become_windows() {
-        let kimi = serde_json::json!({"usages": {
-            "limit_5h": {"used_ratio": 0, "reset_time": "2026-11-02T19:15:16Z"},
-            "limit_month_total": {"used_ratio": 0.0226, "reset_time": "2026-11-24T00:00:00Z"},
-            "limit_month_code": {"used_ratio": 0.0226, "reset_time": "2026-11-24T00:00:00Z"}
-        }});
-        let w = kimi_windows(&kimi);
-        assert_eq!(w.len(), 2);
-        assert_eq!((w[0].name.as_str(), w[0].percent_left), ("session", 100.0));
-        assert_eq!((w[1].name.as_str(), w[1].percent_left), ("monthly", 97.7));
-        assert_eq!(w[1].resets_at.as_deref(), Some("2026-11-24T00:00:00Z"));
-
-        let mm = serde_json::json!({"model_remains": [{
-            "end_time": 1793655592956_i64, "weekly_end_time": 1794242392956_i64,
-            "current_interval_remaining_percent": 100, "current_weekly_remaining_percent": 64
-        }], "base_resp": {"status_code": 0}});
-        let w = minimax_windows(&mm);
-        assert_eq!(w.len(), 2);
-        assert_eq!((w[1].name.as_str(), w[1].percent_left), ("weekly", 64.0));
-        assert!(w[0]
-            .resets_at
-            .as_deref()
-            .is_some_and(|r| r.starts_with("2026-11-")));
-        let failed = serde_json::json!({"base_resp": {"status_code": 1004}});
-        assert!(minimax_windows(&failed).is_empty());
-
-        let none =
-            serde_json::json!({"subscription": null, "paid_service_access": {"allowed": false}});
-        assert!(hermes_windows(&none).is_empty());
-        let subscribed = serde_json::json!({"usage_window": {"gauges": [
-            {"id": "5h", "scope": "rolling_5h", "label": "5 hours", "used_bp": 2500, "resets_at_ms": 1793655592956_i64},
-            {"id": "week", "scope": "weekly", "label": "Week", "used_bp": 10000}
-        ]}});
-        let w = hermes_windows(&subscribed);
-        assert_eq!((w[0].name.as_str(), w[0].percent_left), ("session", 75.0));
+    fn devin_quotas_become_windows() {
+        let v = serde_json::json!({"userStatus": {"planStatus": {
+            "planInfo": {"planName": "Free"},
+            "dailyQuotaRemainingPercent": 75,
+            "dailyQuotaResetAtUnix": "1793664000",
+            "weeklyQuotaResetAtUnix": "1794182400",
+        }}});
+        let w = devin_windows(&v);
         assert_eq!(
-            (w[1].name.as_str(), w[1].status.as_deref()),
-            ("weekly", Some("rejected"))
+            w.iter()
+                .map(|w| (w.name.as_str(), w.percent_left))
+                .collect::<Vec<_>>(),
+            [("daily", 75.0), ("weekly", 0.0)]
         );
+        assert_eq!(w[0].resets_at.as_deref(), Some("2026-11-03T00:00:00Z"));
+        assert_eq!(w[1].status.as_deref(), Some("rejected"));
+        let hidden = serde_json::json!({"userStatus": {"planStatus": {
+            "planInfo": {"hideDailyQuota": true},
+            "dailyQuotaRemainingPercent": 50,
+            "weeklyQuotaRemainingPercent": 90,
+        }}});
+        let w = devin_windows(&hidden);
+        assert_eq!((w.len(), w[0].name.as_str()), (1, "weekly"));
+        // No plan status, no windows.
+        assert!(devin_windows(&serde_json::json!({"userStatus": {}})).is_empty());
     }
 
     /// The answer Claude's usage endpoint gave on 2026-10-31 (Claude Max), trimmed.
@@ -840,99 +504,6 @@ mod tests {
         if let Some(t) = crate::grok_usage::token(&grok) {
             eprintln!("grok: {:?}", crate::grok_usage::read(&t, crate::http::curl));
         }
-        // Copilot: which of its credentials reads the quota (the token itself is never shown).
-        let copilot_home = home.join(".copilot");
-        if let Some((host, login)) = copilot_user(&copilot_home) {
-            for t in copilot_targets(&host, &login) {
-                let raw = crate::credentials::read(&t);
-                let token = raw.as_deref().and_then(copilot_token_from);
-                let windows = token.as_deref().map(|t| copilot(t, crate::http::curl));
-                eprintln!("copilot {t}: stored={} {windows:?}", raw.is_some());
-            }
-        }
-        if let Some(t) = dirs::data_dir().and_then(|r| cursor_token(&r)) {
-            eprintln!("cursor: {:?}", cursor(&t, crate::http::curl_post));
-        }
-    }
-
-    /// Copilot's answer on 2026-11-01 (an individual plan with 1,500 AI credits), trimmed:
-    /// unlimited chat and completions show nothing; a free plan's limited chat does.
-    #[test]
-    fn copilot_quota_becomes_windows() {
-        let quota = |unlimited: bool, left: f64, entitlement: f64| json!({ "unlimited": unlimited, "percent_remaining": left, "entitlement": entitlement });
-        let v = json!({
-            "quota_reset_date_utc": "2026-12-01T00:00:00.000Z",
-            "quota_snapshots": {
-                "chat": quota(true, 100.0, 0.0),
-                "completions": quota(true, 100.0, 0.0),
-                "premium_interactions": quota(false, 82.5, 1500.0),
-            },
-        });
-        let w = copilot_windows(&v);
-        assert_eq!(w.len(), 1);
-        assert_eq!(
-            (w[0].name.as_str(), w[0].label.as_deref()),
-            ("monthly", None)
-        );
-        assert_eq!(w[0].percent_left, 82.5);
-        assert_eq!(w[0].resets_at.as_deref(), Some("2026-12-01T00:00:00.000Z"));
-        let mut free = v.clone();
-        free["quota_snapshots"]["chat"] = quota(false, 40.0, 50.0);
-        let labels: Vec<_> = copilot_windows(&free)
-            .into_iter()
-            .map(|w| (w.label, w.percent_left))
-            .collect();
-        assert_eq!(
-            labels,
-            [(None, 82.5), (Some("Monthly · Chat".to_string()), 40.0)]
-        );
-        assert!(copilot_windows(&json!({})).is_empty());
-    }
-
-    /// Copilot stores its token in Credential Manager as UTF-16.
-    #[test]
-    fn copilot_token_reads_utf16_or_json() {
-        let utf16: String = "gho_abc".chars().flat_map(|c| [c, '\0']).collect();
-        assert_eq!(copilot_token_from(&utf16).as_deref(), Some("gho_abc"));
-        assert_eq!(
-            copilot_token_from(r#"{"token":"gho_xyz"}"#).as_deref(),
-            Some("gho_xyz")
-        );
-        assert_eq!(copilot_token_from("  "), None);
-    }
-
-    /// Cursor's answer on 2026-11-01 (a weekly cycle), trimmed: the total and its Auto and
-    /// API shares, in percent; a monthly cycle names the windows monthly.
-    #[test]
-    fn cursor_usage_becomes_windows() {
-        let v = json!({
-            "billingCycleStart": "1793202799529",
-            "billingCycleEnd": "1793807599529",
-            "planUsage": { "autoPercentUsed": 0.41170097508125675, "apiPercentUsed": 0, "totalPercentUsed": 0.41170097508125675 },
-        });
-        let w = cursor_windows(&v);
-        let shown: Vec<_> = w
-            .iter()
-            .map(|w| (w.name.as_str(), w.label.as_deref(), w.percent_left))
-            .collect();
-        assert_eq!(
-            shown,
-            [
-                ("weekly", None, 99.6),
-                ("weekly", Some("Weekly · Auto"), 99.6),
-                ("weekly", Some("Weekly · API"), 100.0),
-            ]
-        );
-        assert_eq!(w[0].resets_at.as_deref(), Some("2026-11-04T15:53:19Z"));
-        // A month-long cycle, with only spend against a limit.
-        let month = json!({
-            "billingCycleStart": "1790000000000",
-            "billingCycleEnd": "1792592000000",
-            "planUsage": { "includedSpend": 500, "limit": 2000 },
-        });
-        let w = cursor_windows(&month);
-        assert_eq!((w[0].name.as_str(), w[0].percent_left), ("monthly", 75.0));
-        assert!(cursor_windows(&json!({})).is_empty());
     }
 
     /// Antigravity's answers on 2026-10-31 (free tier), trimmed.

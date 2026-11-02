@@ -28,3 +28,16 @@ home = [
 ]
 # sessions/--<folder>--/<time>_<id>.jsonl, its first line {"type":"session","id","cwd"}.
 store = { kind = "jsonl-head", dir = ".", type = "session", id = "id", cwd = "cwd" }
+
+[status]
+# Pi asks nothing of its own (no approval prompts). While it works, a spinner and a message
+# ("Working", or Retrying, Compacting, Summarizing… with its cancel key) sit in its input box's
+# top border, or on a line of their own.
+busy = ['^\s*(─+\s*)?[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \S']
+busy_examples = [
+    '── ⠸ Working ─────────────────────────',
+    ' ⠋ Working',
+    '── ⠼ Auto-compacting... (Esc to cancel) ──',
+]
+# Alt+V on Windows (its `app.clipboard.pasteImage`; Ctrl+V elsewhere).
+paste = "alt+v"

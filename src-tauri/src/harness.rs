@@ -79,11 +79,6 @@ pub struct Harness {
     /// puts it on the user PATH after the script, so a terminal finds it even if the script
     /// didn't (a no-op when it did).
     vendor_bin_dir: Option<String>,
-    /// Arguments the vendor script takes (Hermes': `-NonInteractive`): it then runs as a script
-    /// block, `& ([scriptblock]::Create((irm <url>))) <args>`.
-    vendor_args: Option<&'static str>,
-    /// Its vendor script comes before winget.
-    script_first: bool,
     bun_package: Option<&'static str>,
     /// Its registry package runs on Node, so a Bun install needs Node too.
     bun_needs_node: bool,
@@ -95,9 +90,6 @@ pub struct Harness {
     /// The per-platform packages its npm package pulls in (its native program), which Bun
     /// keeps beside it: they go too when it's uninstalled.
     platform_packages: Vec<&'static str>,
-    /// The program it leaves running in the background, which holds its files: stopped, where
-    /// it runs from the agent's own folders, before an update or an uninstall.
-    background: Option<&'static str>,
 }
 
 impl Harness {
@@ -116,14 +108,11 @@ impl Harness {
                 .script_bin
                 .as_deref()
                 .and_then(crate::agents::spec::under_home),
-            vendor_args: i.script_args.as_deref(),
-            script_first: i.script_first,
             bun_package: i.npm.as_deref(),
             bun_needs_node: i.npm_needs_node,
             self_update: s.update.own.clone(),
             requires: i.requires.iter().map(String::as_str).collect(),
             platform_packages: i.platform_packages.iter().map(String::as_str).collect(),
-            background: s.uninstall.background.as_deref(),
         }
     }
 
@@ -143,14 +132,11 @@ impl Harness {
             winget: Some(winget),
             vendor_script: script,
             vendor_bin_dir: None,
-            vendor_args: None,
-            script_first: false,
             bun_package: None,
             bun_needs_node: false,
             self_update: None,
             requires: vec![],
             platform_packages: vec![],
-            background: None,
         }
     }
 }
@@ -279,16 +265,6 @@ impl Harness {
         &self.platform_packages
     }
 
-    /// The program it keeps running in the background, if any (`background`).
-    pub fn background_program(&self) -> Option<&'static str> {
-        self.background
-    }
-
-    /// Whether it keeps a program running in the background (`background`).
-    pub fn runs_in_background(&self) -> bool {
-        self.background.is_some()
-    }
-
     fn provides(&self) -> Option<String> {
         (!self.command.is_empty()).then(|| self.command.to_string())
     }
@@ -323,13 +299,8 @@ impl Harness {
                 "Bypass",
                 "-Command",
                 // Windows PowerShell's download progress bar slows Invoke-WebRequest many
-                // times over, even hidden (Cursor's script took minutes): off for the script.
-                &match self.vendor_args {
-                    None => format!("$ProgressPreference = 'SilentlyContinue'; irm {url} | iex"),
-                    Some(args) => format!(
-                        "$ProgressPreference = 'SilentlyContinue'; & ([scriptblock]::Create((irm {url}))) {args}"
-                    ),
-                },
+                // times over, even hidden: off for the script.
+                &format!("$ProgressPreference = 'SilentlyContinue'; irm {url} | iex"),
             ]
             .map(String::from)
             .into(),
@@ -352,16 +323,14 @@ impl Harness {
         }
     }
 
-    /// Ways to install, best first: winget, then the vendor's script (the other way round for
-    /// `script_first`), then Bun.
+    /// Ways to install, best first: winget, then the vendor's script, then Bun.
     pub fn install_plans(&self) -> Vec<Plan> {
         let mut out = vec![];
         if let Some(id) = self.winget {
             out.push(self.winget_plan("install", id));
         }
         if let Some(url) = self.vendor_script {
-            let at = if self.script_first { 0 } else { out.len() };
-            out.insert(at, self.vendor_plan(url));
+            out.push(self.vendor_plan(url));
         }
         if let Some(pkg) = self.bun_package {
             out.push(self.bun_plan(pkg));
@@ -575,34 +544,35 @@ mod tests {
         let ids: Vec<_> = found.iter().map(|h| h.id.as_str()).collect();
         assert_eq!(
             ids,
-            [
-                "claude", "codex", "agy", "grok", "opencode", "pi", "copilot", "cursor", "droid",
-                "kimi", "minimax", "hermes", "kilo", "devin", "cline"
-            ]
+            ["claude", "codex", "agy", "grok", "opencode", "pi", "devin"]
         );
         assert!(found
             .iter()
             .all(|h| !h.installed && h.source.is_none() && !h.can_update));
     }
 
-    /// Copilot: winget, else Bun (with Node, its loader's runtime). Cursor: only its
-    /// script, then its own updater for that install.
+    /// Devin: winget, else Bun (with Node, its launcher's runtime), Git first (its shell is
+    /// Git Bash), and each install updated the way it was made.
     #[test]
-    fn copilot_and_cursor_plans() {
-        let copilot = get("copilot").unwrap();
-        let plans = copilot.install_plans();
+    fn devin_plans() {
+        let devin = get("devin").unwrap();
         assert_eq!(
-            plans.iter().map(|p| p.source).collect::<Vec<_>>(),
+            devin
+                .install_plans()
+                .iter()
+                .map(|p| p.source)
+                .collect::<Vec<_>>(),
             [Source::Winget, Source::Bun]
         );
-        assert!(plans[0]
-            .args
-            .windows(2)
-            .any(|w| w == ["--id", "GitHub.Copilot"]));
-        assert_eq!(plans[1].args.join(" "), "add -g @github/copilot@latest");
         let empty = tempfile::tempdir().unwrap();
         let path = Some(empty.path().as_os_str().to_owned());
-        let labels: Vec<_> = install_steps(copilot, Some(1), path)
+        let labels: Vec<_> = install_steps(devin, Some(0), path.clone())
+            .unwrap()
+            .into_iter()
+            .map(|s| s.label)
+            .collect();
+        assert_eq!(labels, ["Install Git", "Install Devin"]);
+        let labels: Vec<_> = install_steps(devin, Some(1), path)
             .unwrap()
             .into_iter()
             .map(|s| s.label)
@@ -610,92 +580,18 @@ mod tests {
         assert_eq!(
             labels,
             [
+                "Install Git",
                 "Install Node.js LTS",
                 "Install Bun",
-                "Install GitHub Copilot"
+                "Install Devin"
             ]
         );
-
-        let cursor = get("cursor").unwrap();
-        let plans = cursor.install_plans();
-        assert_eq!(plans.len(), 1);
-        assert_eq!(
-            plans[0].args.last().unwrap(),
-            "$ProgressPreference = 'SilentlyContinue'; irm https://cursor.com/install?win32=true | iex"
-        );
-        assert_eq!(plans[0].provides.as_deref(), Some("cursor-agent"));
-        let update = cursor.update_plan(Source::Vendor).unwrap();
-        assert_eq!(
-            (update.program.as_str(), update.args.clone()),
-            ("cursor-agent", vec!["update".to_string()])
-        );
-        for (path, want) in [
-            (
-                r"C:\Users\d\AppData\Local\cursor-agent\cursor-agent.cmd",
-                Source::Vendor,
-            ),
-            (
-                r"C:\Users\d\AppData\Local\Microsoft\WinGet\Packages\GitHub.Copilot_Microsoft.Winget.Source_8wekyb3d8bbwe\copilot.exe",
-                Source::Winget,
-            ),
-        ] {
-            assert_eq!(source_of(Path::new(path)), want, "{path}");
-        }
-    }
-
-    /// The seven added in 0.3: each plan, Hermes' script without its wizard, Git first for the
-    /// agents whose shell is Git Bash, and how each is updated.
-    #[test]
-    fn the_new_agents_plans() {
-        let kinds = |id: &str| {
-            get(id)
-                .unwrap()
-                .install_plans()
-                .iter()
-                .map(|p| p.source)
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(kinds("droid"), [Source::Vendor, Source::Bun]);
-        assert_eq!(kinds("kimi"), [Source::Vendor, Source::Winget, Source::Bun]);
-        assert_eq!(kinds("minimax"), [Source::Vendor]);
-        assert_eq!(kinds("hermes"), [Source::Vendor]);
-        assert_eq!(kinds("kilo"), [Source::Winget, Source::Bun]);
-        assert_eq!(kinds("devin"), [Source::Winget, Source::Bun]);
-        assert_eq!(kinds("cline"), [Source::Bun]);
-        let hermes = &get("hermes").unwrap().install_plans()[0];
-        assert_eq!(
-            hermes.args.last().unwrap(),
-            "$ProgressPreference = 'SilentlyContinue'; & ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive"
-        );
-        let empty = tempfile::tempdir().unwrap();
-        let path = Some(empty.path().as_os_str().to_owned());
-        let labels: Vec<_> = install_steps(get("kimi").unwrap(), Some(0), path)
-            .unwrap()
-            .into_iter()
-            .map(|s| s.label)
-            .collect();
-        assert_eq!(labels, ["Install Git", "Install Kimi Code"]);
-        let update = |id: &str, s: Source| {
-            let p = get(id).unwrap().update_plan(s).unwrap();
+        let update = |s: Source| {
+            let p = devin.update_plan(s).unwrap();
             format!("{} {}", p.program, p.args.join(" "))
         };
-        assert_eq!(update("droid", Source::Vendor), "droid update");
-        assert!(update("kimi", Source::Vendor).starts_with("powershell "));
-        assert_eq!(update("hermes", Source::Vendor), "hermes update");
-        assert_eq!(update("cline", Source::Bun), "bun add -g cline@latest");
-        assert!(update("kilo", Source::Winget).starts_with("winget upgrade --id KiloCode.Kilo"));
-        for (path, want) in [
-            (r"C:\Users\d\bin\droid.exe", Source::Vendor),
-            (r"C:\Users\d\.kimi-code\bin\kimi.exe", Source::Vendor),
-            (r"C:\Users\d\.minimax-code\mcode.cmd", Source::Vendor),
-            (
-                r"C:\Users\d\AppData\Local\hermes\bin\hermes.exe",
-                Source::Vendor,
-            ),
-            (r"C:\Users\d\.bun\bin\cline.exe", Source::Bun),
-        ] {
-            assert_eq!(source_of(Path::new(path)), want, "{path}");
-        }
+        assert!(update(Source::Winget).starts_with("winget upgrade --id CognitionAI.DevinCLI"));
+        assert_eq!(update(Source::Bun), "bun add -g devin@latest");
     }
 
     #[test]

@@ -1,5 +1,5 @@
-//! Reads a generic credential from Windows Credential Manager: where agy and GitHub Copilot keep
-//! their own sign-ins, which Settings → Usage reads plan limits with. Gond writes nothing there.
+//! Reads a generic credential from Windows Credential Manager: where agy keeps its own sign-in,
+//! which Settings → Usage reads plan limits with. Gond writes nothing there.
 
 /// The credential stored under `target`, as text; `None` when there is none (or off Windows).
 pub fn read(target: &str) -> Option<String> {

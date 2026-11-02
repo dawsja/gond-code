@@ -9,8 +9,8 @@
 //! store laid out like no other, read by its own code here (`reader`, by name).
 //!
 //! A pane's conversation is the newest in its agent's folder that changed since the agent
-//! started and that no other pane has (Copilot's is known exactly from its process). Only a
-//! conversation that exists is resumed: an agent with none yet has nothing to come back to.
+//! started and that no other pane has. Only a conversation that exists is resumed: an agent
+//! with none yet has nothing to come back to.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -86,12 +86,11 @@ struct Candidate {
     cwd: String,
 }
 
-/// How `agent` (process `pid`), running in `cwd` since `since`, would be resumed: its
+/// How `agent`, running in `cwd` since `since`, would be resumed: its
 /// conversation, not one of `taken` (which other panes have). None for an agent with no
 /// conversation yet, or one Gond can't resume.
 pub fn find(
     agent: &str,
-    pid: Option<u32>,
     args: &[String],
     cwd: &Path,
     since: SystemTime,
@@ -111,14 +110,8 @@ pub fn find(
             Store::Reader { name } => match name.as_str() {
                 "claude" => pick(claude(home, cwd)),
                 "codex" => pick(codex(home)),
-                "copilot" => pid
-                    .and_then(|p| copilot_held_by(home, p))
-                    .filter(|id| !taken.contains(id))
-                    .or_else(|| pick(copilot(home))),
-                "cursor" => pick(cursor(home)),
                 "grok" => pick(grok(home)),
                 "agy" => pick(agy(home)),
-                "kimi" => pick(kimi(home)),
                 _ => None,
             },
         }
@@ -136,20 +129,6 @@ fn under(home: &Path, rel: &str) -> PathBuf {
     rel.split('/')
         .filter(|p| !p.is_empty() && *p != ".")
         .fold(home.to_path_buf(), |d, p| d.join(p))
-}
-
-/// The folder agent `id` (process `pid`) works in. Hermes' `hermes.exe` is a launcher whose
-/// own folder isn't the one it was started in (Windows reports %TEMP%): the Python it starts
-/// has that one (its file's `detect.cwd_from_child`).
-pub fn folder_of(id: &str, pid: u32, procs: &[super::running::Proc]) -> Option<std::path::PathBuf> {
-    if spec::get(id).is_some_and(|s| s.detect.cwd_from_child) {
-        if let Some(child) = procs.iter().find(|p| p.parent == pid) {
-            if let Some(cwd) = super::cwd::of(child.pid) {
-                return Some(cwd);
-            }
-        }
-    }
-    super::cwd::of(pid)
 }
 
 /// The conversation an agent was started on, from its arguments (`claude --resume <id>`,
@@ -273,64 +252,6 @@ fn codex(home: &Path) -> Vec<Candidate> {
         .collect()
 }
 
-/// The `key: value` lines of a small YAML file.
-fn yaml_field(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|l| {
-        let v = l.strip_prefix(key)?.strip_prefix(':')?.trim();
-        Some(v.trim_matches(['"', '\'']).to_string()).filter(|v| !v.is_empty())
-    })
-}
-
-/// The Copilot session process `pid` has open: its folder holds `inuse.<pid>.lock`.
-fn copilot_held_by(home: &Path, pid: u32) -> Option<String> {
-    let lock = format!("inuse.{pid}.lock");
-    entries(&home.join("session-state"))
-        .into_iter()
-        .find(|d| d.join(&lock).is_file())
-        .and_then(|d| Some(d.file_name()?.to_string_lossy().into_owned()))
-}
-
-fn copilot(home: &Path) -> Vec<Candidate> {
-    entries(&home.join("session-state"))
-        .into_iter()
-        .filter_map(|d| {
-            let ws = d.join("workspace.yaml");
-            let text = std::fs::read_to_string(&ws).ok()?;
-            let changed = [ws.clone(), d.join("events.jsonl")]
-                .iter()
-                .filter_map(|p| modified(p))
-                .max()?;
-            Some(Candidate {
-                changed,
-                id: yaml_field(&text, "id")?,
-                cwd: yaml_field(&text, "cwd")?,
-            })
-        })
-        .collect()
-}
-
-fn cursor(home: &Path) -> Vec<Candidate> {
-    entries(&home.join("chats"))
-        .iter()
-        .flat_map(|h| entries(h))
-        .filter_map(|d| {
-            let meta = json(&d.join("meta.json"))?;
-            if meta["hasConversation"] == false {
-                return None;
-            }
-            let changed = meta["updatedAtMs"]
-                .as_u64()
-                .map(|ms| UNIX_EPOCH + Duration::from_millis(ms))
-                .or_else(|| modified(&d.join("meta.json")))?;
-            Some(Candidate {
-                changed,
-                id: d.file_name()?.to_string_lossy().into_owned(),
-                cwd: meta["cwd"].as_str()?.into(),
-            })
-        })
-        .collect()
-}
-
 fn grok(home: &Path) -> Vec<Candidate> {
     entries(&home.join("sessions"))
         .iter()
@@ -441,7 +362,7 @@ fn sessions_in(db: &Path, sql: &str) -> Vec<Candidate> {
 }
 
 /// JSONL files a folder or two down `dir` whose first line has `type` = `kind` and the
-/// conversation's id and folder under `id` and `cwd` (Pi's, Droid's).
+/// conversation's id and folder under `id` and `cwd` (Pi's).
 fn jsonl_heads(dir: &Path, kind: &str, id: &str, cwd: &str) -> Vec<Candidate> {
     entries(dir)
         .iter()
@@ -457,38 +378,6 @@ fn jsonl_heads(dir: &Path, kind: &str, id: &str, cwd: &str) -> Vec<Candidate> {
                 changed: modified(&p)?,
                 id: head[id].as_str()?.into(),
                 cwd: head[cwd].as_str()?.into(),
-            })
-        })
-        .collect()
-}
-
-/// Kimi Code's sessions: `session_index.jsonl`, a line per session with its id, folder and
-/// working folder; when it last changed is its conversation's own files.
-fn kimi(home: &Path) -> Vec<Candidate> {
-    let Ok(text) = std::fs::read_to_string(home.join("session_index.jsonl")) else {
-        return vec![];
-    };
-    text.lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter_map(|v| {
-            let dir = PathBuf::from(v["sessionDir"].as_str()?);
-            let dir = if dir.is_absolute() {
-                dir
-            } else {
-                home.join(dir)
-            };
-            let changed = [
-                dir.join("agents").join("main").join("wire.jsonl"),
-                dir.join("state.json"),
-                dir.clone(),
-            ]
-            .iter()
-            .filter_map(|p| modified(p))
-            .max()?;
-            Some(Candidate {
-                changed,
-                id: v["sessionId"].as_str()?.into(),
-                cwd: v["workDir"].as_str()?.into(),
             })
         })
         .collect()
@@ -603,18 +492,18 @@ mod tests {
         std::thread::sleep(Duration::from_millis(20));
         write(&dir.join("bbb.jsonl"), "{}");
         let homes = Homes::of(&[("claude", home.path().to_path_buf())]);
-        let r = find("claude", None, &[], cwd, before, &[], &homes).unwrap();
+        let r = find("claude", &[], cwd, before, &[], &homes).unwrap();
         assert_eq!(
             (r.session.as_str(), r.command.as_str()),
             ("bbb", "claude --resume bbb")
         );
         // Another pane has that one: this pane's is the other.
-        let r = find("claude", None, &[], cwd, before, &["bbb".into()], &homes).unwrap();
+        let r = find("claude", &[], cwd, before, &["bbb".into()], &homes).unwrap();
         assert_eq!(r.session, "aaa");
         // No conversation since it started: nothing to resume.
         let later = SystemTime::now() + Duration::from_secs(60);
-        assert!(find("claude", None, &[], cwd, later, &[], &homes).is_none());
-        assert!(find("aider", None, &[], cwd, before, &[], &homes).is_none());
+        assert!(find("claude", &[], cwd, later, &[], &homes).is_none());
+        assert!(find("aider", &[], cwd, before, &[], &homes).is_none());
     }
 
     #[test]
@@ -634,7 +523,6 @@ mod tests {
         let homes = Homes::of(&[("codex", home.path().to_path_buf())]);
         let r = find(
             "codex",
-            None,
             &[],
             Path::new("/work/gond/"),
             earlier(),
@@ -657,27 +545,6 @@ mod tests {
         let h = |n: &str| root.path().join(n);
         let cwd = Path::new(r"C:\work\gond");
 
-        // Copilot: a folder per session; the process that has it open holds a lock in it.
-        write(
-            &h("copilot/session-state/c-old/workspace.yaml"),
-            "id: c-old\ncwd: C:\\work\\gond\nclient_name: github/cli\n",
-        );
-        write(
-            &h("copilot/session-state/c-mine/workspace.yaml"),
-            "id: c-mine\ncwd: C:\\work\\gond\n",
-        );
-        write(&h("copilot/session-state/c-mine/inuse.4242.lock"), "4242");
-        // Cursor: a chat folder whose meta says its folder and whether it has a conversation.
-        write(
-            &h("cursor/chats/hash/u-1/meta.json"),
-            &serde_json::json!({ "cwd": r"C:\work\gond", "hasConversation": true,
-                "updatedAtMs": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 })
-            .to_string(),
-        );
-        write(
-            &h("cursor/chats/hash/u-empty/meta.json"),
-            &serde_json::json!({ "cwd": r"C:\work\gond", "hasConversation": false }).to_string(),
-        );
         // Grok: sessions grouped under the encoded folder, each with its summary.
         write(
             &h("grok/sessions/C%3A%5Cwork%5Cgond/g-1/summary.json"),
@@ -717,171 +584,41 @@ mod tests {
         .unwrap();
         drop(db);
         write(&h("agy/conversations/a-1.db"), "");
+        // Devin: its sessions database (times in seconds); a hidden one doesn't count.
+        std::fs::create_dir_all(h("devin")).unwrap();
+        let now_s = now_ms / 1000;
+        rusqlite::Connection::open(h("devin/sessions.db"))
+            .unwrap()
+            .execute_batch(&format!(
+                "CREATE TABLE sessions (id TEXT, working_directory TEXT, created_at INTEGER, last_activity_at INTEGER, hidden INTEGER);
+                 INSERT INTO sessions VALUES ('rogue-tachometer', 'C:/work/gond', {now_s}, {now_s}, 0), ('hidden-one', 'C:/work/gond', {0}, {0}, 1);",
+                now_s + 5
+            ))
+            .unwrap();
 
         let homes = Homes::of(&[
-            ("copilot", h("copilot")),
-            ("cursor", h("cursor")),
+            ("devin", h("devin")),
             ("grok", h("grok")),
             ("pi", h("pi")),
             ("opencode", h("opencode")),
             ("agy", h("agy")),
         ]);
         let since = earlier();
-        let got = |agent: &str, pid: Option<u32>| {
-            find(agent, pid, &[], cwd, since, &[], &homes).map(|r| r.command)
-        };
-        assert_eq!(
-            got("copilot", Some(4242)).as_deref(),
-            Some("copilot --resume=c-mine")
-        );
-        assert_eq!(
-            got("cursor", None).as_deref(),
-            Some("cursor-agent --resume u-1")
-        );
-        assert_eq!(got("grok", None).as_deref(), Some("grok --resume g-1"));
-        assert_eq!(got("pi", None).as_deref(), Some("pi --session p-1"));
-        assert_eq!(
-            got("opencode", None).as_deref(),
-            Some("opencode --session ses_root")
-        );
-        assert_eq!(got("agy", None).as_deref(), Some("agy --conversation a-1"));
-        // Another folder has none of them.
-        let elsewhere = find(
-            "grok",
-            None,
-            &[],
-            Path::new(r"C:\other"),
-            since,
-            &[],
-            &homes,
-        );
-        assert!(elsewhere.is_none());
-    }
-
-    /// The agents added in 0.3: Droid's JSONL, Kimi Code's index, Hermes', Kilo Code's and
-    /// Cline's SQLite stores (their times as seconds, milliseconds or text).
-    #[test]
-    #[cfg(not(gond_remote))]
-    fn the_newer_agents_resume_from_their_own_stores() {
-        let root = tempfile::tempdir().unwrap();
-        let h = |n: &str| root.path().join(n);
-        let cwd = Path::new(r"C:\work\gond");
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-
-        write(
-            &h("droid/sessions/-C-work-gond/d-1.jsonl"),
-            "{\"type\":\"session_start\",\"id\":\"d-1\",\"cwd\":\"C:\\\\work\\\\gond\"}\n{\"type\":\"message\"}\n",
-        );
-        write(&h("kimi/sessions/wd_gond_abc/k-1/state.json"), "{}");
-        write(
-            &h("kimi/session_index.jsonl"),
-            &format!(
-                "{{\"sessionId\":\"k-1\",\"sessionDir\":{},\"workDir\":\"C:\\\\work\\\\gond\"}}\n",
-                serde_json::to_string(&h("kimi/sessions/wd_gond_abc/k-1")).unwrap()
-            ),
-        );
-        let db = |p: &Path, sql: &str| {
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            rusqlite::Connection::open(p)
-                .unwrap()
-                .execute_batch(sql)
-                .unwrap();
-        };
-        db(
-            &h("hermes/state.db"),
-            &format!(
-                "CREATE TABLE sessions (id TEXT, cwd TEXT, started_at REAL, last_activity_at REAL);
-                 INSERT INTO sessions VALUES ('20261102_101500_abc123', 'C:/work/gond', {0}, {0});",
-                now.as_secs_f64()
-            ),
-        );
-        db(
-            &h("kilo/kilo.db"),
-            &format!(
-                "CREATE TABLE session (id TEXT, parent_id TEXT, directory TEXT, time_updated INTEGER);
-                 INSERT INTO session VALUES ('ses_k', NULL, 'C:/work/gond', {});",
-                now.as_millis()
-            ),
-        );
-        db(
-            &h("cline/data/db/sessions.db"),
-            &format!(
-                "CREATE TABLE sessions (session_id TEXT, cwd TEXT, started_at TEXT, updated_at TEXT);
-                 INSERT INTO sessions VALUES ('1792987462154_ab3Xz', 'C:/work/gond', '{0}', '{0}');",
-                now.as_millis()
-            ),
-        );
-        // MiniMax Code, as its store was on 2026-11-02: an archived one and a sub-agent's don't count.
-        db(
-            &h("minimax/v2/sqlite/runtime-state.sqlite"),
-            &format!(
-                "CREATE TABLE local_runtime_sessions (session_id TEXT, workspace_dir TEXT, updated_at_ms INTEGER, archived INTEGER, parent_session_id TEXT);
-                 INSERT INTO local_runtime_sessions VALUES ('mvs_old', 'C:/work/gond', {0}, 1, NULL), ('mvs_sub', 'C:/work/gond', {1}, 0, 'mvs_e8'), ('mvs_e8', 'C:/work/gond', {0}, 0, NULL);",
-                now.as_millis(),
-                now.as_millis() + 50
-            ),
-        );
-        db(
-            &h("devin/sessions.db"),
-            &format!(
-                "CREATE TABLE sessions (id TEXT, working_directory TEXT, created_at INTEGER, last_activity_at INTEGER, hidden INTEGER);
-                 INSERT INTO sessions VALUES ('rogue-tachometer', 'C:/work/gond', {0}, {0}, 0);",
-                now.as_secs()
-            ),
-        );
-        let homes = Homes::of(&[
-            ("droid", h("droid")),
-            ("kimi", h("kimi")),
-            ("hermes", h("hermes")),
-            ("kilo", h("kilo")),
-            ("cline", h("cline")),
-            ("minimax", h("minimax")),
-            ("devin", h("devin")),
-        ]);
-        let got =
-            |agent: &str| find(agent, None, &[], cwd, earlier(), &[], &homes).map(|r| r.command);
-        assert_eq!(got("droid").as_deref(), Some("droid --resume d-1"));
-        assert_eq!(got("kimi").as_deref(), Some("kimi --session k-1"));
-        assert_eq!(
-            got("hermes").as_deref(),
-            Some("hermes --resume 20261102_101500_abc123")
-        );
-        assert_eq!(got("kilo").as_deref(), Some("kilo --session ses_k"));
-        assert_eq!(got("minimax").as_deref(), Some("mcode --session mvs_e8"));
+        let got = |agent: &str| find(agent, &[], cwd, since, &[], &homes).map(|r| r.command);
         assert_eq!(
             got("devin").as_deref(),
             Some("devin --resume rogue-tachometer")
         );
+        assert_eq!(got("grok").as_deref(), Some("grok --resume g-1"));
+        assert_eq!(got("pi").as_deref(), Some("pi --session p-1"));
         assert_eq!(
-            got("cline").as_deref(),
-            Some("cline --id 1792987462154_ab3Xz")
+            got("opencode").as_deref(),
+            Some("opencode --session ses_root")
         );
-        // Started on one, it's that one: `kimi -S <id>`, `mcode --session <id>`, `cline --id`.
-        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let named = |agent: &str, args: &[&str]| {
-            find(
-                agent,
-                None,
-                &a(args),
-                cwd,
-                SystemTime::now(),
-                &[],
-                &Homes::default(),
-            )
-            .map(|r| r.command)
-        };
-        assert_eq!(
-            named("kimi", &["kimi", "-S", "k-9"]).as_deref(),
-            Some("kimi --session k-9")
-        );
-        assert_eq!(
-            named("minimax", &["node", "cli.js", "--session", "mvs_1"]).as_deref(),
-            Some("mcode --session mvs_1")
-        );
-        assert_eq!(
-            named("devin", &["devin", "-r", "v-1"]).as_deref(),
-            Some("devin --resume v-1")
-        );
+        assert_eq!(got("agy").as_deref(), Some("agy --conversation a-1"));
+        // Another folder has none of them.
+        let elsewhere = find("grok", &[], Path::new(r"C:\other"), since, &[], &homes);
+        assert!(elsewhere.is_none());
     }
 
     #[test]
@@ -890,15 +627,11 @@ mod tests {
         let homes = Homes::default();
         let cwd = Path::new("/work/gond");
         let got = |agent: &str, args: &[&str]| {
-            find(agent, None, &a(args), cwd, SystemTime::now(), &[], &homes).map(|r| r.command)
+            find(agent, &a(args), cwd, SystemTime::now(), &[], &homes).map(|r| r.command)
         };
         assert_eq!(
-            got("copilot", &["copilot.exe", "--resume=c-1"]).as_deref(),
-            Some("copilot --resume=c-1")
-        );
-        assert_eq!(
-            got("cursor", &["node.exe", "index.js", "--resume", "u-1"]).as_deref(),
-            Some("cursor-agent --resume u-1")
+            got("devin", &["devin", "-r", "v-1"]).as_deref(),
+            Some("devin --resume v-1")
         );
         assert_eq!(
             got("codex", &["codex", "resume", "x-1"]).as_deref(),

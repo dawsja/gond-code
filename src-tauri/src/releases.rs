@@ -15,36 +15,25 @@ use crate::agents::detect;
 pub enum Latest {
     Npm(&'static str),
     GitHub(&'static str),
-    /// The vendor's install script, which names the version it installs
-    /// (Cursor's: `$version = '2026.10.22-27dcf5f'`).
-    Script(&'static str),
-    /// A plain-text file holding the latest version and nothing else (Droid's `LATEST`,
-    /// Kimi Code's `latest`).
+    /// A plain-text file holding the latest version and nothing else (Grok's channel pointer).
     Text(&'static str),
 }
 
-/// Per catalog harness. Grok Build publishes no GitHub releases and its changelog page
-/// isn't machine-readable, so it has none: the UI shows "latest unknown".
+/// Per catalog harness, from its file's `[update] latest`. None: it publishes no version
+/// Gond can read.
 pub fn source(harness_id: &str) -> Option<Latest> {
-    match harness_id {
-        "claude" => Some(Latest::Npm("@anthropic-ai/claude-code")),
-        "codex" => Some(Latest::Npm("@openai/codex")),
-        "agy" => Some(Latest::GitHub("google-antigravity/antigravity-cli")),
-        "copilot" => Some(Latest::Npm("@github/copilot")),
-        "opencode" => Some(Latest::Npm("opencode-ai")),
-        "pi" => Some(Latest::Npm("@earendil-works/pi-coding-agent")),
-        "droid" => Some(Latest::Text(
-            "https://downloads.factory.ai/factory-cli/LATEST",
-        )),
-        "kimi" => Some(Latest::Text("https://code.kimi.ai/kimi-code/latest")),
-        "minimax" => Some(Latest::Npm("@minimax-ai/code")),
-        "hermes" => Some(Latest::GitHub("NousResearch/hermes-agent")),
-        "kilo" => Some(Latest::Npm("@kilocode/cli")),
-        "devin" => Some(Latest::Npm("devin")),
-        "cline" => Some(Latest::Npm("cline")),
-        "cursor" => Some(Latest::Script("https://cursor.com/install?win32=true")),
-        _ => None,
-    }
+    use crate::agents::spec::Latest as L;
+    Some(
+        match crate::agents::spec::get(harness_id)?
+            .update
+            .latest
+            .as_ref()?
+        {
+            L::Npm(pkg) => Latest::Npm(pkg),
+            L::Github(repo) => Latest::GitHub(repo),
+            L::Text(url) => Latest::Text(url),
+        },
+    )
 }
 
 impl Latest {
@@ -52,19 +41,12 @@ impl Latest {
         match self {
             Latest::Npm(pkg) => format!("https://registry.npmjs.org/{pkg}/latest"),
             Latest::GitHub(repo) => format!("https://api.github.com/repos/{repo}/releases/latest"),
-            Latest::Script(url) | Latest::Text(url) => url.to_string(),
+            Latest::Text(url) => url.to_string(),
         }
     }
 
     /// The version in the response body.
     pub fn parse(self, body: &str) -> Option<String> {
-        if let Latest::Script(_) = self {
-            let line = body
-                .lines()
-                .find(|l| l.trim_start().starts_with("$version"))?;
-            let v = line.split('\'').nth(1)?;
-            return (!v.is_empty()).then(|| v.to_string());
-        }
         if let Latest::Text(_) = self {
             return detect::parse_version(body.trim());
         }
@@ -72,7 +54,7 @@ impl Latest {
         let raw = match self {
             Latest::Npm(_) => v["version"].as_str()?,
             Latest::GitHub(_) => v["tag_name"].as_str()?,
-            Latest::Script(_) | Latest::Text(_) => return None,
+            Latest::Text(_) => return None,
         };
         detect::parse_version(&raw.replace(['-', '_'], " ").replacen("rust v", "", 1))
             .or_else(|| detect::parse_version(raw))
@@ -145,24 +127,6 @@ pub fn check(
 mod tests {
     use super::*;
 
-    /// Droid's and Kimi Code's latest version: a plain-text file.
-    #[test]
-    fn parses_a_plain_text_version() {
-        let t = source("droid").unwrap();
-        assert_eq!(t.url(), "https://downloads.factory.ai/factory-cli/LATEST");
-        assert_eq!(
-            t.parse(
-                "1.1.0
-"
-            )
-            .as_deref(),
-            Some("1.1.0")
-        );
-        assert_eq!(t.parse("<html>nope</html>"), None);
-        // Devin's versions are big numbers, still newer by number.
-        assert!(newer("3000.11.234", "3000.11.99"));
-    }
-
     #[test]
     fn parses_npm_and_github_bodies() {
         let npm = Latest::Npm("@openai/codex");
@@ -182,21 +146,16 @@ mod tests {
             Some("0.166.0")
         );
         assert_eq!(gh.parse("not json"), None);
-        // Cursor names its version in its install script.
-        let script = source("cursor").unwrap();
-        assert_eq!(
-            script
-                .parse(
-                    "$downloadUrl = 'https://downloads.cursor.com/lab/2026.10.22-27dcf5f/'
-$version = '2026.10.22-27dcf5f'
-"
-                )
-                .as_deref(),
-            Some("2026.10.22-27dcf5f")
-        );
-        assert!(newer("2026.10.29-a1b2c3d", "2026.10.22-27dcf5f"));
-        assert!(!newer("2026.10.22-27dcf5f", "2026.10.22-27dcf5f"));
-        assert_eq!(source("grok"), None);
+        // From each agent's file.
+        assert_eq!(source("agy"), Some(gh));
+        assert_eq!(source("devin"), Some(Latest::Npm("devin")));
+        // Devin's versions are big numbers, still newer by number.
+        assert!(newer("3000.11.234", "3000.11.99"));
+        // Grok's channel pointer: the version alone.
+        let grok = source("grok").unwrap();
+        assert_eq!(grok.url(), "https://x.ai/cli/stable");
+        assert_eq!(grok.parse("1.0.70\n").as_deref(), Some("1.0.70"));
+        assert_eq!(grok.parse("<html>nope</html>"), None);
     }
 
     #[test]

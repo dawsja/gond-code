@@ -141,29 +141,15 @@ pub fn refresh(s: &Services, fetch: crate::http::Fetch, post: crate::http::Post)
                 "agy" => crate::plan_usage::agy_token()
                     .map(|t| crate::plan_usage::agy(&t, post))
                     .unwrap_or_default(),
-                "copilot" => home("COPILOT_HOME", ".copilot")
-                    .and_then(|h| crate::plan_usage::copilot_token(&h))
-                    .map(|t| crate::plan_usage::copilot(&t, fetch))
-                    .unwrap_or_default(),
-                // One sign-in per Windows user (%APPDATA%\Cursor).
-                "cursor" => dirs::data_dir()
-                    .and_then(|r| crate::plan_usage::cursor_token(&r))
-                    .map(|t| crate::plan_usage::cursor(&t, post))
-                    .unwrap_or_default(),
-                "kimi" => home("KIMI_CODE_HOME", ".kimi-code")
-                    .and_then(|h| crate::plan_usage::kimi_token(&h))
-                    .map(|(t, api)| crate::plan_usage::kimi(&t, api, fetch))
-                    .unwrap_or_default(),
-                "minimax" => home("MINIMAX_DATA_DIR", ".minimax")
-                    .and_then(|h| crate::plan_usage::minimax_token(&h))
-                    .map(|(t, api)| crate::plan_usage::minimax(&t, api, fetch))
-                    .unwrap_or_default(),
-                // %LOCALAPPDATA%\hermes on Windows.
-                "hermes" => std::env::var_os("HERMES_HOME")
-                    .map(std::path::PathBuf::from)
-                    .or_else(|| dirs::data_local_dir().map(|d| d.join("hermes")))
-                    .and_then(|h| crate::plan_usage::hermes_token(&h))
-                    .map(|(t, portal)| crate::plan_usage::hermes(&t, &portal, fetch))
+                // %APPDATA%\devin on Windows.
+                "devin" => dirs::config_dir()
+                    .and_then(|r| crate::plan_usage::devin_token(&r.join("devin")))
+                    .map(|(k, server)| {
+                        let version = crate::agents::detect::find("devin", path.clone())
+                            .and_then(|b| crate::agents::detect::version_of("devin", &b))
+                            .unwrap_or_else(|| "1.0.0".into());
+                        crate::plan_usage::devin(&k, &server, &version, post)
+                    })
                     .unwrap_or_default(),
                 _ => vec![],
             };

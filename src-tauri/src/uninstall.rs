@@ -211,11 +211,6 @@ pub fn plan(
         }
     }
 
-    // A program it keeps running in the background (Cline's hub) holds its files: stopped
-    // first.
-    if h.runs_in_background() && (!methods.is_empty() || !deletes.is_empty()) {
-        steps.insert(0, stop_step(h, r));
-    }
     if !deletes.is_empty() {
         steps.push(Step {
             label: format!("Remove {}'s files", h.name),
@@ -235,37 +230,6 @@ pub fn plan(
         deletes: deletes.iter().map(|p| show(p)).collect(),
         path_entries: entries.iter().map(|p| show(p)).collect(),
         keep_data: !remove_everything,
-    }
-}
-
-/// The step that stops what agent `h` runs in the background: its program running from
-/// where npm or Bun keep its native program.
-pub fn stop_step(h: &Harness, r: &Roots) -> Step {
-    let roots = [
-        r.roaming.join("npm").join("node_modules"),
-        r.home
-            .join(".bun")
-            .join("install")
-            .join("global")
-            .join("node_modules"),
-    ];
-    let exe = h
-        .background_program()
-        .map(String::from)
-        .unwrap_or_else(|| format!("{}.exe", h.command));
-    let mut args = vec![exe];
-    for root in &roots {
-        for p in h.platform_packages() {
-            args.push(show(
-                &p.split('/').fold(root.clone(), |d, part| d.join(part)),
-            ));
-        }
-    }
-    // Its vendor install's own folders (Hermes' Python is in %LOCALAPPDATA%\hermes\tools).
-    args.extend(footprint(h.id, r).install.iter().map(|p| show(p)));
-    Step {
-        label: format!("Stop {} in the background", h.name),
-        plan: gond("stop", args),
     }
 }
 
@@ -347,75 +311,6 @@ mod tests {
         );
     }
 
-    /// Cursor's CLI: its folder, its compile cache and its PATH entry; with everything, only
-    /// the CLI's own files in ~\.cursor and %APPDATA%\Cursor, which the Cursor editor shares.
-    #[test]
-    fn cursor_removes_only_the_clis_files() {
-        let t = tempfile::tempdir().unwrap();
-        let r = roots(t.path());
-        touch(&r.local.join(j("cursor-agent/cursor-agent.cmd")));
-        touch(&r.local.join(j("cursor-compile-cache/x")));
-        touch(&r.home.join(j(".cursor/cli-config.json")));
-        touch(&r.home.join(j(".cursor/chats/abc/def/store.db")));
-        touch(&r.home.join(j(".cursor/extensions/editor-ext/package.json")));
-        touch(&r.roaming.join(j("Cursor/auth.json")));
-        touch(&r.roaming.join(j("Cursor/User/settings.json")));
-        let h = crate::harness::get("cursor").unwrap();
-        let entry = show(&r.local.join("cursor-agent"));
-
-        let p = plan(h, &r, std::slice::from_ref(&entry), false);
-        assert_eq!(p.methods, ["vendor"]);
-        assert_eq!(
-            p.deletes,
-            [
-                show(&r.local.join("cursor-agent")),
-                show(&r.local.join("cursor-compile-cache"))
-            ]
-        );
-        assert_eq!(p.path_entries, std::slice::from_ref(&entry));
-
-        let all = plan(h, &r, &[entry], true);
-        for want in [".cursor/cli-config.json", ".cursor/chats"] {
-            assert!(all.deletes.contains(&show(&r.home.join(j(want)))), "{want}");
-        }
-        assert!(all
-            .deletes
-            .contains(&show(&r.roaming.join(j("Cursor/auth.json")))));
-        let editor = [
-            r.home.join(j(".cursor/extensions/editor-ext/package.json")),
-            r.roaming.join(j("Cursor/User/settings.json")),
-        ];
-        assert!(
-            !all.deletes
-                .iter()
-                .any(|d| editor.iter().any(|e| e.starts_with(d))),
-            "never the editor's files: {:?}",
-            all.deletes
-        );
-    }
-
-    /// Copilot from winget: winget removes it; with everything, ~\.copilot goes too.
-    #[test]
-    fn copilot_from_winget() {
-        let t = tempfile::tempdir().unwrap();
-        let r = roots(t.path());
-        touch(&r.local.join(j(
-            "Microsoft/WinGet/Packages/GitHub.Copilot_Microsoft.Winget.Source_8wekyb3d8bbwe/copilot.exe",
-        )));
-        touch(&r.home.join(j(".copilot/config.json")));
-        let h = crate::harness::get("copilot").unwrap();
-        let p = plan(h, &r, &[], false);
-        assert_eq!(p.methods, ["winget"]);
-        assert!(p.deletes.is_empty());
-        assert!(p.steps[0]
-            .plan
-            .args
-            .join(" ")
-            .contains("uninstall --id GitHub.Copilot"));
-        let all = plan(h, &r, &[], true);
-        assert_eq!(all.deletes, [show(&r.home.join(".copilot"))]);
-    }
-
     #[test]
     fn agy_removes_its_folder_and_path_entry_and_only_its_gemini_settings() {
         let t = tempfile::tempdir().unwrap();
@@ -491,10 +386,10 @@ mod tests {
         );
     }
 
-    /// A Bun install of an agent with a native program: its platform package goes too, and
-    /// Cline's background hub is stopped first.
+    /// A Bun install of an agent with a native program (Devin): its platform package goes
+    /// too; its settings and sign-in only with everything.
     #[test]
-    fn cline_from_bun_goes_with_its_program_and_its_hub_stops_first() {
+    fn devin_from_bun_goes_with_its_native_program() {
         let t = tempfile::tempdir().unwrap();
         let r = roots(t.path());
         let g = r
@@ -503,77 +398,19 @@ mod tests {
             .join("install")
             .join("global")
             .join("node_modules");
-        touch(&r.home.join(".bun").join("bin").join("cline.exe"));
-        touch(&g.join("cline").join("package.json"));
-        touch(
-            &g.join("@cline")
-                .join("cli-windows-x64")
-                .join("bin")
-                .join("cline.exe"),
-        );
-        touch(
-            &r.home
-                .join(".cline")
-                .join("data")
-                .join("settings")
-                .join("providers.json"),
-        );
-        let p = plan(crate::harness::get("cline").unwrap(), &r, &[], false);
+        touch(&r.home.join(".bun").join("bin").join("devin.exe"));
+        touch(&g.join("devin").join("package.json"));
+        touch(&g.join("devin-win32-x64").join("bin").join("devin.exe"));
+        touch(&r.roaming.join("devin").join("credentials.toml"));
+        let p = plan(crate::harness::get("devin").unwrap(), &r, &[], false);
         assert_eq!(p.methods, ["bun"]);
-        assert_eq!(p.steps[0].plan.program, "stop");
-        assert_eq!(p.steps[0].plan.args[0], "cline.exe");
         let gone = |p: &UninstallPlan, at: &Path| p.deletes.contains(&show(at));
-        assert!(gone(&p, &g.join("@cline").join("cli-windows-x64")));
-        assert!(gone(&p, &g.join("cline")));
-        assert!(gone(&p, &r.home.join(".bun").join("bin").join("cline.exe")));
-        // Its sign-ins stay unless everything goes.
-        assert!(!gone(&p, &r.home.join(".cline")));
-        let all = plan(crate::harness::get("cline").unwrap(), &r, &[], true);
-        assert!(gone(&all, &r.home.join(".cline")));
-    }
-
-    /// Droid's script shares ~\bin: its program goes, and the folder leaves PATH only
-    /// when nothing else is in it.
-    #[test]
-    fn droid_takes_only_its_program_out_of_the_shared_bin() {
-        let t = tempfile::tempdir().unwrap();
-        let r = roots(t.path());
-        let bin = r.home.join("bin");
-        touch(&bin.join("droid.exe"));
-        touch(&bin.join("other-tool.exe"));
-        let path = vec![show(&bin)];
-        let p = plan(crate::harness::get("droid").unwrap(), &r, &path, false);
-        assert_eq!(p.methods, ["vendor"]);
-        assert_eq!(p.deletes, [show(&bin.join("droid.exe"))]);
-        assert!(p.path_entries.is_empty());
-        std::fs::remove_file(bin.join("other-tool.exe")).unwrap();
-        let p = plan(crate::harness::get("droid").unwrap(), &r, &path, false);
-        assert_eq!(p.path_entries, [show(&bin)]);
-    }
-
-    /// Hermes' gateway (its own Python, running by itself) holds its folder: stopped first,
-    /// even when only its settings are left to remove.
-    #[test]
-    fn hermes_gateway_stops_before_its_folder_goes() {
-        let t = tempfile::tempdir().unwrap();
-        let r = roots(t.path());
-        let home = r.local.join("hermes");
-        touch(&home.join("state.db"));
-        touch(&home.join("tools").join("python-3.14").join("python.exe"));
-        let p = plan(crate::harness::get("hermes").unwrap(), &r, &[], true);
-        assert_eq!(p.steps[0].plan.program, "stop");
-        assert_eq!(p.steps[0].plan.args[0], "python.exe");
-        assert!(p.steps[0].plan.args.contains(&show(&home.join("tools"))));
-        assert!(p.deletes.contains(&show(&home)));
-        // Nothing of it there: no steps at all.
-        let empty = tempfile::tempdir().unwrap();
-        let none = plan(
-            crate::harness::get("hermes").unwrap(),
-            &roots(empty.path()),
-            &[],
-            true,
-        );
-        assert!(none.steps.is_empty());
+        assert!(gone(&p, &g.join("devin-win32-x64")));
+        assert!(gone(&p, &g.join("devin")));
+        assert!(gone(&p, &r.home.join(".bun").join("bin").join("devin.exe")));
+        assert!(!gone(&p, &r.roaming.join("devin")));
+        let all = plan(crate::harness::get("devin").unwrap(), &r, &[], true);
+        assert!(gone(&all, &r.roaming.join("devin")));
     }
 
     #[test]

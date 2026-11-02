@@ -346,8 +346,7 @@ pub fn register(r: &mut Registry<Services>) {
                 return Ok(None);
             };
             // Where the agent really runs, else where the pane thinks.
-            let Some(cwd) = crate::agents::resume::folder_of(&agent, pid, &procs)
-                .or(i.cwd.map(Into::into))
+            let Some(cwd) = crate::agents::cwd::of(pid).or(i.cwd.map(Into::into))
             else {
                 return Ok(None);
             };
@@ -357,7 +356,6 @@ pub fn register(r: &mut Registry<Services>) {
             let args = crate::agents::cwd::args(pid).unwrap_or_default();
             Ok(crate::agents::resume::find(
                 &agent,
-                Some(pid),
                 &args,
                 &cwd,
                 since,

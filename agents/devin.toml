@@ -1,13 +1,16 @@
 # Devin (Cognition). winget's CognitionAI.DevinCLI, else the npm package through Bun (a Node
 # launcher in front of the native program). Its script ends in `devin setup`, which waits for
 # you, so it isn't used. Its shell tool is Git Bash. It reports its status on OSC 7501 once it
-# knows the terminal (TERM_PROGRAM). No plan endpoint for one person.
+# knows the terminal (TERM_PROGRAM).
 # See agents/README.md for what each key means.
 id = "devin"
 name = "Devin"
 command = "devin"
 icon = "devin"
 changelog = "https://docs.devin.ai/cli/changelog/stable"
+# Windsurf's GetUserStatus with the API key in %APPDATA%\devin\credentials.toml: the day's
+# and the week's quota, as its /usage shows them.
+usage = "devin"
 
 [install]
 winget = "CognitionAI.DevinCLI"

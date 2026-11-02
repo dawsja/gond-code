@@ -1,4 +1,4 @@
-# Grok Build (xAI). It publishes no machine-readable latest version: "latest unknown".
+# Grok Build (xAI).
 # See agents/README.md for what each key means.
 id = "grok"
 name = "Grok Build"
@@ -15,6 +15,8 @@ script_bin = "~/.grok/bin"
 
 [update]
 self = ["update"]
+# Its installer's stable channel pointer: the version and nothing else.
+latest = { text = "https://x.ai/cli/stable" }
 
 [detect]
 dirs = ["~/.grok/bin"]
@@ -39,3 +41,11 @@ flags = ["--resume", "-r"]
 home = ["$GROK_HOME", "~/.grok"]
 # sessions/<folder>/<id>/summary.json
 store = { kind = "reader", name = "grok" }
+
+[status]
+# Its title says what it's doing: "⚠ Action Required" when it asks, a spinner while it works.
+# (It reports on OSC 7501 too, but only after a support check Windows' console host can't
+# answer, and no setting outside its own config turns that on.)
+title = "grok"
+# Alt+V pastes a screenshot on Windows (its Ctrl+V takes files and text).
+paste = "alt+v"

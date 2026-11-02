@@ -168,32 +168,19 @@ pub fn install_dirs_under(home: &Path, local: &Path, roaming: &Path) -> Vec<Path
     out
 }
 
-/// Agent `id`'s version: what its install wrote down, else what `<bin> --version` says. Some
-/// take seconds to answer (Cline's launcher starts its runtime first: 8 s on Windows).
+/// Agent `id`'s version: what its install wrote down, else what `<bin> --version` says. A
+/// launcher that starts its runtime first can take seconds to answer.
 pub fn version_of(id: &str, bin: &Path) -> Option<String> {
     written_version(id, bin).or_else(|| version(bin))
 }
 
-/// The version an install wrote down: a Bun or npm package's `package.json`, Hermes' install
-/// stamp.
+/// The version an install wrote down: a Bun or npm package's `package.json`.
 fn written_version(id: &str, bin: &Path) -> Option<String> {
     let p = bin.to_string_lossy().replace('\\', "/").to_lowercase();
     let read = |f: PathBuf, key: &str| -> Option<String> {
         let v: serde_json::Value = serde_json::from_slice(&std::fs::read(f).ok()?).ok()?;
         v[key].as_str().and_then(parse_version)
     };
-    // A file its install writes its version in (its file's `detect.version_file`), from the
-    // program's folder: Hermes' install stamp.
-    if let Some(f) = super::spec::get(id).and_then(|s| s.detect.version_file.as_ref()) {
-        let at = f
-            .path
-            .split('/')
-            .fold(bin.parent()?.to_path_buf(), |d, part| match part {
-                ".." => d.parent().map(Path::to_path_buf).unwrap_or(d),
-                p => d.join(p),
-            });
-        return read(at, &f.key);
-    }
     let pkg = crate::harness::get(id)?.bun_package_name()?;
     let modules = if p.contains("/.bun/bin/") {
         bin.parent()?
@@ -245,7 +232,7 @@ pub fn version(bin: &Path) -> Option<String> {
 }
 
 /// "2.0.14 (Claude Code)" → "2.0.14"; "codex-cli 0.46.0" → "0.46.0";
-/// "GitHub Copilot CLI 1.0.105." → "1.0.105".
+/// "Some CLI 1.0.105." → "1.0.105".
 pub fn parse_version(text: &str) -> Option<String> {
     text.split(|c: char| c.is_whitespace() || c == '(' || c == ')' || c == ',')
         .map(|t| t.trim_start_matches('v').trim_end_matches('.'))
@@ -299,11 +286,11 @@ mod tests {
         assert_eq!(parse_version("codex-cli 0.46.0").as_deref(), Some("0.46.0"));
         assert_eq!(parse_version("tool v1.2-beta").as_deref(), Some("1.2-beta"));
         assert_eq!(parse_version("no version here"), None);
-        // Copilot ends its line with a full stop; Cursor's version is a date and a commit.
+        // A version that ends its sentence with a full stop; one that's a date and a commit.
         assert_eq!(
             parse_version(
-                "GitHub Copilot CLI 1.0.105.
-Run 'copilot update' to check for updates."
+                "Some CLI 1.0.105.
+Run 'some update' to check for updates."
             )
             .as_deref(),
             Some("1.0.105")
@@ -376,9 +363,8 @@ Run 'copilot update' to check for updates."
         assert_eq!(by_id("grok").provider, "grok");
         assert_eq!(by_id("opencode").kind, "opencode");
         assert_eq!(by_id("pi").kind, "pi");
-        assert_eq!(by_id("copilot").provider, "copilot");
-        assert_eq!(by_id("cursor").command, "cursor-agent");
-        assert_eq!(found.len(), 17);
+        assert_eq!(by_id("devin").provider, "devin");
+        assert_eq!(found.len(), 9);
     }
 
     #[test]

@@ -2,8 +2,8 @@
 //! `codex` there runs the agent's CLI under it. Found from the shell's process tree, by the
 //! program's name, so the pane can show the agent and watch it (Working, Needs you, Done).
 //! An agent run through a script runtime is recognised when the runtime runs from the agent's
-//! own install folder (Cursor's `cursor-agent` is `…\cursor-agent\versions\…\node.exe`); a
-//! plain `node.exe` from an npm install isn't.
+//! own install folder (`…\<command>\…\node.exe`); a plain `node.exe` from an npm install
+//! isn't.
 
 /// A running process: its id, its parent's, and its program's file name (`codex.exe`).
 #[derive(Debug, Clone)]
@@ -43,37 +43,12 @@ fn runs_from_install(p: &Proc, command: &str) -> bool {
     if name.is_empty() {
         return false;
     }
-    let marks = markers(&name);
-    let marked = |text: &str| {
-        text.to_lowercase()
+    image_of(p.pid).is_some_and(|path| {
+        path.to_string_lossy()
+            .to_lowercase()
             .split(['\\', '/'])
-            .any(|segment| segment == name || marks.iter().any(|m| m == segment))
-    };
-    if image_of(p.pid).is_some_and(|path| marked(&path.to_string_lossy())) {
-        return true;
-    }
-    // This PC's own Node running the agent's script: its arguments say whose.
-    !marks.is_empty() && super::cwd::args(p.pid).is_some_and(|args| args.iter().any(|a| marked(a)))
-}
-
-/// Folders that mark an agent whose command isn't its folder's name (its file's
-/// `detect.markers`): MiniMax Code's `mcode` is Node running
-/// `…\.minimax-code\releases\…\@minimax-ai\code\cli.js`.
-fn markers(command: &str) -> &'static [String] {
-    super::spec::all()
-        .iter()
-        .find(|s| s.command.eq_ignore_ascii_case(command))
-        .map(|s| s.detect.markers.as_slice())
-        .unwrap_or(&[])
-}
-
-/// Every running process whose program is `exe` (`cline.exe`), with its full path.
-pub fn programs_named(exe: &str) -> Vec<(u32, std::path::PathBuf)> {
-    snapshot()
-        .into_iter()
-        .filter(|p| p.exe.eq_ignore_ascii_case(exe))
-        .filter_map(|p| image_of(p.pid).map(|i| (p.pid, i)))
-        .collect()
+            .any(|segment| segment == name)
+    })
 }
 
 /// The full path of process `pid`'s program.
@@ -282,13 +257,9 @@ mod tests {
     }
 
     fn agents() -> Vec<(String, String)> {
-        [
-            ("claude", "claude"),
-            ("codex", "codex"),
-            ("cursor", "cursor-agent"),
-        ]
-        .map(|(a, b)| (a.to_string(), b.to_string()))
-        .into()
+        [("claude", "claude"), ("codex", "codex"), ("devin", "devin")]
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .into()
     }
 
     /// The agent typed into the shell is found below it, however it's named, and only below
@@ -306,7 +277,7 @@ mod tests {
             p(30, 1, "pwsh.exe"),
             p(31, 30, "git.exe"),
             p(40, 1, "pwsh.exe"),
-            p(41, 40, "cursor-agent.exe"),
+            p(41, 40, "devin.exe"),
         ];
         assert_eq!(
             agent_under(10, &procs, &agents()).as_deref(),
@@ -314,10 +285,7 @@ mod tests {
         );
         assert_eq!(agent_under(20, &procs, &agents()).as_deref(), Some("codex"));
         assert_eq!(agent_under(30, &procs, &agents()), None);
-        assert_eq!(
-            agent_under(40, &procs, &agents()).as_deref(),
-            Some("cursor")
-        );
+        assert_eq!(agent_under(40, &procs, &agents()).as_deref(), Some("devin"));
         // Not a sandbox helper that only starts with the name.
         assert!(!is("codex-windows-sandbox-setup.exe", "codex"));
     }

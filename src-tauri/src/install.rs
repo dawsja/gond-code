@@ -744,7 +744,7 @@ fn run_step(
     }
     // A vendor script calls Windows' own tools by name (`tar.exe`, `curl.exe`): those first,
     // before any of the same name another PATH entry has (Git's GNU tar takes `C:\…` for a
-    // host, and MiniMax Code's script failed on it).
+    // host, so an archive a script unpacks with it fails).
     if plan.program.eq_ignore_ascii_case("powershell") {
         if let Some(p) = windows_tools_first(path_var.as_deref()) {
             cmd.env("PATH", p);
@@ -1269,25 +1269,6 @@ fn gond_step(plan: &Plan, job: &mut JobState) -> Result<(), String> {
                     }
                 }
                 keep_tail(&mut job.details, &format!("Took {dir} off your PATH"));
-            }
-            Ok(())
-        }
-        // Stops program args[0] where it runs from one of the other args (an agent's own
-        // folder): what it left running in the background, so its files can be replaced.
-        "stop" => {
-            let Some((exe, dirs)) = plan.args.split_first() else {
-                return Ok(());
-            };
-            for (pid, image) in crate::agents::running::programs_named(exe) {
-                let image = image.to_string_lossy().replace('\\', "/").to_lowercase();
-                let inside = dirs.iter().any(|d| {
-                    let d = d.replace('\\', "/").to_lowercase();
-                    image.starts_with(&format!("{}/", d.trim_end_matches('/')))
-                });
-                if inside {
-                    crate::proctree::kill_tree(pid);
-                    keep_tail(&mut job.details, &format!("Stopped {exe} ({pid})"));
-                }
             }
             Ok(())
         }

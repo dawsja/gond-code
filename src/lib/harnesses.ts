@@ -22,7 +22,7 @@ export type Harness = {
   notesUrl?: string;
   /** A version can be pinned, so an update keeps the old one for rollback. */
   pinnable?: boolean;
-  /** agy, Cursor and Amp update themselves: no update button, no rollback. */
+  /** An agent that updates itself: no update button, no rollback. */
   selfUpdating?: boolean;
   broken?: string;
 };

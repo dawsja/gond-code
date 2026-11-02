@@ -8,7 +8,7 @@ import { statusSpec } from "@/lib/agentStatus";
  */
 export function imagePasteKey(agentId: string | undefined): string | undefined {
   if (!agentId) return;
-  // Its file's `[status] paste`: Alt+V for Claude Code (its Ctrl+V is for WSL), Kimi Code and
-  // Hermes; Ctrl+V for the rest.
+  // Its file's `[status] paste`: Alt+V for Claude Code (its Ctrl+V is for WSL); Ctrl+V for the
+  // rest.
   return statusSpec(agentId).paste === "alt+v" ? "\x1bv" : "\x16";
 }

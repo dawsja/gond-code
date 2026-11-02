@@ -16,7 +16,7 @@ use crate::install::{self, JobState, Step};
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanInput {
-    /// A catalog id: "claude", "codex", "agy", "grok", "opencode", "pi", "copilot" or "cursor".
+    /// A catalog id: "claude", "codex", "agy", "grok", "opencode", "pi" or "devin".
     pub harness_id: String,
 }
 
@@ -94,7 +94,7 @@ fn job_path() -> Option<std::ffi::OsString> {
 static BUSY: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// One job per harness at a time: a second click on Install while one runs would start a
-/// second installer over the first (Cursor's script deletes its folder first, so one fails).
+/// second installer over the first (a script that clears its folder first makes one fail).
 /// Held for the job's life; dropping it frees the harness.
 struct Busy(String);
 
@@ -163,7 +163,12 @@ fn start_holding(
 fn find(id: &str) -> AppResult<&'static harness::Harness> {
     harness::get(id).ok_or_else(|| {
         AppError::NotFound(format!(
-            "no harness {id}; try one of: claude, codex, agy, grok, opencode, pi, copilot, cursor"
+            "no harness {id}; try one of: {}",
+            harness::catalog()
+                .iter()
+                .map(|h| h.id)
+                .collect::<Vec<_>>()
+                .join(", ")
         ))
     })
 }
@@ -542,17 +547,10 @@ pub fn resolve_update(id: &str) -> AppResult<(String, Vec<Step>)> {
         ))
     })?;
     let title = format!("Update {}", h.name);
-    let mut steps = vec![];
-    // What it keeps running in the background holds the files the update replaces.
-    if h.runs_in_background() {
-        if let Some(r) = crate::uninstall::Roots::current() {
-            steps.push(crate::uninstall::stop_step(h, &r));
-        }
-    }
-    steps.push(Step {
+    let steps = vec![Step {
         label: title.clone(),
         plan,
-    });
+    }];
     Ok((title, steps))
 }
 
@@ -654,7 +652,7 @@ mod tests {
             "{e}"
         );
         // Another harness isn't held up.
-        drop(super::Busy::claim(crate::harness::get("cursor").unwrap()).unwrap());
+        drop(super::Busy::claim(crate::harness::get("devin").unwrap()).unwrap());
         drop(first);
         drop(super::Busy::claim(pi).unwrap());
     }
@@ -894,7 +892,7 @@ mod tests {
         }
         let path = crate::pathenv::user_entries();
         // A test build never edits the user PATH (`pathenv::remove_user_dir`), so an entry a
-        // vendor's own installer added (Droid's, Kimi Code's) is still there: the plan names it,
+        // vendor's own installer added is still there: the plan names it,
         // which is what's checked here; the app removes it.
         for e in &p.plan.path_entries {
             if path.iter().any(|x| crate::pathenv::same_entry(x, e)) {

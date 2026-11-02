@@ -38,9 +38,7 @@ pub fn resume(
     else {
         return Value::Null;
     };
-    let Some(cwd) =
-        crate::agents::resume::folder_of(&agent, pid, &procs).or(cwd.map(PathBuf::from))
-    else {
+    let Some(cwd) = crate::agents::cwd::of(pid).or(cwd.map(PathBuf::from)) else {
         return Value::Null;
     };
     let since =
@@ -48,7 +46,6 @@ pub fn resume(
     let args = crate::agents::cwd::args(pid).unwrap_or_default();
     json!(crate::agents::resume::find(
         &agent,
-        Some(pid),
         &args,
         &cwd,
         since,

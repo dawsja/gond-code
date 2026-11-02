@@ -3,7 +3,6 @@
 import anthropic from "@lobehub/icons-static-svg/icons/anthropic.svg?raw";
 import claude from "@lobehub/icons-static-svg/icons/claude-color.svg?raw";
 import codex from "@lobehub/icons-static-svg/icons/codex-color.svg?raw";
-import cursor from "@lobehub/icons-static-svg/icons/cursor.svg?raw";
 import deepseek from "@lobehub/icons-static-svg/icons/deepseek-color.svg?raw";
 import gemini from "@lobehub/icons-static-svg/icons/gemini-color.svg?raw";
 import antigravity from "@lobehub/icons-static-svg/icons/antigravity-color.svg?raw";
@@ -12,7 +11,6 @@ import figma from "@lobehub/icons-static-svg/icons/figma-color.svg?raw";
 import figmaMono from "@lobehub/icons-static-svg/icons/figma.svg?raw";
 import github from "@lobehub/icons-static-svg/icons/github.svg?raw";
 import notion from "@lobehub/icons-static-svg/icons/notion.svg?raw";
-import githubcopilot from "@lobehub/icons-static-svg/icons/githubcopilot.svg?raw";
 import google from "@lobehub/icons-static-svg/icons/google-color.svg?raw";
 import grok from "@lobehub/icons-static-svg/icons/grok.svg?raw";
 import kimi from "@lobehub/icons-static-svg/icons/kimi-color.svg?raw";
@@ -26,14 +24,8 @@ import openai from "@lobehub/icons-static-svg/icons/openai.svg?raw";
 import pi from "./pi-color.svg?raw";
 import piMono from "./pi.svg?raw";
 import opencode from "@lobehub/icons-static-svg/icons/opencode.svg?raw";
-import cline from "@lobehub/icons-static-svg/icons/cline.svg?raw";
 import devin from "@lobehub/icons-static-svg/icons/devin-color.svg?raw";
 import devinMono from "@lobehub/icons-static-svg/icons/devin.svg?raw";
-import hermesagent from "@lobehub/icons-static-svg/icons/hermesagent.svg?raw";
-import kilocode from "@lobehub/icons-static-svg/icons/kilocode.svg?raw";
-// Factory's Droid: Factory's own mark (factory.ai/favicon.svg), white on its black square there;
-// LobeHub has none.
-import droid from "./droid.svg?raw";
 import openrouter from "@lobehub/icons-static-svg/icons/openrouter.svg?raw";
 import qwen from "@lobehub/icons-static-svg/icons/qwen-color.svg?raw";
 import xai from "@lobehub/icons-static-svg/icons/xai.svg?raw";
@@ -95,16 +87,10 @@ export const MONO: Record<string, string> = {
   linuxShell,
   anthropic,
   antigravity: antigravityMono,
-  cursor,
-  cline,
   devin: devinMono,
-  droid,
-  hermesagent,
-  kilocode,
   figma: figmaMono,
   notion,
   github,
-  githubcopilot,
   grok,
   moonshot,
   ollama,

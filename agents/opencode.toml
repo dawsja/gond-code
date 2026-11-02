@@ -30,3 +30,17 @@ flags = ["--session", "-s"]
 home = ["$XDG_DATA_HOME/opencode", "~/.local/share/opencode"]
 # Top-level sessions only: a sub-agent's has a parent. time_updated is in milliseconds.
 store = { kind = "sqlite", file = "opencode.db", query = "SELECT id, directory, time_updated FROM session WHERE parent_id IS NULL OR parent_id = ''" }
+
+[status]
+# Its permission dialog: "△ Permission required", then Allow once / Allow always / Reject.
+prompts = ['^\s*△\s*permission required', 'allow once\s+allow always']
+examples = [
+    ' △ Permission required',
+    '   Allow once   Allow always   Reject',
+]
+# While it works, its footer shows the interrupt key: "esc interrupt", "esc again to interrupt".
+busy = ['\besc (again to )?interrupt\b']
+busy_examples = [
+    '  ⬝⬝⬝■■  esc interrupt',
+    '  esc again to interrupt',
+]

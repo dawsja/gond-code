@@ -4,7 +4,7 @@
 //
 // `color`: use the -color SVG. Mono SVGs fill with currentColor, so on our near-black they take
 // the text colour; that is what logos that are black by default (OpenAI, xAI, Grok, Ollama,
-// Cursor, opencode, Copilot, Anthropic, Moonshot, Droid, Hermes, Kilo, Cline) use.
+// opencode, GitHub, Anthropic, Moonshot) use.
 
 export type Brand = { name: string; icon: string; color: boolean };
 
@@ -25,8 +25,7 @@ export const BRANDS: Record<string, Brand> = {
   zhipu: b("Zhipu", "zhipu", true),
   openrouter: b("OpenRouter", "openrouter"),
   ollama: b("Ollama", "ollama"),
-  github: b("GitHub Copilot", "githubcopilot"),
-  // GitHub itself (Settings → Connections), not Copilot.
+  // GitHub itself (Settings → Connections).
   gh: b("GitHub", "github"),
   // MCP servers people add (Settings → MCP servers).
   figma: b("Figma", "figma", true),
@@ -48,23 +47,9 @@ export const BRANDS: Record<string, Brand> = {
   antigravity: b("Antigravity", "antigravity", true),
   "grok-build": b("Grok Build", "grok"),
   "qwen-code": b("Qwen Code", "qwen", true),
-  "kimi-cli": b("Kimi CLI", "kimi", true),
-  "cursor-agent": b("Cursor", "cursor"),
-  cursor: b("Cursor", "cursor"),
-  "copilot-cli": b("GitHub Copilot", "githubcopilot"),
-  copilot: b("GitHub Copilot", "githubcopilot"),
   opencode: b("opencode", "opencode"),
   pi: b("Pi", "pi", true),
-  droid: b("Droid", "droid"),
-  "kimi-code": b("Kimi Code", "kimi", true),
-  "minimax-code": b("MiniMax Code", "minimax", true),
-  mcode: b("MiniMax Code", "minimax", true),
-  hermes: b("Hermes Agent", "hermesagent"),
-  hermesagent: b("Hermes Agent", "hermesagent"),
-  kilo: b("Kilo Code", "kilocode"),
-  kilocode: b("Kilo Code", "kilocode"),
   devin: b("Devin", "devin", true),
-  cline: b("Cline", "cline"),
   // Shells (shell.list ids; a WSL distribution by its family, see shellBrand).
   pwsh: b("PowerShell 7", "powershellShell", true),
   powershell: b("Windows PowerShell", "powershellShell", true),

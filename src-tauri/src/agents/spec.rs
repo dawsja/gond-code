@@ -23,15 +23,7 @@ pub const FILES: &[(&str, &str)] = &[
     ("grok", include_str!("../../../agents/grok.toml")),
     ("opencode", include_str!("../../../agents/opencode.toml")),
     ("pi", include_str!("../../../agents/pi.toml")),
-    ("copilot", include_str!("../../../agents/copilot.toml")),
-    ("cursor", include_str!("../../../agents/cursor.toml")),
-    ("droid", include_str!("../../../agents/droid.toml")),
-    ("kimi", include_str!("../../../agents/kimi.toml")),
-    ("minimax", include_str!("../../../agents/minimax.toml")),
-    ("hermes", include_str!("../../../agents/hermes.toml")),
-    ("kilo", include_str!("../../../agents/kilo.toml")),
     ("devin", include_str!("../../../agents/devin.toml")),
-    ("cline", include_str!("../../../agents/cline.toml")),
 ];
 
 /// One agent.
@@ -70,13 +62,8 @@ pub struct Install {
     pub winget: Option<String>,
     /// The vendor's PowerShell script (`irm <url> | iex`).
     pub script: Option<String>,
-    /// Arguments the script takes; it then runs as a script block.
-    pub script_args: Option<String>,
     /// Where the script puts the program (under `~`): Gond puts it on the user PATH after.
     pub script_bin: Option<String>,
-    /// The script before winget (winget's package downloads from somewhere out of reach).
-    #[serde(default)]
-    pub script_first: bool,
     /// Its npm package, installed with `bun add -g`.
     pub npm: Option<String>,
     /// The npm package runs on Node, so a Bun install needs Node too.
@@ -109,8 +96,6 @@ pub enum Latest {
     Npm(String),
     /// A GitHub repo's latest release.
     Github(String),
-    /// The vendor's install script, which names the version (`$version = '…'`).
-    Script(String),
     /// A plain-text file holding the version and nothing else.
     Text(String),
 }
@@ -124,25 +109,6 @@ pub struct Detect {
     /// Pieces of a program's path (lowercase, `/`) that say its script installed it.
     #[serde(default)]
     pub script_install: Vec<String>,
-    /// Folders on a runtime's path, or in its arguments, that say it runs this agent (MiniMax
-    /// Code's `mcode` is Node running a script).
-    #[serde(default)]
-    pub markers: Vec<String>,
-    /// A file its install writes its version in, read before running `--version`.
-    pub version_file: Option<VersionFile>,
-    /// Its program is a launcher whose own folder isn't the one it runs in: its first child's
-    /// is.
-    #[serde(default)]
-    pub cwd_from_child: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VersionFile {
-    /// From the program's folder (`../hermes-agent/install-stamp.json`).
-    pub path: String,
-    /// Its JSON key.
-    pub key: String,
 }
 
 /// What an uninstall removes.
@@ -160,8 +126,6 @@ pub struct Uninstall {
     /// Settings and sign-ins, removed with "Remove everything".
     #[serde(default)]
     pub settings: Vec<String>,
-    /// A program it leaves running in the background (`cline.exe`), stopped first.
-    pub background: Option<String>,
 }
 
 /// How its conversation resumes.
@@ -211,16 +175,29 @@ pub struct Status {
     /// Its prompts' own words (regular expressions, any case): on screen, it needs you.
     #[serde(default)]
     pub prompts: Vec<String>,
+    /// Its own working line's words (regular expressions, any case): on screen, it's working,
+    /// as a title that says so would tell (Pi's spinner and "Working").
+    #[serde(default)]
+    pub busy: Vec<String>,
     /// Where it asks: `bottom` (the pane's last rows and the cursor's) or `screen` (anywhere).
     #[serde(default = "screen")]
     pub scan: String,
     /// The key it pastes an image on: `ctrl+v` or `alt+v`.
     #[serde(default = "ctrl_v")]
     pub paste: String,
+    /// Environment variables every pane sets, so the agent reports its state when it's started
+    /// there (Antigravity's `AGY_CLI_OSC7501 = "on"`: its support check can't be answered
+    /// through Windows' console host).
+    #[serde(default, skip_serializing)]
+    pub env: std::collections::BTreeMap<String, String>,
     /// Lines its prompts show, as you'd see them on screen: each must match one of `prompts`
     /// (checked by the tests, so a pattern that stops matching is caught).
     #[serde(default, skip_serializing)]
     pub examples: Vec<String>,
+    /// Lines its working line shows, as on screen: each must match one of `busy` (checked by
+    /// the tests).
+    #[serde(default, skip_serializing)]
+    pub busy_examples: Vec<String>,
 }
 
 impl Default for Status {
@@ -228,9 +205,12 @@ impl Default for Status {
         Status {
             title: None,
             prompts: vec![],
+            busy: vec![],
             scan: screen(),
             paste: ctrl_v(),
+            env: Default::default(),
             examples: vec![],
+            busy_examples: vec![],
         }
     }
 }
@@ -247,13 +227,9 @@ fn ctrl_v() -> String {
 /// `api/usage.rs` and `plan_usage.rs`), `[resume] store = { kind = "reader" }` (in
 /// `resume.rs`) and `[status] title` (in `src/features/workspace/status.ts`). A name not here
 /// reads nothing; the tests check every file's.
-pub const USAGE_READERS: &[&str] = &[
-    "claude", "codex", "grok", "agy", "copilot", "cursor", "kimi", "minimax", "hermes",
-];
-pub const RESUME_READERS: &[&str] = &[
-    "claude", "codex", "copilot", "cursor", "grok", "agy", "kimi",
-];
-pub const TITLE_READERS: &[&str] = &["claude", "codex", "minimax"];
+pub const USAGE_READERS: &[&str] = &["claude", "codex", "grok", "agy", "devin"];
+pub const RESUME_READERS: &[&str] = &["claude", "codex", "grok", "agy"];
+pub const TITLE_READERS: &[&str] = &["claude", "codex", "grok"];
 
 /// Every agent, from its file. A file that doesn't read is a bug the tests catch.
 pub fn all() -> &'static [Spec] {
@@ -417,22 +393,27 @@ mod tests {
             // Its prompt patterns compile (the pane reads them as JavaScript regular
             // expressions, any case, a line at a time: these are the same syntax), and each
             // example line matches one.
-            let patterns: Vec<regex::Regex> = s
-                .status
-                .prompts
-                .iter()
-                .map(|p| {
-                    assert!(!p.is_empty(), "{}: an empty prompt pattern", s.id);
-                    regex::Regex::new(&format!("(?im){p}"))
-                        .unwrap_or_else(|e| panic!("{}: {p}: {e}", s.id))
-                })
-                .collect();
-            for line in &s.status.examples {
-                assert!(
-                    patterns.iter().any(|r| r.is_match(line)),
-                    "{}: no prompt pattern matches {line:?}",
-                    s.id
-                );
+            let compile = |list: &[String]| -> Vec<regex::Regex> {
+                list.iter()
+                    .map(|p| {
+                        assert!(!p.is_empty(), "{}: an empty pattern", s.id);
+                        regex::Regex::new(&format!("(?im){p}"))
+                            .unwrap_or_else(|e| panic!("{}: {p}: {e}", s.id))
+                    })
+                    .collect()
+            };
+            for (patterns, examples, what) in [
+                (&s.status.prompts, &s.status.examples, "prompt"),
+                (&s.status.busy, &s.status.busy_examples, "busy"),
+            ] {
+                let patterns = compile(patterns);
+                for line in examples {
+                    assert!(
+                        patterns.iter().any(|r| r.is_match(line)),
+                        "{}: no {what} pattern matches {line:?}",
+                        s.id
+                    );
+                }
             }
             // A reader it names is one the code has.
             if let Some(u) = &s.usage {

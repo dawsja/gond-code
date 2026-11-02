@@ -57,22 +57,21 @@ const CODEX_SPINNER = /(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)/;
 /**
  * What a title says, by its reader (the agent's file's `[status] title`): Claude Code's and
  * Codex's spinner while they work, Claude's `✳ ` once it's waiting at its input, Codex's
- * "Action Required" when it asks, MiniMax Code's state first ("Working | …", "Needs approval
- * | …"). The surest sign there is, where the screen only suggests. Other agents' titles say
- * nothing.
+ * "Action Required" when it asks. The surest sign there is, where the screen only suggests.
+ * Other agents' titles say nothing.
  */
 export function fromTitle(reader: string | undefined, title: string): Signal | undefined {
   if (!title) return undefined;
-  if (reader === "minimax") {
-    const state = title.split(" | ")[0].trim().toLowerCase();
-    if (state === "working") return "working";
-    if (state.startsWith("needs ")) return "needs";
-    if (["ready", "done", "failed", "stopped", "error"].includes(state)) return "idle";
-    return undefined;
-  }
   if (reader === "claude") {
     if (SPINNER.test(title)) return "working";
     if (title.startsWith("✳ ")) return "idle";
+  }
+  // Grok Build's items joined by " - ": "⚠ Action Required" when it asks, its spinner while it
+  // works ("⠋ - Waiting for response… - <session> - grok"), its name last; "grok" alone idle.
+  if (reader === "grok") {
+    if (title.includes("Action Required")) return "needs";
+    if (/^[⠀-⣿] /.test(title)) return "working";
+    return /(^| - )grok$/i.test(title) ? "idle" : undefined;
   }
   if (reader === "codex") {
     if (title.includes("Action Required")) return "needs";
@@ -82,13 +81,29 @@ export function fromTitle(reader: string | undefined, title: string): Signal | u
   return undefined;
 }
 
+/** An OSC 7501 report's pairs (`key=value`, `:` between, split on the first `=`: a base64
+ * value can end in `=`); the last of a repeated key wins. */
+function pairs(data: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const pair of data.split(":")) {
+    const at = pair.indexOf("=");
+    if (at > 0) out[pair.slice(0, at).trim().toLowerCase()] = pair.slice(at + 1).trim();
+  }
+  return out;
+}
+
+/** Whether an OSC 7501 report is the program's own record, not a session's or a subagent's
+ * (those carry an `id`). */
+export const ownRecord = (data: string) => !pairs(data).id;
+
 /**
- * What an agent reports of itself on OSC 7501 (MiniMax Code, Devin): `state=working`,
- * `state=blocked:kind=permission`, `state=idle`, `state=done`… with `:app=…` after. Its own word,
- * like a title, but meant for the terminal: it comes first. `state=clear` takes it back.
+ * What an agent reports of itself on OSC 7501, the program status protocol (Devin, Grok
+ * Build): `state=working`, `state=blocked:kind=permission`, `state=idle`, `state=done`… with
+ * `app`, `msg` and the like beside it. Its own word, like a title, but meant for the terminal:
+ * it comes first. `state=clear` takes it back.
  */
 export function fromProgram(data: string): Signal | undefined {
-  const state = /(?:^|;)state=([a-z]+)/i.exec(data)?.[1]?.toLowerCase();
+  const state = pairs(data).state?.toLowerCase();
   if (state === "working") return "working";
   if (state === "blocked") return "needs";
   if (state === "idle" || state === "done" || state === "error") return "idle";

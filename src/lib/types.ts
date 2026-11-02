@@ -56,6 +56,8 @@ export type AgentKind = string;
 export type AgentStatus = {
   title?: string | null;
   prompts: string[];
+  /** Its own working line's words: on screen, it's working. */
+  busy?: string[];
   scan: string;
   paste: string;
 };

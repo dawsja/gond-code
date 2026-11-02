@@ -12,7 +12,7 @@ describe("brand icons", () => {
   });
 
   it("draws black-by-default logos in currentColor, so they show on near-black", () => {
-    for (const id of ["openai", "xai", "grok", "ollama", "cursor", "opencode", "github"]) {
+    for (const id of ["openai", "xai", "grok", "ollama", "opencode", "gh"]) {
       const brand = brandOf(id)!;
       expect(brand.color, id).toBe(false);
       expect(MONO[brand.icon], id).toContain('fill="currentColor"');

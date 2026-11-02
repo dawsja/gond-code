@@ -2,8 +2,7 @@
 
 A Windows app that hosts your coding agents in a terminal workspace. Each pane is a terminal in
 your default shell; type an agent there (Claude Code, Codex, Antigravity, Grok Build, opencode,
-Pi, GitHub Copilot, Cursor, Droid, Kimi Code, MiniMax Code, Hermes Agent, Kilo Code, Devin or
-Cline) and Gond Code sees it running. Panes are grouped into named
+Pi or Devin) and Gond Code sees it running. Panes are grouped into named
 **Sessions**, and the sidebar lists every agent by what it's doing: needs you, working, done or
 idle.
 

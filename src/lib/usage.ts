@@ -2,17 +2,7 @@
 // usage.refresh, at `/usage/default:<agent>`.
 
 /** The demo's agents with a plan (the live list is each agent's file's `usage`). */
-export const PLAN_AGENTS = [
-  "claude",
-  "codex",
-  "grok",
-  "agy",
-  "copilot",
-  "cursor",
-  "kimi",
-  "minimax",
-  "hermes",
-];
+export const PLAN_AGENTS = ["claude", "codex", "grok", "agy", "devin"];
 
 /** The usage key an agent's own sign-in reports under. */
 export const usageKey = (agentId: string) => `default:${agentId}`;
@@ -22,7 +12,7 @@ export type PlanUsage = {
   harness: string;
   /** Missing until the agent reports a window. */
   windows?: {
-    name: "session" | "weekly" | "monthly";
+    name: "session" | "daily" | "weekly" | "monthly";
     /** A window the plan scopes, e.g. "Weekly · Fable". */
     label?: string;
     percentLeft: number;
@@ -49,7 +39,12 @@ export function limitedUntil(u?: PlanUsage, now = new Date()): string | undefine
     : "it resets";
 }
 
-const WINDOW = { session: "Session", weekly: "Weekly", monthly: "Monthly" } as const;
+const WINDOW = {
+  session: "Session",
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+} as const;
 
 /** At or below this much left, a plan window is running low. */
 export const LOW_PERCENT = 10;
