@@ -30,6 +30,14 @@ import { usePaneAgents } from "./paneAgent";
 import { STATUS_LABEL, type PaneStatus, type Status } from "./status";
 import { handles, Terminal, type Shortcut } from "./Terminal";
 import { Hint } from "@/components/hint";
+import { LinkDot, MachineIcon } from "@/features/machines/MachineIcon";
+import {
+  isMachine,
+  machineName,
+  useLink,
+  useLinks,
+  useMachines,
+} from "@/features/machines/machines";
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Divider = { splitId: string; dir: "right" | "down"; area: Rect; at: number };
@@ -371,6 +379,12 @@ function PaneView({
   const dropping = drop?.paneId === pane.id;
   const agent = agents.find((a) => a.id === running);
   const name = pane.title ?? agent?.name ?? running ?? "Terminal";
+  // The machine it runs on, if not this PC.
+  const machine = isMachine(pane.shell) ? pane.shell : undefined;
+  const link = useLink(machine);
+  const { machines } = useMachines();
+  const links = useLinks();
+  const where = machine ? machineName(machine, machines, links) : undefined;
   const h = () => handles.get(pane.id);
   return (
     <ContextMenu>
@@ -424,6 +438,16 @@ function PaneView({
             ) : (
               <span className="shrink-0 font-medium">{name}</span>
             )}
+            {machine && (
+              <span
+                data-slot="pane-machine"
+                className="flex h-[18px] shrink-0 items-center gap-1.5 rounded-md bg-hover px-1.5 text-[11px] text-muted-foreground"
+              >
+                <MachineIcon id={machine} size={12} />
+                {where}
+                {link && link.state !== "up" && <LinkDot state={link.state} />}
+              </span>
+            )}
             <span className="flex-1" />
             {running && status && (
               <span
@@ -459,6 +483,9 @@ function PaneView({
             active={focused && visible}
             onFocus={() => actions.focus(pane.id)}
             onShortcut={(s) => actions.shortcut(pane.id, s)}
+            machine={machine}
+            link={link}
+            machineName={where}
           />
         </section>
       </ContextMenuTrigger>

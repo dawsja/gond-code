@@ -15,8 +15,10 @@ import { PlanWindows } from "./PlanWindows";
 export function UsageSettings({ harnesses }: { harnesses: Harness[] }) {
   const live = useAppState((t) => t.usage as Record<string, PlanUsage> | undefined);
   const usage = DEMO ? MOCK_USAGE : live;
-  const agents = PLAN_AGENTS.map((id) => harnesses.find((h) => h.id === id && h.installed)).filter(
-    (h): h is Harness => !!h,
+  // The agents whose plan Gond reads (their file's `usage`), in the Agents page's order; the
+  // demo's sample agents by the list.
+  const agents = harnesses.filter(
+    (h) => h.installed && (h.plan ?? (DEMO && PLAN_AGENTS.includes(h.id))),
   );
   return (
     <div data-slot="usage" className="flex max-w-[880px] flex-col gap-5">
@@ -56,7 +58,8 @@ export function UsageSettings({ harnesses }: { harnesses: Harness[] }) {
               {windows.length > 0 && <PlanWindows windows={windows} />}
               {windows.length === 0 && (
                 <p className="text-[12.5px] text-faint">
-                  Nothing reported yet. It shows once you're signed in to {h.label}.
+                  Nothing reported yet. It shows once you're signed in to {h.label} on a plan with
+                  limits.
                 </p>
               )}
             </article>

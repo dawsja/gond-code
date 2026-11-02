@@ -1,0 +1,46 @@
+# Codex (OpenAI). See agents/README.md for what each key means.
+id = "codex"
+name = "Codex"
+command = "codex"
+icon = "codex"
+changelog = "https://github.com/openai/codex/releases"
+# Its app server's account/rateLimits/read.
+usage = "codex"
+
+[install]
+winget = "OpenAI.Codex"
+script = "https://chatgpt.com/codex/install.ps1"
+script_bin = "%LOCALAPPDATA%/Programs/OpenAI/Codex/bin"
+npm = "@openai/codex"
+npm_needs_node = true
+
+[update]
+self = ["update"]
+latest = { npm = "@openai/codex" }
+
+[detect]
+dirs = ["%LOCALAPPDATA%/Programs/OpenAI/Codex/bin"]
+script_install = ["/appdata/local/programs/", "/.codex/"]
+
+[uninstall]
+# Its program and the package store it keeps in ~\.codex.
+program = [
+    "%LOCALAPPDATA%/Programs/OpenAI/Codex",
+    "~/.codex/packages",
+    "~/.codex/tmp",
+]
+path = ["%LOCALAPPDATA%/Programs/OpenAI/Codex/bin"]
+settings = ["~/.codex"]
+
+[resume]
+command = "codex resume {id}"
+# `codex resume <id>`
+word = "resume"
+home = ["$CODEX_HOME", "~/.codex"]
+# sessions/<y>/<m>/<d>/rollout-…-<id>.jsonl
+store = { kind = "reader", name = "codex" }
+
+[status]
+# A spinner while it works, "Action Required" when it asks.
+title = "codex"
+scan = "bottom"

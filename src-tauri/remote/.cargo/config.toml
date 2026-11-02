@@ -1,0 +1,12 @@
+# Static Linux binaries, linked by Rust's own linker: they build from Windows with no C toolchain
+# for Linux (the remote host has no C dependency).
+[build]
+rustflags = ["--cfg", "gond_remote"]
+
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["--cfg", "gond_remote", "-C", "target-feature=+crt-static"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["--cfg", "gond_remote", "-C", "target-feature=+crt-static"]

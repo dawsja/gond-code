@@ -1,8 +1,18 @@
 // Plan limits as Settings → Usage shows them: what each agent's own sign-in reports through
 // usage.refresh, at `/usage/default:<agent>`.
 
-/** The agents Gond can read a plan for (usage.refresh), in their Usage order. */
-export const PLAN_AGENTS = ["claude", "codex", "grok", "agy", "copilot", "cursor"];
+/** The demo's agents with a plan (the live list is each agent's file's `usage`). */
+export const PLAN_AGENTS = [
+  "claude",
+  "codex",
+  "grok",
+  "agy",
+  "copilot",
+  "cursor",
+  "kimi",
+  "minimax",
+  "hermes",
+];
 
 /** The usage key an agent's own sign-in reports under. */
 export const usageKey = (agentId: string) => `default:${agentId}`;

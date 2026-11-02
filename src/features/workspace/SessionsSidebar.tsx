@@ -31,6 +31,8 @@ import { panes, type Session, type Pane } from "./layout";
 import { usePaneAgents } from "./paneAgent";
 import { ago, STATUS_LABEL, type PaneStatus, type Status } from "./status";
 import { Hint } from "@/components/hint";
+import { MachineIcon } from "@/features/machines/MachineIcon";
+import { isMachine, machineName, useLinks, useMachines } from "@/features/machines/machines";
 
 /** Plan warnings already shown: once per agent, window, reset and level. */
 const warned = new Set<string>();
@@ -123,7 +125,10 @@ export function SessionsSidebar({
   onSelectPane,
   onSettings,
   onUpdates,
+  machine,
 }: {
+  /** The machine switcher, above Settings. */
+  machine?: React.ReactNode;
   sessions: Session[];
   current?: string;
   focusedPane?: string;
@@ -187,6 +192,8 @@ export function SessionsSidebar({
       );
     }
   }, [runningIds, usage, agents]);
+  const { machines } = useMachines();
+  const links = useLinks();
   const nameOf = (p: Pane, agentId: string) =>
     p.title ??
     projects.find((x) => x.id === p.projectId)?.name ??
@@ -246,8 +253,15 @@ export function SessionsSidebar({
                     )}
                   >
                     <Hint text={g.name}>
-                      <span className="truncate">{g.name}</span>
+                      <span className="flex-1 truncate">{g.name}</span>
                     </Hint>
+                    {g.machine && (
+                      <Hint text={`On ${machineName(g.machine, machines, links)}`}>
+                        <span className="grid shrink-0 place-items-center opacity-80">
+                          <MachineIcon id={g.machine} size={13} />
+                        </span>
+                      </Hint>
+                    )}
                   </button>
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-44 rounded-xl p-1.5">
@@ -286,7 +300,8 @@ export function SessionsSidebar({
                 {here.map(({ pane, agentId, session, st }) => {
                   const agent = agents.find((a) => a.id === agentId);
                   const on = !settings && current === session.id && focusedPane === pane.id;
-                  const plan = planOf(agentId);
+                  // Another machine's agent may be signed in as someone else: no plan of ours.
+                  const plan = isMachine(pane.shell) ? undefined : planOf(agentId);
                   return (
                     <button
                       key={pane.id}
@@ -300,6 +315,14 @@ export function SessionsSidebar({
                         <ProviderIcon id={agent?.provider ?? agentId} size={15} />
                         <span className="flex min-w-0 flex-1 items-center gap-1.5">
                           <span className="min-w-0 truncate">{nameOf(pane, agentId)}</span>
+                          {isMachine(pane.shell) && (
+                            <span
+                              data-slot="agent-machine"
+                              className="shrink-0 rounded-[5px] bg-hover px-1.5 text-[11px] leading-4 text-muted-foreground"
+                            >
+                              {machineName(pane.shell!, machines, links)}
+                            </span>
+                          )}
                           {plan && (
                             <UsageIcon
                               agent={agent?.name ?? agentId}
@@ -323,6 +346,7 @@ export function SessionsSidebar({
       </section>
       <div className="flex flex-col gap-0.5 border-t border-border px-2.5 pt-2">
         <AppUpdate onOpen={onUpdates} />
+        {machine}
         <button
           type="button"
           data-command="layout.focus"

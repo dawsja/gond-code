@@ -1,0 +1,30 @@
+# Pi (pi.dev). Through Bun on Node 22.19+: its own installer can stop to ask about PATH.
+# See agents/README.md for what each key means.
+id = "pi"
+name = "Pi"
+command = "pi"
+icon = "pi"
+changelog = "https://github.com/earendil-works/pi/releases"
+
+[install]
+npm = "@earendil-works/pi-coding-agent"
+npm_needs_node = true
+
+[update]
+latest = { npm = "@earendil-works/pi-coding-agent" }
+
+[uninstall]
+# Bun removes the program.
+settings = ["~/.pi/agent"]
+
+[resume]
+command = "pi --session {id}"
+flags = ["--session"]
+# Its sessions folder itself.
+home = [
+    "$PI_CODING_AGENT_SESSION_DIR",
+    "$PI_CODING_AGENT_DIR/sessions",
+    "~/.pi/agent/sessions",
+]
+# sessions/--<folder>--/<time>_<id>.jsonl, its first line {"type":"session","id","cwd"}.
+store = { kind = "jsonl-head", dir = ".", type = "session", id = "id", cwd = "cwd" }

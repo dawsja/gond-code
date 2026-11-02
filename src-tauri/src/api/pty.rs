@@ -20,7 +20,8 @@ pub struct OpenInput {
     /// Open in this project's folder; without one, your home folder.
     pub project_id: Option<String>,
     /// A shell.list id (`pwsh`, `cmd`, `wsl:Ubuntu`…), so a pane keeps the shell it had; none
-    /// (or one no longer on this PC) = the one picked in Settings → General.
+    /// (or one no longer on this PC) = the one picked in Settings → General. A machine's id
+    /// (`wsl:<distro>`, `ssh:<id>`) opens its user's shell in that machine's terminal host.
     pub shell: Option<String>,
     /// Start in this folder instead (a shell coming back after an update, where it was).
     pub cwd: Option<String>,
@@ -75,6 +76,8 @@ pub struct PtyInput {
 pub struct AttachInput {
     /// The pane's id (`pty.open`'s `key`).
     pub key: String,
+    /// The pane's shell: a machine's (`wsl:…`, `ssh:…`) is looked for there, connecting first.
+    pub shell: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -129,9 +132,8 @@ fn cause(call: &Call<Services>, command: &str) -> Cause {
 
 /// Every agent Gond knows, built in and added: (id, command).
 pub fn known_agents(store: &crate::store::Store) -> Vec<(String, String)> {
-    let mut agents: Vec<(String, String)> = crate::agents::BUILT_IN
-        .iter()
-        .map(|(id, _, _, command)| (id.to_string(), command.to_string()))
+    let mut agents: Vec<(String, String)> = crate::agents::built_in()
+        .map(|(id, _, command)| (id.to_string(), command.to_string()))
         .collect();
     if let Ok(customs) = crate::agents::list_custom(store) {
         agents.extend(customs.into_iter().map(|c| (c.id, c.command)));
@@ -210,13 +212,52 @@ pub fn register(r: &mut Registry<Services>) {
         |call, i: OpenInput| -> AppResult<Opened> {
             let s = call.ctx;
             let (owner, cwd) = terminal_target(&s.store, i.project_id.as_deref())?;
+            let (cols, rows) = (i.cols.unwrap_or(120), i.rows.unwrap_or(32));
+            // Only the human's UI has xterm.js listening from the first byte.
+            let human = call.actor.kind == super::registry::ActorKind::Human;
+            // Another machine's (WSL, SSH): the pane's, else Settings' pick.
+            let machine = i
+                .shell
+                .clone()
+                .or_else(|| crate::settings::get(&s.store).ok().and_then(|x| x.shell))
+                .filter(|m| human && crate::remote::is_remote(m))
+                // A build without the remote helper runs WSL as a plain shell here, as before.
+                .filter(|m| !m.starts_with("wsl:") || crate::remote::helper("x86_64").is_some());
+            if let Some(m) = machine {
+                // Its folder there: the one asked for, else the project's as WSL sees it (an
+                // SSH machine starts in its home folder).
+                let there = i.cwd.clone().or_else(|| {
+                    m.starts_with("wsl:")
+                        .then(|| crate::drop::wsl_path(&cwd))
+                        .flatten()
+                });
+                let spawn = crate::pty::Spawn {
+                    program: Default::default(),
+                    args: vec!["-l".into()],
+                    cwd: there.unwrap_or_default().into(),
+                    env: vec![],
+                };
+                let pty_id = s
+                    .ptys
+                    .spawn_on(&m, &owner, i.key.as_deref(), &spawn, cols, rows)?
+                    .pty_id;
+                let entry = json!({
+                    "id": pty_id, "owner": owner, "cols": cols, "rows": rows,
+                    "status": "open", "openedBy": call.actor, "machine": m,
+                });
+                let id = pty_id.clone();
+                s.state.commit(cause(call, "pty.open"), move |d| {
+                    d["terminals"][&id] = entry
+                });
+                return Ok(Opened {
+                    pty_id,
+                    shell: Some(m),
+                });
+            }
             let cwd = match i.cwd.map(std::path::PathBuf::from) {
                 Some(dir) if dir.is_dir() => dir,
                 _ => cwd,
             };
-            let (cols, rows) = (i.cols.unwrap_or(120), i.rows.unwrap_or(32));
-            // Only the human's UI has xterm.js listening from the first byte.
-            let human = call.actor.kind == super::registry::ActorKind::Human;
             // The pane's own shell, else the one picked in Settings → General, else the usual
             // (shell.list's first: PowerShell 7, Windows PowerShell, Command Prompt).
             let shell = crate::shells::chosen(i.shell.as_deref())
@@ -257,7 +298,14 @@ pub fn register(r: &mut Registry<Services>) {
             Risk::Read,
         ),
         |call, i: AttachInput| -> AppResult<Option<crate::pty::Attached>> {
-            let found = call.ctx.ptys.attach(&i.key)?;
+            let found = match i.shell.as_deref().filter(|m| crate::remote::is_remote(m)) {
+                // On its machine; a WSL pane that ran here before (no helper then) is here.
+                Some(m) => match call.ctx.ptys.attach_on(m, &i.key)? {
+                    Some(a) => Some(a),
+                    None => call.ctx.ptys.attach(&i.key)?,
+                },
+                None => call.ctx.ptys.attach(&i.key)?,
+            };
             if let Some(a) = found.as_ref().filter(|a| !a.exited) {
                 let id = a.pty_id.clone();
                 let entry = json!({ "id": id, "status": "open", "key": i.key });
@@ -275,6 +323,17 @@ pub fn register(r: &mut Registry<Services>) {
             Risk::Read,
         ),
         |call, i: ResumeInput| -> AppResult<Option<crate::agents::resume::Resume>> {
+            // On another machine: read there, from the agent's store on that machine.
+            if let Some(c) = call.ctx.ptys.remote_of(&i.pty_id) {
+                let r = c.resume(
+                    &i.pty_id,
+                    &known_agents(&call.ctx.store),
+                    i.since,
+                    i.cwd,
+                    &i.taken,
+                )?;
+                return Ok(r.and_then(|v| serde_json::from_value(v).ok()));
+            }
             let Some(shell) = call.ctx.ptys.pid(&i.pty_id) else {
                 return Ok(None);
             };
@@ -287,7 +346,9 @@ pub fn register(r: &mut Registry<Services>) {
                 return Ok(None);
             };
             // Where the agent really runs, else where the pane thinks.
-            let Some(cwd) = crate::agents::cwd::of(pid).or(i.cwd.map(Into::into)) else {
+            let Some(cwd) = crate::agents::resume::folder_of(&agent, pid, &procs)
+                .or(i.cwd.map(Into::into))
+            else {
                 return Ok(None);
             };
             // A little before the pane saw it: the agent may have written first.
@@ -312,7 +373,34 @@ pub fn register(r: &mut Registry<Services>) {
             Risk::WriteLocal,
         )
         .human_only(),
-        |_, i: DropInput| -> AppResult<String> {
+        |call, i: DropInput| -> AppResult<String> {
+            // An SSH machine can't see this PC's files: each file is copied there first.
+            if let Some(m) = i.shell.as_deref().filter(|m| m.starts_with("ssh:")) {
+                let c = call.ctx.ptys.hub()?.ensure(m)?;
+                let mut out = String::new();
+                for p in &i.paths {
+                    let path = std::path::Path::new(p);
+                    if !path.is_file() {
+                        continue;
+                    }
+                    let bytes = std::fs::read(path)?;
+                    if bytes.len() > 64 * 1024 * 1024 {
+                        return Err(AppError::Invalid(format!(
+                            "{} is too big to copy to {} (64 MB at most)",
+                            path.display(),
+                            crate::remote::name(m)
+                        )));
+                    }
+                    use base64::Engine;
+                    let there = c.upload(
+                        &path.file_name().unwrap_or_default().to_string_lossy(),
+                        base64::engine::general_purpose::STANDARD.encode(bytes),
+                    )?;
+                    out.push_str(&crate::drop::sh_quote(&there));
+                    out.push(' ');
+                }
+                return Ok(out);
+            }
             let drops = crate::appdata::local()
                 .ok_or_else(|| AppError::Invalid("no app data folder".into()))?
                 .join("drops");
@@ -351,6 +439,10 @@ pub fn register(r: &mut Registry<Services>) {
             Risk::Read,
         ),
         |call, i: PtyInput| -> AppResult<Option<String>> {
+            // On another machine: its host looks there.
+            if let Some(c) = call.ctx.ptys.remote_of(&i.pty_id) {
+                return c.agent(&i.pty_id, &known_agents(&call.ctx.store));
+            }
             let Some(pid) = call.ctx.ptys.pid(&i.pty_id) else {
                 return Ok(None);
             };

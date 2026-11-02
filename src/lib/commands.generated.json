@@ -168,14 +168,33 @@
               "type": "boolean"
             },
             "kind": {
-              "$ref": "#/$defs/AgentKind"
+              "type": "string"
+            },
+            "leftovers": {
+              "description": "Not installed, but what it left is still here (its settings, a PATH entry, an\nuninstall that stopped halfway): uninstalling clears it.",
+              "type": "boolean"
             },
             "name": {
               "type": "string"
             },
+            "plan": {
+              "description": "Gond reads its plan usage (Settings → Usage).",
+              "type": "boolean"
+            },
             "provider": {
               "description": "Brand icon key (@lobehub/icons), e.g. \"claude\", \"codex\"; unknown → neutral glyph.",
               "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Status"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How its status shows in a pane: its title's reader, its prompts' words, where it asks,\nits image-paste key (its file's `[status]`). None for a custom agent."
             },
             "version": {
               "type": [
@@ -194,19 +213,45 @@
           ],
           "type": "object"
         },
-        "AgentKind": {
-          "enum": [
-            "claude",
-            "codex",
-            "agy",
-            "grok",
-            "opencode",
-            "pi",
-            "copilot",
-            "cursor",
-            "custom"
-          ],
-          "type": "string"
+        "Status": {
+          "additionalProperties": false,
+          "description": "How its status shows, for the pane (`status.ts`).",
+          "properties": {
+            "examples": {
+              "description": "Lines its prompts show, as you'd see them on screen: each must match one of `prompts`\n(checked by the tests, so a pattern that stops matching is caught).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "writeOnly": true
+            },
+            "paste": {
+              "default": "ctrl+v",
+              "description": "The key it pastes an image on: `ctrl+v` or `alt+v`.",
+              "type": "string"
+            },
+            "prompts": {
+              "default": [],
+              "description": "Its prompts' own words (regular expressions, any case): on screen, it needs you.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scan": {
+              "default": "screen",
+              "description": "Where it asks: `bottom` (the pane's last rows and the cursor's) or `screen` (anywhere).",
+              "type": "string"
+            },
+            "title": {
+              "description": "Its title's reader in `status.ts` (by name), if its title says what it's doing.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1177,7 +1222,7 @@
   },
   {
     "name": "harness.check",
-    "summary": "Installed vs latest version per harness, with the changelog (offline: latest unknown)",
+    "summary": "Installed vs latest version per installed harness, with the changelog (offline: latest unknown); an agent that isn't installed isn't looked up",
     "risk": "read",
     "humanOnly": false,
     "inputSchema": {
@@ -1913,6 +1958,648 @@
     }
   },
   {
+    "name": "machine.add",
+    "summary": "Add an SSH machine (a Host from your ssh config, a host name or user@host) for terminals to run on: a Host in Gond's ssh config (~/.ssh/gond/config), which ~/.ssh/config includes",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "A `Host` from `~/.ssh/config`, a host name, an address, or `user@host`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its `Host` name (`ssh <name>`); else the host's. A host your ssh config sets up keeps\nits own.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "title": "AddInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "address": {
+          "description": "`user@host:port` for an SSH machine Gond's ssh config sets up.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "`wsl:<distro>` or `ssh:<host>`: a pane's `shell` to open there.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The key an SSH machine signs in with (its `IdentityFile`): a key's name in `~/.ssh`,\nelse the file's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`wsl` or `ssh`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ],
+      "title": "Machine",
+      "type": "object"
+    }
+  },
+  {
+    "name": "machine.askpass.answer",
+    "summary": "Answer what ssh asked while signing in (a passphrase, a password, a new host key); no answer cancels",
+    "risk": "outward",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "description": "What to tell ssh; none cancels signing in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The question (`/askpass/<id>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AnswerInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.closeAll",
+    "summary": "Close every terminal on a machine and stop Gond's terminal host there",
+    "risk": "destructive",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "A machine (`wsl:<distro>`, `ssh:<host>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "IdInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.connect",
+    "summary": "Connect to a machine (WSL or SSH): Gond's helper is copied there once, and its terminals come back",
+    "risk": "outward",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "A machine (`wsl:<distro>`, `ssh:<host>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "IdInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.disconnect",
+    "summary": "Drop the connection to a machine; its terminals keep running there",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "A machine (`wsl:<distro>`, `ssh:<host>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "IdInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.edit",
+    "summary": "Change where an SSH machine is (its HostName, User and Port in Gond's ssh config); a connection to it starts over",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "Where it is now: a host name, an address, or `user@host`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "An SSH machine Gond's ssh config sets up (`ssh:<host>`).",
+          "type": "string"
+        },
+        "port": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "host"
+      ],
+      "title": "EditInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "address": {
+          "description": "`user@host:port` for an SSH machine Gond's ssh config sets up.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "`wsl:<distro>` or `ssh:<host>`: a pane's `shell` to open there.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The key an SSH machine signs in with (its `IdentityFile`): a key's name in `~/.ssh`,\nelse the file's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`wsl` or `ssh`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ],
+      "title": "Machine",
+      "type": "object"
+    }
+  },
+  {
+    "name": "machine.key.authorize",
+    "summary": "Put a key on an SSH machine (its ~/.ssh/authorized_keys, over Gond's connection) and sign in with it from now on",
+    "risk": "outward",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "An SSH machine (`ssh:<host>`).",
+          "type": "string"
+        },
+        "key": {
+          "description": "A key's name in `~/.ssh`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key"
+      ],
+      "title": "MachineKeyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "via": {
+          "description": "`host` (Gond's terminal host there did it) or `ssh` (a one-off ssh, for an older host).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "via"
+      ],
+      "title": "Authorized",
+      "type": "object"
+    }
+  },
+  {
+    "name": "machine.key.check",
+    "summary": "Sign in to an SSH machine with its key alone (no password): whether the machine takes it",
+    "risk": "outward",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "A machine (`wsl:<distro>`, `ssh:<host>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "IdInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.key.create",
+    "summary": "Make an SSH key in ~/.ssh (ED25519, or RSA 4096 for very old servers), with a passphrase if given",
+    "risk": "write-local",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Its file name in `~/.ssh`: letters, digits, `.`, `_`, `-`.",
+          "type": "string"
+        },
+        "passphrase": {
+          "description": "Encrypts the private key; ssh asks for it when the key is used.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "description": "`ed25519` (the default) or `rsa` (4096 bits, for very old servers).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "CreateKeyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "string",
+      "type": "string"
+    }
+  },
+  {
+    "name": "machine.key.delete",
+    "summary": "Delete an SSH key (to the Recycle Bin); the machines that signed in with it go back to ssh's own choice",
+    "risk": "destructive",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "A key's name in `~/.ssh`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "KeyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.key.list",
+    "summary": "Your SSH keys (the key pairs in ~/.ssh) and the SSH machines that sign in with each",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "KeyInfo": {
+          "properties": {
+            "comment": {
+              "type": "string"
+            },
+            "default": {
+              "description": "One ssh tries by itself (`id_ed25519`…).",
+              "type": "boolean"
+            },
+            "fingerprint": {
+              "description": "`SHA256:…`.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "`ED25519`, `RSA`, `ECDSA`…",
+              "type": "string"
+            },
+            "name": {
+              "description": "Its file name in `~/.ssh` (the public one adds `.pub`).",
+              "type": "string"
+            },
+            "passphrase": {
+              "description": "Whether it has a passphrase.",
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "publicKey": {
+              "description": "Its public line, to copy or put in `authorized_keys`.",
+              "type": "string"
+            },
+            "usedBy": {
+              "description": "The SSH machines that sign in with it.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "path",
+            "kind",
+            "fingerprint",
+            "comment",
+            "passphrase",
+            "publicKey",
+            "default",
+            "usedBy"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/KeyInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "Keys",
+      "type": "object"
+    }
+  },
+  {
+    "name": "machine.key.revoke",
+    "summary": "Take a key off an SSH machine (out of its ~/.ssh/authorized_keys); if it signed in with that key, ssh picks again",
+    "risk": "destructive",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "An SSH machine (`ssh:<host>`).",
+          "type": "string"
+        },
+        "key": {
+          "description": "A key's name in `~/.ssh`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key"
+      ],
+      "title": "MachineKeyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.key.use",
+    "summary": "Set the key an SSH machine signs in with (its IdentityFile in Gond's ssh config); none leaves it to ssh",
+    "risk": "write-local",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "An SSH machine (`ssh:<host>`).",
+          "type": "string"
+        },
+        "key": {
+          "description": "A key's name in `~/.ssh`; none leaves the choice to ssh.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "UseKeyInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
+    "name": "machine.list",
+    "summary": "The machines a terminal can run on besides this PC: each WSL distribution, the SSH machines you added, and the hosts in ~/.ssh/config not added yet",
+    "risk": "read",
+    "humanOnly": false,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Input for commands that take none. Unknown fields are rejected so typos show.",
+      "title": "NoInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Machine": {
+          "properties": {
+            "address": {
+              "description": "`user@host:port` for an SSH machine Gond's ssh config sets up.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "`wsl:<distro>` or `ssh:<host>`: a pane's `shell` to open there.",
+              "type": "string"
+            },
+            "key": {
+              "description": "The key an SSH machine signs in with (its `IdentityFile`): a key's name in `~/.ssh`,\nelse the file's name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "description": "`wsl` or `ssh`.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "configFile": {
+          "description": "Gond's ssh config, where the SSH machines are (`~/.ssh/gond/config`).",
+          "type": "string"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/Machine"
+          },
+          "type": "array"
+        },
+        "sshConfig": {
+          "description": "`Host`s in your ssh config (and the files it includes) not added yet.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "machines",
+        "sshConfig",
+        "configFile"
+      ],
+      "title": "Machines",
+      "type": "object"
+    }
+  },
+  {
+    "name": "machine.remove",
+    "summary": "Remove an SSH machine from Gond: its Host leaves Gond's ssh config (its terminals there are left running)",
+    "risk": "destructive",
+    "humanOnly": true,
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "A machine (`wsl:<distro>`, `ssh:<host>`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "IdInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "null",
+      "type": "null"
+    }
+  },
+  {
     "name": "pane.drop",
     "summary": "The text to type for files and folders dropped on a pane, as its shell writes a path; a file in the temp folder is copied somewhere lasting first",
     "risk": "write-local",
@@ -2429,6 +3116,13 @@
         "key": {
           "description": "The pane's id (`pty.open`'s `key`).",
           "type": "string"
+        },
+        "shell": {
+          "description": "The pane's shell: a machine's (`wsl:…`, `ssh:…`) is looked for there, connecting first.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2569,7 +3263,7 @@
           ]
         },
         "shell": {
-          "description": "A shell.list id (`pwsh`, `cmd`, `wsl:Ubuntu`…), so a pane keeps the shell it had; none\n(or one no longer on this PC) = the one picked in Settings → General.",
+          "description": "A shell.list id (`pwsh`, `cmd`, `wsl:Ubuntu`…), so a pane keeps the shell it had; none\n(or one no longer on this PC) = the one picked in Settings → General. A machine's id\n(`wsl:<distro>`, `ssh:<id>`) opens its user's shell in that machine's terminal host.",
           "type": [
             "string",
             "null"

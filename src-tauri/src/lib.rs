@@ -27,10 +27,13 @@ pub mod projects;
 pub mod pty;
 pub mod purge;
 pub mod releases;
+pub mod remote;
 pub mod settings;
 pub mod shells;
 pub mod sound;
 pub mod speech;
+pub mod sshconfig;
+pub mod sshkeys;
 pub mod store;
 pub mod tray;
 pub mod uninstall;
@@ -48,6 +51,11 @@ pub fn window_label() -> &'static str {
 /// `gond-code path|purge-data …`: the installer's helpers, answered without starting the app. `None` = start the
 /// app as usual.
 pub fn subcommand() -> Option<i32> {
+    // Run by ssh to ask you something (a passphrase, a password, a new host key): the
+    // question goes to the window, the answer back to ssh (`remote`).
+    if let Some(ep) = std::env::var_os(remote::ASKPASS_ENV) {
+        return Some(remote::askpass_main(&ep.to_string_lossy()));
+    }
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         // `gond-code path add|remove <dir>`: the installer's PATH edit.
@@ -145,6 +153,36 @@ pub fn run() {
                 registry: api::registry(),
                 services: api::Services::new(store.clone())?.with_runtime(ptys.clone()),
             };
+            // Other machines (WSL, SSH): their connections and ssh's questions show in the
+            // tree, at `/machines/<id>` and `/askpass/<id>`.
+            {
+                let state = api.services.state.clone();
+                let hub = remote::Hub::new(
+                    std::sync::Arc::new(commands::pty::EventSink(app.handle().clone())),
+                    Box::new(move |key: &str, v: serde_json::Value| {
+                        let cause = api::state::Cause::Runtime {
+                            runtime: "machines".into(),
+                        };
+                        let (root, id) = match key.strip_prefix("askpass:") {
+                            Some(id) => ("askpass", id.to_string()),
+                            None => ("machines", key.to_string()),
+                        };
+                        state.commit(cause, move |d| {
+                            if !d[root].is_object() {
+                                d[root] = serde_json::json!({});
+                            }
+                            if v.is_null() {
+                                if let Some(m) = d[root].as_object_mut() {
+                                    m.remove(&id);
+                                }
+                            } else {
+                                d[root][&id] = v;
+                            }
+                        });
+                    }),
+                );
+                ptys.set_remote(hub);
+            }
             // What accounts left behind (keys in Credential Manager, sign-in homes), once.
             std::thread::spawn(purge::forget_accounts);
             {

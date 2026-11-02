@@ -10,11 +10,15 @@ every agent by what it's doing.
   saved to `sessions.json` beside the database, so the app reopens as you left it.
 - **Agents.** The sidebar lists every agent pane in every session, grouped by status: **Needs
   you**, **Working**, **Done**, **Idle** (and Exited), with how long it has been in that status.
-  Gond reads the status from each terminal, as you would. Claude Code and Codex say it in the
-  title they set (a spinner while working, Claude's `✳` when it's done, Codex's "Action
-  Required"), and that comes first. Otherwise output still coming means working, and a question
-  on screen (its choices, `❯ 1. Yes`, "[y/n]", "Enter to confirm", at the bottom of the pane or
-  where the agent's cursor is) means it needs you. A question only in words ("Would you like
+  Gond reads the status from each terminal, as you would. Claude Code, Codex and MiniMax Code
+  say it in the title they set (a spinner while working, Claude's `✳` when it's done, Codex's
+  "Action Required", MiniMax's "Working" or "Needs approval"), and MiniMax Code and Devin report
+  it to the terminal as well (OSC 7501: working, blocked on you, idle); that comes first.
+  Otherwise output still coming means working, and a question on screen (its choices, `❯ 1. Yes`,
+  "[y/n]", "Enter to confirm", Kilo Code's "Permission required", Kimi Code's "Approve once";
+  for Claude Code and Codex at the bottom of the pane or where the agent's cursor is, for the
+  others anywhere on screen) means it needs you. Every pane says which terminal it is
+  (`TERM_PROGRAM=gond-code`), so an agent doesn't take it for the old Windows console. A question only in words ("Would you like
   to…"), or a choice in the conversation above Claude Code's waiting input box, is the agent's
   reply, not a prompt, and moving focus between panes or apps never changes a status. After its name,
   an agent with a plan has a usage icon, amber when a window is at 10% or less and red when one
@@ -28,8 +32,8 @@ every agent by what it's doing.
   the app (no audio files) and played by Windows directly, with no process per sound. Settings →
   General → Sounds turns them off.
 - **Panes.** Each pane is a terminal in your default shell. You start an agent by typing it
-  there (Claude Code, Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor, or
-  a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
+  there (Claude Code, Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot, Cursor,
+  Droid, Kimi Code, MiniMax Code, Hermes Agent, Kilo Code, Devin, Cline, or a custom agent); Gond sees it running and shows it on the pane and in the sidebar. Panes split right
   or down, resize, zoom, rename and restart. Drag a pane by its header onto another: the middle
   swaps the two, an edge puts it beside that pane on that side (Esc cancels). The right-click menu has Copy, Paste, Select all,
   Split right, Split down, Rename, Restart, Open folder, Zoom and Close.
@@ -55,6 +59,29 @@ every agent by what it's doing.
 - **No setup screen.** A new or empty session opens a terminal in the default shell from
   Settings, in the last folder you used (your home folder before any). Each terminal remembers
   its shell; closing a session's last terminal opens the same shell again.
+- **Machines.** A terminal can run on this PC, in a WSL distribution, or on another computer
+  over SSH. The switcher above Settings (Ctrl+Shift+M) picks where a session opens its
+  terminals; ＋ on a machine starts a new session there, and the command list has New terminal
+  on each machine. Each WSL distribution is listed by itself; SSH machines you add (Add SSH
+  machine: a `Host` from your ssh config, or user@host and a port), and the hosts in your ssh
+  config are offered. An SSH machine you add is a `Host` in Gond's own `~/.ssh/gond/config`,
+  which `~/.ssh/config` includes: `ssh <name>` reaches it from any terminal, it moves with your
+  `.ssh` folder, and removing it in Gond takes it out. Edit changes where it is (user, host,
+  port). SSH keys are there too: the keys in `~/.ssh`, which machines use each, and Create key
+  (ED25519, or RSA for very old servers; a passphrase if you want one). A machine that signed
+  in with a password says so, with Set up key: Gond puts the key in the machine's
+  `authorized_keys` over its connection, has it sign in with that key, and checks the key works
+  alone. A key can be taken off a machine again, or deleted (to the Recycle Bin). On WSL and SSH, Gond's terminal host runs over there
+  (`gond-remote`, copied to `~/.gond/bin/` once), so an agent there is found and watched like
+  one here (Working, Needs you, Done, its tag in the sidebar), its conversation resumes from
+  that machine's files, and its terminal keeps running when the connection drops, Gond quits
+  or the laptop sleeps. Dropped files are copied to an SSH machine first. A pane says which
+  machine it's on; while that machine is out of reach the pane says so and Gond reconnects by
+  itself, then picks the terminal back up as it is. SSH signs in as it does in a terminal (your
+  config, keys and ssh-agent); a passphrase, password or new host key it asks for comes up in
+  Gond and goes straight to ssh. Settings → Machines lists them: connect, disconnect (the
+  terminals keep running there), close everything there, remove. Setting a WSL distribution as
+  the default shell opens its terminals the same way.
 - **Agents outlive the app.** The terminals run in the terminal host, a background process, so
   quitting, Restart to update or a crash leaves each shell and the agent in it working. When
   Gond Code opens, every pane picks its terminal back up exactly as it is now, with its history
@@ -66,7 +93,9 @@ every agent by what it's doing.
   pane's saved layout. When the pane comes back without its terminal, its new shell starts in
   that folder and types the agent's resume command (`claude --resume <id>`, `codex resume <id>`,
   `agy --conversation <id>`, `grok --resume <id>`, `opencode --session <id>`,
-  `pi --session <id>`, `copilot --resume=<id>`, `cursor-agent --resume <id>`). An agent you quit
+  `pi --session <id>`, `copilot --resume=<id>`, `cursor-agent --resume <id>`,
+  `droid --resume <id>`, `kimi --session <id>`, `mcode --session <id>`, `hermes --resume <id>`,
+  `kilo --session <id>`, `devin --resume <id>`, `cline --id <id>`). An agent you quit
   yourself, a pane you restart, or an agent with no conversation yet isn't resumed. A custom
   agent's pane comes back as its shell, with its last screen, in the folder it was in.
 - **Terminals.** xterm.js on the WebGL renderer with full 24-bit colour; Rust runs the PTYs
@@ -98,8 +127,8 @@ every agent by what it's doing.
 - **A Windows app, never a web app:** Windows' own dark title bar, single instance, remembered
   window position, tray icon, native pickers. The browser dev mode is a developer tool and never
   ships.
-- **Local-first.** Agents run on your machine with your own CLIs and sign-ins. No Gond Code
-  server, no telemetry.
+- **Local-first.** Agents run on your machines (this PC, WSL, your own SSH machines) with your
+  own CLIs and sign-ins. No Gond Code server, no account, no telemetry, and no secret kept.
 - **Dark mode only**, near-black, one tint colour (docs/THEME.md).
 - **No stubs.** No greyed-out "Not available yet" items: a control is hidden until it works.
 

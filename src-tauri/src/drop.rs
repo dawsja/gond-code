@@ -58,6 +58,30 @@ fn prune(drops: &Path) {
     }
 }
 
+/// A Windows path as WSL sees it (`C:\code` → `/mnt/c/code`), unquoted.
+pub fn wsl_path(path: &Path) -> Option<String> {
+    let win = path.to_string_lossy().replace('/', "\\");
+    let mut chars = win.chars();
+    let drive = chars.next().filter(char::is_ascii_alphabetic)?;
+    if chars.next() != Some(':') {
+        return None;
+    }
+    Some(format!(
+        "/mnt/{}{}",
+        drive.to_ascii_lowercase(),
+        win[2..].replace('\\', "/")
+    ))
+}
+
+/// `s` as a POSIX shell takes it: quoted when it has to be.
+pub fn sh_quote(s: &str) -> String {
+    if s.chars().any(|c| " '\"$`\\!&()[]{};<>|*?#~".contains(c)) {
+        format!("'{}'", s.replace('\'', r"'\''"))
+    } else {
+        s.to_string()
+    }
+}
+
 /// `path` as `shell` writes it: `/c/…` in Git Bash, `/mnt/c/…` in WSL, the Windows path
 /// elsewhere; quoted when it has to be.
 pub fn spell(path: &Path, shell: Option<&str>) -> String {

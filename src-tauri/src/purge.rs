@@ -85,7 +85,7 @@ fn delete_credential(_: &str) -> bool {
 
 /// Removes what Gond's accounts left behind, now that agents use their own sign-ins: every
 /// `GondCode/` credential (account keys and tokens) and the sign-in homes under
-/// `%LOCALAPPDATA%\GondCodeccounts`. Run at startup; nothing to do once they're gone.
+/// `%LOCALAPPDATA%\GondCode\accounts`. Run at startup; nothing to do once they're gone.
 pub fn forget_accounts() {
     for name in credentials() {
         if name.starts_with(appdata::CREDENTIAL_PREFIX) {

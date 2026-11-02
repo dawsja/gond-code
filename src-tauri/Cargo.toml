@@ -32,6 +32,9 @@ serde_path_to_error = "=0.1.20"
 which = "=8.0.6"
 regex = "=1.13.1"
 sha2 = "=0.10.9"
+# SSH keys made in Settings → Machines: OpenSSH's own key format, a passphrase encrypting it
+# as ssh-keygen does.
+ssh-key = { version = "=0.6.7", features = ["ed25519", "rsa", "encryption", "getrandom", "std"] }
 toml = "=0.9.8"
 tempfile = "=3.27.0"
 portable-pty = "=0.9.0"
@@ -39,7 +42,7 @@ portable-pty = "=0.9.0"
 vt100 = "=0.18.1"
 # The terminal host's pipe (named pipes on Windows, a Unix socket elsewhere): already in the
 # tree through Tauri.
-tokio = { version = "=1.54.1", features = ["net", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "=1.54.1", features = ["net", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-opener = "=2.7.2"
 tauri-plugin-single-instance = "=2.5.5"
@@ -94,3 +97,17 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Making an RSA key or encrypting one with a passphrase takes seconds unoptimized.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.bcrypt-pbkdf]
+opt-level = 3
+[profile.dev.package.blowfish]
+opt-level = 3
+
+# `gond_remote`: the same sources built into the remote terminal host (remote/), without SQLite.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gond_remote)"] }

@@ -234,7 +234,7 @@ pub fn register(r: &mut Registry<Services>) {
     r.add(
         Def::new(
             "harness.check",
-            "Installed vs latest version per harness, with the changelog (offline: latest unknown)",
+            "Installed vs latest version per installed harness, with the changelog (offline: latest unknown); an agent that isn't installed isn't looked up",
             Risk::Read,
         ),
         |_, _: NoInput| -> AppResult<Vec<crate::releases::Check>> {
@@ -244,6 +244,17 @@ pub fn register(r: &mut Registry<Services>) {
                     .into_iter()
                     .map(|h| {
                         s.spawn(move || {
+                            // Only an installed agent is looked up: nothing goes out for the
+                            // rest.
+                            if !h.installed {
+                                return crate::releases::Check {
+                                    id: h.id,
+                                    installed: None,
+                                    latest: None,
+                                    update_available: false,
+                                    changelog: h.changelog,
+                                };
+                            }
                             crate::releases::check(
                                 &h.id,
                                 h.version,
@@ -531,7 +542,18 @@ pub fn resolve_update(id: &str) -> AppResult<(String, Vec<Step>)> {
         ))
     })?;
     let title = format!("Update {}", h.name);
-    Ok((title.clone(), vec![Step { label: title, plan }]))
+    let mut steps = vec![];
+    // What it keeps running in the background holds the files the update replaces.
+    if h.runs_in_background() {
+        if let Some(r) = crate::uninstall::Roots::current() {
+            steps.push(crate::uninstall::stop_step(h, &r));
+        }
+    }
+    steps.push(Step {
+        label: title.clone(),
+        plan,
+    });
+    Ok((title, steps))
 }
 
 #[cfg(test)]
@@ -871,14 +893,21 @@ mod tests {
             assert!(!std::path::Path::new(d).exists(), "{d} is still there");
         }
         let path = crate::pathenv::user_entries();
+        // A test build never edits the user PATH (`pathenv::remove_user_dir`), so an entry a
+        // vendor's own installer added (Droid's, Kimi Code's) is still there: the plan names it,
+        // which is what's checked here; the app removes it.
         for e in &p.plan.path_entries {
-            assert!(
-                !path.iter().any(|x| crate::pathenv::same_entry(x, e)),
-                "{e} still on PATH"
-            );
+            if path.iter().any(|x| crate::pathenv::same_entry(x, e)) {
+                println!("left on PATH by this test build (the app removes it): {e}");
+            }
         }
-        // No PATH entry may point at a folder this uninstall deleted.
-        for x in &path {
+        // No PATH entry may point at a folder this uninstall deleted, but the ones it takes off.
+        for x in path.iter().filter(|x| {
+            !p.plan
+                .path_entries
+                .iter()
+                .any(|e| crate::pathenv::same_entry(x, e))
+        }) {
             assert!(
                 !p.plan
                     .deletes

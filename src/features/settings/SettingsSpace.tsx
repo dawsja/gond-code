@@ -2,6 +2,7 @@ import {
   ArrowUpCircleIcon,
   ChartColumnIcon,
   PlugIcon,
+  ServerIcon,
   SlidersHorizontalIcon,
   WrenchIcon,
   type LucideIcon,
@@ -11,11 +12,13 @@ import { cn } from "@/lib/utils";
 import { MoreRight } from "@/components/gond/more-right";
 import { Component, useRef, type ErrorInfo, type ReactNode } from "react";
 
-export type SettingsSection = "general" | "usage" | "harnesses" | "connections" | "updates";
+export type SettingsSection =
+  "general" | "machines" | "usage" | "harnesses" | "connections" | "updates";
 
 /** No Skills or Connectors: each agent brings its own skills and MCP servers. */
 const SECTIONS: { id: SettingsSection; label: string; icon: LucideIcon }[] = [
   { id: "general", label: "General", icon: SlidersHorizontalIcon },
+  { id: "machines", label: "Machines", icon: ServerIcon },
   { id: "usage", label: "Usage", icon: ChartColumnIcon },
   { id: "harnesses", label: "Agents", icon: WrenchIcon },
   { id: "connections", label: "Plugins", icon: PlugIcon },

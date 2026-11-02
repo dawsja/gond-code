@@ -18,6 +18,9 @@ pub enum Latest {
     /// The vendor's install script, which names the version it installs
     /// (Cursor's: `$version = '2026.10.22-27dcf5f'`).
     Script(&'static str),
+    /// A plain-text file holding the latest version and nothing else (Droid's `LATEST`,
+    /// Kimi Code's `latest`).
+    Text(&'static str),
 }
 
 /// Per catalog harness. Grok Build publishes no GitHub releases and its changelog page
@@ -28,6 +31,17 @@ pub fn source(harness_id: &str) -> Option<Latest> {
         "codex" => Some(Latest::Npm("@openai/codex")),
         "agy" => Some(Latest::GitHub("google-antigravity/antigravity-cli")),
         "copilot" => Some(Latest::Npm("@github/copilot")),
+        "opencode" => Some(Latest::Npm("opencode-ai")),
+        "pi" => Some(Latest::Npm("@earendil-works/pi-coding-agent")),
+        "droid" => Some(Latest::Text(
+            "https://downloads.factory.ai/factory-cli/LATEST",
+        )),
+        "kimi" => Some(Latest::Text("https://code.kimi.ai/kimi-code/latest")),
+        "minimax" => Some(Latest::Npm("@minimax-ai/code")),
+        "hermes" => Some(Latest::GitHub("NousResearch/hermes-agent")),
+        "kilo" => Some(Latest::Npm("@kilocode/cli")),
+        "devin" => Some(Latest::Npm("devin")),
+        "cline" => Some(Latest::Npm("cline")),
         "cursor" => Some(Latest::Script("https://cursor.com/install?win32=true")),
         _ => None,
     }
@@ -38,7 +52,7 @@ impl Latest {
         match self {
             Latest::Npm(pkg) => format!("https://registry.npmjs.org/{pkg}/latest"),
             Latest::GitHub(repo) => format!("https://api.github.com/repos/{repo}/releases/latest"),
-            Latest::Script(url) => url.to_string(),
+            Latest::Script(url) | Latest::Text(url) => url.to_string(),
         }
     }
 
@@ -51,11 +65,14 @@ impl Latest {
             let v = line.split('\'').nth(1)?;
             return (!v.is_empty()).then(|| v.to_string());
         }
+        if let Latest::Text(_) = self {
+            return detect::parse_version(body.trim());
+        }
         let v: Value = serde_json::from_str(body).ok()?;
         let raw = match self {
             Latest::Npm(_) => v["version"].as_str()?,
             Latest::GitHub(_) => v["tag_name"].as_str()?,
-            Latest::Script(_) => return None,
+            Latest::Script(_) | Latest::Text(_) => return None,
         };
         detect::parse_version(&raw.replace(['-', '_'], " ").replacen("rust v", "", 1))
             .or_else(|| detect::parse_version(raw))
@@ -127,6 +144,24 @@ pub fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Droid's and Kimi Code's latest version: a plain-text file.
+    #[test]
+    fn parses_a_plain_text_version() {
+        let t = source("droid").unwrap();
+        assert_eq!(t.url(), "https://downloads.factory.ai/factory-cli/LATEST");
+        assert_eq!(
+            t.parse(
+                "1.1.0
+"
+            )
+            .as_deref(),
+            Some("1.1.0")
+        );
+        assert_eq!(t.parse("<html>nope</html>"), None);
+        // Devin's versions are big numbers, still newer by number.
+        assert!(newer("3000.11.234", "3000.11.99"));
+    }
 
     #[test]
     fn parses_npm_and_github_bodies() {

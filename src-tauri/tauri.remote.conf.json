@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": {
+      "remote/target/x86_64-unknown-linux-musl/release/gond-remote": "remote/x86_64/gond-remote",
+      "remote/target/aarch64-unknown-linux-musl/release/gond-remote": "remote/aarch64/gond-remote"
+    }
+  }
+}

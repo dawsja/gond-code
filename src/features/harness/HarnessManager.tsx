@@ -195,7 +195,8 @@ function HarnessCard({
 }) {
   const state = installs?.state(h.id);
   const note = useFreshNote(jobs, h.label);
-  const canUninstall = h.installed && status !== "self";
+  // Installed, or not but what it left is still here (an uninstall that stopped halfway).
+  const canUninstall = (h.installed || !!h.leftovers) && status !== "self";
   const uninstallWhy = n ? `Close its ${n === 1 ? "pane" : `${n} panes`} first` : undefined;
   const uninstallOff =
     !isRegistered("harness.uninstallPlan") || !!uninstallWhy || state?.kind === "uninstall";

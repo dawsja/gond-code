@@ -26,6 +26,7 @@ import {
 import { dictate } from "./Dictation";
 import { showKeys } from "./KeyHelp";
 import { showSearch } from "./scrollbackSearch";
+import { showSwitcher } from "@/features/machines/machines";
 import type { Shortcut } from "./Terminal";
 
 /** The folder you last opened a terminal in. */
@@ -99,12 +100,12 @@ export function useSessions({ projects }: { projects: Project[] }) {
 
   /** Changes session `id`'s panes (the one you're in when none is named). */
   const change = useCallback(
-    (f: (s: Layout) => Layout, id?: string) =>
+    (f: (s: Layout, session: Session) => Layout, id?: string) =>
       setSaved((v) => {
         const target = id ?? v.current ?? v.sessions[0]?.id;
         return {
           ...v,
-          sessions: v.sessions.map((g) => (g.id === target ? { ...g, layout: f(g.layout) } : g)),
+          sessions: v.sessions.map((g) => (g.id === target ? { ...g, layout: f(g.layout, g) } : g)),
         };
       }),
     [],
@@ -118,7 +119,8 @@ export function useSessions({ projects }: { projects: Project[] }) {
   };
 
   const selectSession = useCallback((id: string) => setSaved((v) => ({ ...v, current: id })), []);
-  const addSession = useCallback(() => {
+  /** A new session, on `machine` (none: this PC). */
+  const addSession = useCallback((machine?: string) => {
     const id = newId();
     setSaved((v) => {
       // The lowest number not in use: counting sessions repeats a name once one is closed.
@@ -126,12 +128,29 @@ export function useSessions({ projects }: { projects: Project[] }) {
       let n = 1;
       while (taken.has(`Session ${n}`)) n++;
       return {
-        sessions: [...v.sessions, { id, name: `Session ${n}`, layout: { root: null } }],
+        sessions: [
+          ...v.sessions,
+          { id, name: `Session ${n}`, layout: { root: null }, ...(machine ? { machine } : {}) },
+        ],
         current: id,
       };
     });
     setRenaming(id);
   }, []);
+  /** Where session `id`'s new terminals open: a machine, or none for this PC. */
+  const setMachine = useCallback(
+    (id: string, machine?: string) =>
+      setSaved((v) => ({
+        ...v,
+        sessions: v.sessions.map((g) => {
+          if (g.id !== id) return g;
+          const rest: Session = { ...g };
+          delete rest.machine;
+          return machine ? { ...rest, machine } : rest;
+        }),
+      })),
+    [],
+  );
   const renameSession = (id: string, name: string) => {
     setRenaming(undefined);
     if (name.trim())
@@ -181,18 +200,22 @@ export function useSessions({ projects }: { projects: Project[] }) {
    * down, in the same folder.
    */
   const openShell = useCallback(
-    (place: "right" | "down", at?: string) => {
+    /** `on`: a machine to open it on, `null` this PC; else the session's machine. */
+    (place: "right" | "down", at?: string, on?: string | null) => {
       const from = at ? paneOf(at) : undefined;
-      const session = from?.session ?? savedRef.current.current;
-      change((sp) => {
+      // The session as it is when the change lands (one just added included).
+      change((sp, g) => {
+        const machine = on === undefined ? g.machine : (on ?? undefined);
         const beside = from?.pane ?? (sp.focus ? find(sp.root, sp.focus) : undefined);
         const pane: Pane = {
           kind: "pane",
           id: newId(),
           projectId: beside?.projectId ?? folder ?? "",
+          // The session's machine, if it has one.
+          ...(machine ? { shell: machine } : {}),
         };
         return { root: split(sp.root, beside?.id, place, pane), focus: pane.id, zoom: undefined };
-      }, session);
+      }, from?.session);
     },
     [change, folder],
   );
@@ -203,8 +226,16 @@ export function useSessions({ projects }: { projects: Project[] }) {
    */
   const startShell = useCallback(
     (sessionId: string) => {
-      const pane: Pane = { kind: "pane", id: newId(), projectId: folder ?? "" };
-      change((sp) => (sp.root ? sp : { root: pane, focus: pane.id, zoom: undefined }), sessionId);
+      change((sp, g) => {
+        if (sp.root) return sp;
+        const pane: Pane = {
+          kind: "pane",
+          id: newId(),
+          projectId: folder ?? "",
+          ...(g.machine ? { shell: g.machine } : {}),
+        };
+        return { root: pane, focus: pane.id, zoom: undefined };
+      }, sessionId);
     },
     [change, folder],
   );
@@ -242,6 +273,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
       if (s === "dictate") return dictate();
       if (s === "keys") return showKeys();
       if (s === "search") return showSearch();
+      if (s === "machines") return showSwitcher();
       const at = paneOf(paneId);
       if (!at) return;
       if (s === "close") return close(paneId);
@@ -364,6 +396,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
     folder,
     selectSession,
     addSession,
+    setMachine,
     renameSession,
     removeSession,
     restarts,

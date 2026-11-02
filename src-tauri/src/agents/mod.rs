@@ -5,22 +5,15 @@ pub mod cwd;
 pub mod detect;
 pub mod resume;
 pub mod running;
+pub mod spec;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentKind {
-    Claude,
-    Codex,
-    Agy,
-    Grok,
-    Opencode,
-    Pi,
-    Copilot,
-    Cursor,
-    Custom,
-}
+/// What an agent is: a built-in one's id (its file in `agents/`), or `custom`.
+pub type AgentKind = String;
+
+/// `AgentInfo.kind` for a custom agent.
+pub const CUSTOM_KIND: &str = "custom";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +27,17 @@ pub struct AgentInfo {
     pub installed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// Not installed, but what it left is still here (its settings, a PATH entry, an
+    /// uninstall that stopped halfway): uninstalling clears it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub leftovers: bool,
+    /// Gond reads its plan usage (Settings → Usage).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plan: bool,
+    /// How its status shows in a pane: its title's reader, its prompts' words, where it asks,
+    /// its image-paste key (its file's `[status]`). None for a custom agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<spec::Status>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -77,17 +81,12 @@ impl PromptVia {
 /// AgentInfo.provider for a custom agent that didn't pick one.
 pub const CUSTOM_PROVIDER: &str = "custom";
 
-/// The agents Gond Code knows how to drive, as (id, kind, display name, command).
-pub const BUILT_IN: &[(&str, AgentKind, &str, &str)] = &[
-    ("claude", AgentKind::Claude, "Claude Code", "claude"),
-    ("codex", AgentKind::Codex, "Codex", "codex"),
-    ("agy", AgentKind::Agy, "Antigravity", "agy"),
-    ("grok", AgentKind::Grok, "Grok Build", "grok"),
-    ("opencode", AgentKind::Opencode, "opencode", "opencode"),
-    ("pi", AgentKind::Pi, "Pi", "pi"),
-    ("copilot", AgentKind::Copilot, "GitHub Copilot", "copilot"),
-    ("cursor", AgentKind::Cursor, "Cursor", "cursor-agent"),
-];
+/// The agents Gond knows, from their files in `agents/` (`spec`): (id, display name, command).
+pub fn built_in() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    spec::all()
+        .iter()
+        .map(|s| (s.id.as_str(), s.name.as_str(), s.command.as_str()))
+}
 
 /// One plan-usage window a harness reported: the 5-hour session, the week…
 #[derive(Debug, Clone, PartialEq, serde::Serialize, schemars::JsonSchema)]
@@ -158,7 +157,7 @@ pub fn save_custom(store: &Store, mut agent: CustomAgent) -> AppResult<CustomAge
             "a custom agent needs a name and a command".into(),
         ));
     }
-    if BUILT_IN.iter().any(|(id, ..)| *id == agent.id) {
+    if built_in().any(|(id, ..)| id == agent.id) {
         return Err(AppError::Invalid(format!(
             "{} is a built-in agent",
             agent.id
@@ -214,8 +213,8 @@ mod tests {
         let infos = detect(&list_custom(&store).unwrap());
         let info = infos.iter().find(|a| a.id == saved.id).unwrap();
         assert_eq!(
-            (info.kind, info.provider.as_str()),
-            (AgentKind::Custom, CUSTOM_PROVIDER)
+            (info.kind.as_str(), info.provider.as_str()),
+            (CUSTOM_KIND, CUSTOM_PROVIDER)
         );
 
         // A provider round-trips (normalised) and reaches AgentInfo.
@@ -273,12 +272,15 @@ mod tests {
     fn dto_json_shape() {
         let info = AgentInfo {
             id: "codex".into(),
-            kind: AgentKind::Codex,
+            kind: "codex".into(),
             provider: "codex".into(),
             name: "Codex".into(),
             command: "codex".into(),
             installed: false,
             version: None,
+            leftovers: false,
+            plan: false,
+            status: None,
         };
         assert_eq!(
             serde_json::to_value(&info).unwrap(),

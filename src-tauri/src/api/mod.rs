@@ -8,6 +8,7 @@ pub mod git;
 pub mod github;
 pub mod harness;
 pub mod layout;
+pub mod machines;
 pub mod projects;
 pub mod pty;
 pub mod registry;
@@ -110,6 +111,7 @@ pub fn registry() -> Registry<Services> {
     speech::register(&mut r);
     usage::register(&mut r);
     layout::register(&mut r);
+    machines::register(&mut r);
     crate::updater::register(&mut r);
     r
 }

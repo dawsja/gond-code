@@ -11,25 +11,8 @@ use serde::Serialize;
 use crate::harness::{Harness, Plan, Source};
 use crate::install::Step;
 
-/// The user's folders an uninstall works under.
-#[derive(Debug, Clone)]
-pub struct Roots {
-    pub home: PathBuf,
-    /// `%LOCALAPPDATA%`
-    pub local: PathBuf,
-    /// `%APPDATA%`
-    pub roaming: PathBuf,
-}
-
-impl Roots {
-    pub fn current() -> Option<Self> {
-        Some(Roots {
-            home: dirs::home_dir()?,
-            local: dirs::data_local_dir()?,
-            roaming: dirs::data_dir()?,
-        })
-    }
-}
+/// The user's folders an uninstall works under: the ones an agent's file starts its paths from.
+pub use crate::agents::spec::Roots;
 
 /// What a harness's vendor installer leaves, and its settings.
 struct Footprint {
@@ -43,103 +26,42 @@ struct Footprint {
     config: Vec<PathBuf>,
 }
 
+/// What agent `id`'s file says its installs leave (`[uninstall]`).
 fn footprint(id: &str, r: &Roots) -> Footprint {
-    let (h, l) = (&r.home, &r.local);
-    match id {
-        // ~\.local\bin\claude.exe, its versions and lock state; ~\.local\bin is shared.
-        "claude" => Footprint {
-            install: vec![
-                h.join(".local").join("bin").join("claude.exe"),
-                h.join(".local").join("share").join("claude"),
-                h.join(".local").join("state").join("claude"),
-            ],
-            path: vec![],
-            shared_path: Some(h.join(".local").join("bin")),
-            config: vec![h.join(".claude"), h.join(".claude.json")],
-        },
-        // %LOCALAPPDATA%\Programs\OpenAI\Codex plus its package store in ~\.codex.
-        "codex" => Footprint {
-            install: vec![
-                l.join("Programs").join("OpenAI").join("Codex"),
-                h.join(".codex").join("packages"),
-                h.join(".codex").join("tmp"),
-            ],
-            path: vec![l.join("Programs").join("OpenAI").join("Codex").join("bin")],
-            shared_path: None,
-            config: vec![h.join(".codex")],
-        },
-        // %LOCALAPPDATA%\agy (bin inside); settings in ~\.gemini\antigravity-cli only.
-        "agy" => Footprint {
-            install: vec![l.join("agy")],
-            path: vec![l.join("agy").join("bin")],
-            shared_path: None,
-            config: vec![h.join(".gemini").join("antigravity-cli")],
-        },
-        // ~\.grok\{bin,completions,docs,downloads} and its bundled Git; the rest of
-        // ~\.grok is settings and sessions.
-        "grok" => Footprint {
-            install: vec![
-                h.join(".grok").join("bin"),
-                h.join(".grok").join("completions"),
-                h.join(".grok").join("docs"),
-                h.join(".grok").join("downloads"),
-                l.join("grok"),
-            ],
-            path: vec![h.join(".grok").join("bin")],
-            shared_path: None,
-            config: vec![h.join(".grok")],
-        },
-        // winget's SST.opencode or the opencode-ai package remove the program themselves;
-        // its settings, sign-ins and sessions live in ~\.config, ~\.local\share and the cache.
-        "opencode" => Footprint {
-            install: vec![],
-            path: vec![],
-            shared_path: None,
-            config: vec![
-                h.join(".config").join("opencode"),
-                h.join(".local").join("share").join("opencode"),
-                h.join(".local").join("state").join("opencode"),
-                h.join(".cache").join("opencode"),
-            ],
-        },
-        // Pi installs through Bun (removed by Bun); its settings, sign-ins and sessions are
-        // ~\.pi\agent.
-        "pi" => Footprint {
-            install: vec![],
-            path: vec![],
-            shared_path: None,
-            config: vec![h.join(".pi").join("agent")],
-        },
-        // winget's GitHub.Copilot or the @github/copilot package remove the program
-        // themselves; its settings, sessions and downloaded updates are ~\.copilot.
-        "copilot" => Footprint {
-            install: vec![],
-            path: vec![],
-            shared_path: None,
-            config: vec![h.join(".copilot")],
-        },
-        // %LOCALAPPDATA%\cursor-agent (its versions and launchers) and Node's compile cache
-        // for it. ~\.cursor and %APPDATA%\Cursor are shared with the Cursor editor, so only
-        // the CLI's own files there go.
-        "cursor" => Footprint {
-            install: vec![l.join("cursor-agent"), l.join("cursor-compile-cache")],
-            path: vec![l.join("cursor-agent")],
-            shared_path: None,
-            config: vec![
-                h.join(".cursor").join("cli-config.json"),
-                h.join(".cursor").join("agent-cli-state.json"),
-                h.join(".cursor").join("statsig-cache.json"),
-                h.join(".cursor").join("chats"),
-                r.roaming.join("Cursor").join("auth.json"),
-            ],
-        },
-        _ => Footprint {
+    let Some(s) = crate::agents::spec::get(id) else {
+        return Footprint {
             install: vec![],
             path: vec![],
             shared_path: None,
             config: vec![],
-        },
+        };
+    };
+    let paths = |v: &[String]| -> Vec<PathBuf> {
+        v.iter()
+            .filter_map(|p| crate::agents::spec::expand(p, r))
+            .collect()
+    };
+    let u = &s.uninstall;
+    Footprint {
+        install: paths(&u.program),
+        path: paths(&u.path),
+        shared_path: u
+            .shared_path
+            .as_deref()
+            .and_then(|p| crate::agents::spec::expand(p, r)),
+        config: paths(&u.settings),
     }
+}
+
+/// Whether harness `id`, not installed, left something an uninstall would clear: its settings,
+/// a PATH entry, the rest of an uninstall that stopped halfway (a file in use).
+pub fn leftovers(id: &str) -> bool {
+    let (Some(h), Some(r)) = (crate::harness::get(id), Roots::current()) else {
+        return false;
+    };
+    !plan(h, &r, &crate::pathenv::user_entries(), true)
+        .steps
+        .is_empty()
 }
 
 /// What an uninstall will do, for the confirm card (`harness.uninstallPlan`).
@@ -223,6 +145,12 @@ pub fn plan(
                 deletes.push(npm.join(shim));
             }
             deletes.push(pkg_dir(npm.join("node_modules")));
+            for p in h.platform_packages() {
+                deletes.push(
+                    p.split('/')
+                        .fold(npm.join("node_modules"), |d, part| d.join(part)),
+                );
+            }
         }
         let bun = r.home.join(".bun");
         if exists(&bun.join("bin").join(format!("{cmd}.exe"))) {
@@ -232,6 +160,13 @@ pub fn plan(
             deletes.push(pkg_dir(
                 bun.join("install").join("global").join("node_modules"),
             ));
+            // Its native program, which Bun keeps beside it, not inside.
+            for p in h.platform_packages() {
+                deletes.push(p.split('/').fold(
+                    bun.join("install").join("global").join("node_modules"),
+                    |d, part| d.join(part),
+                ));
+            }
         }
     }
     // The vendor's installer.
@@ -276,6 +211,11 @@ pub fn plan(
         }
     }
 
+    // A program it keeps running in the background (Cline's hub) holds its files: stopped
+    // first.
+    if h.runs_in_background() && (!methods.is_empty() || !deletes.is_empty()) {
+        steps.insert(0, stop_step(h, r));
+    }
     if !deletes.is_empty() {
         steps.push(Step {
             label: format!("Remove {}'s files", h.name),
@@ -295,6 +235,37 @@ pub fn plan(
         deletes: deletes.iter().map(|p| show(p)).collect(),
         path_entries: entries.iter().map(|p| show(p)).collect(),
         keep_data: !remove_everything,
+    }
+}
+
+/// The step that stops what agent `h` runs in the background: its program running from
+/// where npm or Bun keep its native program.
+pub fn stop_step(h: &Harness, r: &Roots) -> Step {
+    let roots = [
+        r.roaming.join("npm").join("node_modules"),
+        r.home
+            .join(".bun")
+            .join("install")
+            .join("global")
+            .join("node_modules"),
+    ];
+    let exe = h
+        .background_program()
+        .map(String::from)
+        .unwrap_or_else(|| format!("{}.exe", h.command));
+    let mut args = vec![exe];
+    for root in &roots {
+        for p in h.platform_packages() {
+            args.push(show(
+                &p.split('/').fold(root.clone(), |d, part| d.join(part)),
+            ));
+        }
+    }
+    // Its vendor install's own folders (Hermes' Python is in %LOCALAPPDATA%\hermes\tools).
+    args.extend(footprint(h.id, r).install.iter().map(|p| show(p)));
+    Step {
+        label: format!("Stop {} in the background", h.name),
+        plan: gond("stop", args),
     }
 }
 
@@ -518,6 +489,91 @@ mod tests {
             !p.deletes.iter().any(|d| d.ends_with(".codex")),
             "settings stay"
         );
+    }
+
+    /// A Bun install of an agent with a native program: its platform package goes too, and
+    /// Cline's background hub is stopped first.
+    #[test]
+    fn cline_from_bun_goes_with_its_program_and_its_hub_stops_first() {
+        let t = tempfile::tempdir().unwrap();
+        let r = roots(t.path());
+        let g = r
+            .home
+            .join(".bun")
+            .join("install")
+            .join("global")
+            .join("node_modules");
+        touch(&r.home.join(".bun").join("bin").join("cline.exe"));
+        touch(&g.join("cline").join("package.json"));
+        touch(
+            &g.join("@cline")
+                .join("cli-windows-x64")
+                .join("bin")
+                .join("cline.exe"),
+        );
+        touch(
+            &r.home
+                .join(".cline")
+                .join("data")
+                .join("settings")
+                .join("providers.json"),
+        );
+        let p = plan(crate::harness::get("cline").unwrap(), &r, &[], false);
+        assert_eq!(p.methods, ["bun"]);
+        assert_eq!(p.steps[0].plan.program, "stop");
+        assert_eq!(p.steps[0].plan.args[0], "cline.exe");
+        let gone = |p: &UninstallPlan, at: &Path| p.deletes.contains(&show(at));
+        assert!(gone(&p, &g.join("@cline").join("cli-windows-x64")));
+        assert!(gone(&p, &g.join("cline")));
+        assert!(gone(&p, &r.home.join(".bun").join("bin").join("cline.exe")));
+        // Its sign-ins stay unless everything goes.
+        assert!(!gone(&p, &r.home.join(".cline")));
+        let all = plan(crate::harness::get("cline").unwrap(), &r, &[], true);
+        assert!(gone(&all, &r.home.join(".cline")));
+    }
+
+    /// Droid's script shares ~\bin: its program goes, and the folder leaves PATH only
+    /// when nothing else is in it.
+    #[test]
+    fn droid_takes_only_its_program_out_of_the_shared_bin() {
+        let t = tempfile::tempdir().unwrap();
+        let r = roots(t.path());
+        let bin = r.home.join("bin");
+        touch(&bin.join("droid.exe"));
+        touch(&bin.join("other-tool.exe"));
+        let path = vec![show(&bin)];
+        let p = plan(crate::harness::get("droid").unwrap(), &r, &path, false);
+        assert_eq!(p.methods, ["vendor"]);
+        assert_eq!(p.deletes, [show(&bin.join("droid.exe"))]);
+        assert!(p.path_entries.is_empty());
+        std::fs::remove_file(bin.join("other-tool.exe")).unwrap();
+        let p = plan(crate::harness::get("droid").unwrap(), &r, &path, false);
+        assert_eq!(p.path_entries, [show(&bin)]);
+    }
+
+    /// Hermes' gateway (its own Python, running by itself) holds its folder: stopped first,
+    /// even when only its settings are left to remove.
+    #[test]
+    fn hermes_gateway_stops_before_its_folder_goes() {
+        let t = tempfile::tempdir().unwrap();
+        let r = roots(t.path());
+        let home = r.local.join("hermes");
+        touch(&home.join("state.db"));
+        touch(&home.join("tools").join("python-3.14").join("python.exe"));
+        let p = plan(crate::harness::get("hermes").unwrap(), &r, &[], true);
+        assert_eq!(p.steps[0].plan.program, "stop");
+        assert_eq!(p.steps[0].plan.args[0], "python.exe");
+        assert!(p.steps[0].plan.args.contains(&show(&home.join("tools"))));
+        assert!(p.deletes.contains(&show(&home)));
+        // Nothing of it there: no steps at all.
+        let empty = tempfile::tempdir().unwrap();
+        let none = plan(
+            crate::harness::get("hermes").unwrap(),
+            &roots(empty.path()),
+            &[],
+            true,
+        );
+        assert!(none.steps.is_empty());
     }
 
     #[test]

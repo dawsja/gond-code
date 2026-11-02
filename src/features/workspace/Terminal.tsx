@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { RefreshCwIcon, UnplugIcon } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -11,13 +12,25 @@ import { on, openExternal } from "@/lib/ipc";
 import { onBeforeRestart } from "@/lib/restart";
 import { fontStack, loadTerminalFont, onTerminalFont, terminalFont } from "@/lib/terminalFont";
 import { errorText } from "@/lib/types";
+import type { Link } from "@/features/machines/machines";
+import { cn } from "@/lib/utils";
+import { statusSpec } from "@/lib/agentStatus";
 import { imagePasteKey } from "./imagePaste";
 import { setPaneAgent } from "./paneAgent";
 import { fileLinks } from "./fileLinks";
 import { paneFolder, setPaneFolder } from "./paneFolder";
 import { searchLines, type Hit, type Line } from "./scrollbackSearch";
 import { promptFolder } from "./prompt";
-import { asks, atInput, fromTitle, setStatus, typed, type Status } from "./status";
+import {
+  asks,
+  atInput,
+  fromProgram,
+  fromTitle,
+  setStatus,
+  typed,
+  type Signal,
+  type Status,
+} from "./status";
 
 /**
  * Colours in the spirit of Alacritty and Ghostty: a true black ground, soft but saturated ANSI colours in
@@ -49,7 +62,8 @@ const THEME: ITheme = {
 };
 
 /** What a pane's keys and menu ask of the layout around it. */
-export type Shortcut = "new" | "right" | "down" | "zoom" | "close" | "dictate" | "keys" | "search";
+export type Shortcut =
+  "new" | "right" | "down" | "zoom" | "close" | "dictate" | "keys" | "search" | "machines";
 
 /** A running terminal's actions, for its right-click menu. */
 export type Handle = {
@@ -81,6 +95,7 @@ const shortcut = (e: KeyboardEvent): Shortcut | undefined => {
   if (k === "w") return "close";
   if (k === "p") return "keys";
   if (k === "f") return "search";
+  if (k === "m") return "machines";
 };
 
 /** The terminal's lines as text, wrapped lines joined back into one, each with its first row. */
@@ -128,6 +143,12 @@ type Props = {
   active: boolean;
   onFocus: () => void;
   onShortcut: (s: Shortcut) => void;
+  /** The machine the pane's terminal runs on (`wsl:…`, `ssh:…`), if not this PC. */
+  machine?: string;
+  /** That machine's connection: while it's down the pane says so, and when it comes back up
+   *  the pane picks its terminal back up as it is there. */
+  link?: Link;
+  machineName?: string;
 };
 
 /**
@@ -144,13 +165,31 @@ export function Terminal({
   active,
   onFocus,
   onShortcut,
+  machine,
+  link,
+  machineName,
 }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const term = useRef<XTerm>(null);
-  const live = useRef({ open, onShortcut, onFocus, active, fresh, resume, onAgentRun });
+  const live = useRef({ open, onShortcut, onFocus, active, fresh, resume, onAgentRun, machine });
   useEffect(() => {
-    live.current = { open, onShortcut, onFocus, active, fresh, resume, onAgentRun };
+    live.current = { open, onShortcut, onFocus, active, fresh, resume, onAgentRun, machine };
   });
+  // Picks the terminal back up (its machine came back), and the connection it last saw.
+  const again = useRef<(() => void) | undefined>(undefined);
+  const seenUp = useRef<number | undefined>(undefined);
+  const starting = useRef(false);
+  const upNow = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    upNow.current = link?.up;
+  });
+  useEffect(() => {
+    const up = link?.up;
+    if (up === undefined || starting.current || !again.current) return;
+    if (seenUp.current !== undefined && up !== seenUp.current && link?.state === "up")
+      again.current();
+    seenUp.current = up;
+  }, [link?.up, link?.state]);
 
   useEffect(() => {
     const el = box.current!;
@@ -309,6 +348,12 @@ export function Terminal({
     // The title the agent last set (Claude Code's and Codex's say what they're doing).
     let title = "";
     t.onTitleChange((s) => (title = s));
+    // What MiniMax Code and Devin report of themselves on OSC 7501: working, blocked on you, idle.
+    let program: Signal | undefined;
+    t.parser.registerOscHandler(7501, (data) => {
+      program = fromProgram(data);
+      return true;
+    });
 
     // Before a restart into an update, a shell keeps its screen (colours and scrollback) and the
     // folder its prompt shows, to come back as it was. One running an agent comes back as its
@@ -336,8 +381,9 @@ export function Terminal({
           agent = next;
           setPaneAgent(paneId, agent);
           busySince = 0;
-          // A title from before is the shell's or the last agent's.
+          // A title (or report) from before is the shell's or the last agent's.
           title = "";
+          program = undefined;
           set("idle");
           if (agent) agentSince = attached && !had ? 0 : Date.now();
           // It started (keep how to resume it) or ended (nothing to resume).
@@ -366,12 +412,19 @@ export function Terminal({
         return;
       }
       const now = Date.now();
-      // What the agent's title says comes first: it's the agent's own word.
-      const said = fromTitle(agent, title);
+      // How this agent shows its status (its file's `[status]` in agents/).
+      const how = statusSpec(agent);
+      // What the agent reports, or its title says, comes first: it's the agent's own word.
+      const said = program ?? fromTitle(how.title, title);
       // A question on screen is the agent waiting for you, even while it redraws (Codex's
       // folder-trust prompt animates); not while its title says it's working, nor while
-      // Claude Code's input box is waiting for you.
-      if (said === "needs" || (said !== "working" && asks(screen()) && !atInput(visible()))) {
+      // Claude Code's input box is waiting for you (another agent draws its prompt between
+      // rules too: Kimi Code's "Trust this folder?"). An agent asks at the bottom or at the
+      // cursor (`scan = "bottom"`: Claude Code, Codex) or anywhere on screen (Kimi Code's at
+      // the top).
+      const waiting = how.title === "claude" && atInput(visible());
+      const shown = how.scan === "bottom" ? screen() : visible().join("\n");
+      if (said === "needs" || (said !== "working" && asks(shown, how.prompts) && !waiting)) {
         busySince = 0;
         return set("needs");
       }
@@ -468,12 +521,35 @@ export function Terminal({
         if (typed(data) && (state === "done" || state === "needs")) set("idle");
         if (ptyId) callOrRun("pty_write", "pty.write", { ptyId, data }).catch(() => undefined);
       });
+      await begin(false);
+    });
+
+    /** Finds the pane's terminal (else starts one); `once`: the first time, else its machine came
+     *  back and the screen is redrawn from what its host there kept. */
+    const begin = async (retry: boolean) => {
+      starting.current = true;
+      if (retry) {
+        t.reset();
+        drawn = 0;
+        early.length = 0;
+        ptyId = null;
+        attached = false;
+        state = "idle";
+      }
+      const machine = live.current.machine;
       try {
         // The pane's terminal may still be running in the terminal host: Gond Code restarted,
-        // updated or crashed while its shell (and the agent in it) carried on.
+        // updated or crashed while its shell (and the agent in it) carried on. On another
+        // machine it's looked for there; that machine out of reach isn't "no terminal".
         const found =
-          !live.current.fresh && liveBackend() && isRegistered("pty.attach")
-            ? await runCommand<Attached | null>("pty.attach", { key: paneId }).catch(() => null)
+          (retry || !live.current.fresh) && liveBackend() && isRegistered("pty.attach")
+            ? await runCommand<Attached | null>("pty.attach", {
+                key: paneId,
+                ...(machine ? { shell: machine } : {}),
+              }).catch((e) => {
+                if (machine) throw e;
+                return null;
+              })
             : null;
         if (disposed) return;
         if (found) {
@@ -548,11 +624,16 @@ export function Terminal({
       } catch (e) {
         t.write(`\x1b[31mCouldn't start: ${errorText(e)}\x1b[0m\r\n`);
         set("exited");
+      } finally {
+        starting.current = false;
+        seenUp.current = upNow.current;
       }
-    });
+    };
+    again.current = () => void begin(true);
 
     return () => {
       disposed = true;
+      again.current = undefined;
       window.clearTimeout(pendingCue);
       el.removeEventListener("mousedown", ownRightClick, true);
       el.removeEventListener("mouseup", ownRightClick, true);
@@ -577,13 +658,71 @@ export function Terminal({
 
   // The padding sits outside the box xterm fits to: its fit reads the box's height and width,
   // which would include padding and size the terminal a row and a few columns too big.
+  const away = machine && link && link.state !== "up" ? link : undefined;
   return (
     <div
       data-selectable
       onMouseDown={() => live.current.onFocus()}
-      className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-black py-1.5 pl-3"
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-black py-1.5 pl-3"
     >
       <div ref={box} className="min-h-0 min-w-0 flex-1 overflow-hidden" />
+      {away && <Away link={away} name={machineName ?? away.name} />}
+    </div>
+  );
+}
+
+/**
+ * Over a pane whose machine is out of reach (or on its way): what's happening there. Its
+ * terminal keeps running on that machine; the pane picks it back up when it's reached.
+ */
+function Away({ link, name }: { link: Link; name: string }) {
+  const connecting = link.state === "connecting";
+  const reconnect = () =>
+    void runCommand("machine.connect", { id: link.id }).catch(() => undefined);
+  return (
+    <div
+      data-slot="machine-away"
+      className={cn(
+        "absolute inset-0 z-10 grid place-items-center",
+        connecting ? "bg-black/70" : "bg-black/60",
+      )}
+    >
+      <div className="flex w-[min(400px,90%)] flex-col gap-2.5 rounded-2xl border border-edge bg-card p-4 shadow-[0_18px_50px_rgba(0,0,0,.6)]">
+        <p className="flex items-center gap-2.5 text-sm font-medium">
+          {connecting ? (
+            <RefreshCwIcon className="size-4 animate-spin text-tint-ink" />
+          ) : (
+            <UnplugIcon className="size-4 text-tone-warn" />
+          )}
+          {connecting
+            ? `Connecting to ${name}`
+            : link.state === "off"
+              ? `Disconnected from ${name}`
+              : `Lost ${name}`}
+        </p>
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          {connecting
+            ? (link.step ?? "Connecting")
+            : `${link.error ? `${link.error}. ` : ""}This terminal keeps running there; it comes back as it is when ${name} is reached.`}
+        </p>
+        {!connecting && (
+          <div className="flex items-center gap-3">
+            <span className="flex-1 text-[12px] text-faint">
+              {link.retrying ? "Trying again by itself" : ""}
+            </span>
+            <button
+              type="button"
+              data-local="machine.reconnect"
+              data-arg={link.id}
+              onClick={reconnect}
+              className="flex h-8 items-center gap-1.5 rounded-full border border-edge px-3.5 text-[13px] font-medium outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-tint"
+            >
+              <RefreshCwIcon className="size-3.5" />{" "}
+              {link.state === "off" ? "Connect" : "Reconnect now"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

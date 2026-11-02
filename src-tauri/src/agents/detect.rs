@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use super::{AgentInfo, AgentKind, CustomAgent, BUILT_IN, CUSTOM_PROVIDER};
+use super::{AgentInfo, CustomAgent, CUSTOM_KIND, CUSTOM_PROVIDER};
 
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -24,20 +24,25 @@ fn version_timeout() -> Duration {
 /// Built-ins first (with versions), then custom agents, all probed in parallel.
 pub fn detect_all(path_var: Option<OsString>, customs: &[CustomAgent]) -> Vec<AgentInfo> {
     std::thread::scope(|s| {
-        let built_in: Vec<_> = BUILT_IN
+        let built_in: Vec<_> = super::spec::all()
             .iter()
-            .map(|&(id, kind, name, command)| {
+            .map(|spec| {
+                let (id, name, command) =
+                    (spec.id.as_str(), spec.name.as_str(), spec.command.as_str());
                 let path_var = path_var.clone();
                 s.spawn(move || {
                     let found = find(command, path_var);
                     AgentInfo {
                         id: id.into(),
-                        kind,
-                        provider: provider(id).into(),
+                        kind: id.into(),
+                        provider: spec.icon.clone(),
                         name: name.into(),
                         command: command.into(),
                         installed: found.is_some(),
-                        version: found.as_deref().and_then(version),
+                        version: found.as_deref().and_then(|b| version_of(id, b)),
+                        leftovers: found.is_none() && crate::uninstall::leftovers(id),
+                        plan: spec.usage.is_some(),
+                        status: Some(spec.status.clone()),
                     }
                 })
             })
@@ -45,23 +50,18 @@ pub fn detect_all(path_var: Option<OsString>, customs: &[CustomAgent]) -> Vec<Ag
         let mut out: Vec<AgentInfo> = built_in.into_iter().map(|h| h.join().unwrap()).collect();
         out.extend(customs.iter().map(|c| AgentInfo {
             id: c.id.clone(),
-            kind: AgentKind::Custom,
+            kind: CUSTOM_KIND.into(),
             provider: c.provider.clone().unwrap_or_else(|| CUSTOM_PROVIDER.into()),
             name: c.name.clone(),
             command: c.command.clone(),
             installed: find(&c.command, path_var.clone()).is_some(),
             version: None,
+            leftovers: false,
+            plan: false,
+            status: None,
         }));
         out
     })
-}
-
-/// A built-in's brand icon key: its id, except agy, which wears Antigravity's mark.
-fn provider(id: &str) -> &str {
-    match id {
-        "agy" => "antigravity",
-        other => other,
-    }
 }
 
 /// Resolves `command` the way a shell would: a path as given, else a lookup on
@@ -128,20 +128,26 @@ pub fn install_dirs_under(home: &Path, local: &Path, roaming: &Path) -> Vec<Path
         winget.join("Links"),
         roaming.join("npm"),
         home.join(".bun").join("bin"),
-        home.join(".local").join("bin"),
-        local
-            .join("Programs")
-            .join("OpenAI")
-            .join("Codex")
-            .join("bin"),
-        local.join("agy").join("bin"),
         // Without winget: Git's per-user install, and the unpacked GitHub CLI and Node.
         local.join("Programs").join("Git").join("cmd"),
         local.join("Programs").join("gh").join("bin"),
         local.join("Programs").join("nodejs"),
-        home.join(".grok").join("bin"),
-        local.join("cursor-agent"),
     ];
+    // Where each agent's own installers put it (its file's `detect.dirs`).
+    let roots = super::spec::Roots {
+        home: home.to_path_buf(),
+        local: local.to_path_buf(),
+        roaming: roaming.to_path_buf(),
+    };
+    for s in super::spec::all() {
+        out.extend(
+            s.detect
+                .dirs
+                .iter()
+                .filter_map(|d| super::spec::expand(d, &roots)),
+        );
+    }
+
     if let Ok(entries) = std::fs::read_dir(winget.join("Packages")) {
         let mut packages: Vec<PathBuf> = entries
             .filter_map(Result::ok)
@@ -149,9 +155,62 @@ pub fn install_dirs_under(home: &Path, local: &Path, roaming: &Path) -> Vec<Path
             .filter(|p| p.is_dir())
             .collect();
         packages.sort();
+        // A portable package may keep its program in a `bin` folder (Devin's), linked from
+        // nowhere when winget put that folder on PATH instead.
+        let bins: Vec<PathBuf> = packages
+            .iter()
+            .map(|p| p.join("bin"))
+            .filter(|b| b.is_dir())
+            .collect();
         out.extend(packages);
+        out.extend(bins);
     }
     out
+}
+
+/// Agent `id`'s version: what its install wrote down, else what `<bin> --version` says. Some
+/// take seconds to answer (Cline's launcher starts its runtime first: 8 s on Windows).
+pub fn version_of(id: &str, bin: &Path) -> Option<String> {
+    written_version(id, bin).or_else(|| version(bin))
+}
+
+/// The version an install wrote down: a Bun or npm package's `package.json`, Hermes' install
+/// stamp.
+fn written_version(id: &str, bin: &Path) -> Option<String> {
+    let p = bin.to_string_lossy().replace('\\', "/").to_lowercase();
+    let read = |f: PathBuf, key: &str| -> Option<String> {
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(f).ok()?).ok()?;
+        v[key].as_str().and_then(parse_version)
+    };
+    // A file its install writes its version in (its file's `detect.version_file`), from the
+    // program's folder: Hermes' install stamp.
+    if let Some(f) = super::spec::get(id).and_then(|s| s.detect.version_file.as_ref()) {
+        let at = f
+            .path
+            .split('/')
+            .fold(bin.parent()?.to_path_buf(), |d, part| match part {
+                ".." => d.parent().map(Path::to_path_buf).unwrap_or(d),
+                p => d.join(p),
+            });
+        return read(at, &f.key);
+    }
+    let pkg = crate::harness::get(id)?.bun_package_name()?;
+    let modules = if p.contains("/.bun/bin/") {
+        bin.parent()?
+            .parent()?
+            .join("install")
+            .join("global")
+            .join("node_modules")
+    } else if p.contains("/appdata/roaming/npm/") {
+        bin.parent()?.join("node_modules")
+    } else {
+        return None;
+    };
+    let json = pkg
+        .split('/')
+        .fold(modules, |d, part| d.join(part))
+        .join("package.json");
+    read(json, "version")
 }
 
 /// Runs `<bin> --version` and pulls out the first version-looking token.
@@ -310,16 +369,16 @@ Run 'copilot update' to check for updates."
         assert_eq!(by_id("claude").version.as_deref(), Some("2.0.14"));
         assert!(!by_id("codex").installed);
         assert_eq!(by_id("codex").version, None);
-        assert!(by_id("c1").installed && by_id("c1").kind == AgentKind::Custom);
+        assert!(by_id("c1").installed && by_id("c1").kind == "custom");
         assert!(!by_id("c2").installed);
         assert_eq!(by_id("agy").provider, "antigravity");
         assert!(!by_id("agy").installed);
         assert_eq!(by_id("grok").provider, "grok");
-        assert_eq!(by_id("opencode").kind, AgentKind::Opencode);
-        assert_eq!(by_id("pi").kind, AgentKind::Pi);
+        assert_eq!(by_id("opencode").kind, "opencode");
+        assert_eq!(by_id("pi").kind, "pi");
         assert_eq!(by_id("copilot").provider, "copilot");
         assert_eq!(by_id("cursor").command, "cursor-agent");
-        assert_eq!(found.len(), 10);
+        assert_eq!(found.len(), 17);
     }
 
     #[test]

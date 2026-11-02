@@ -1,0 +1,43 @@
+# Devin (Cognition). winget's CognitionAI.DevinCLI, else the npm package through Bun (a Node
+# launcher in front of the native program). Its script ends in `devin setup`, which waits for
+# you, so it isn't used. Its shell tool is Git Bash. It reports its status on OSC 7501 once it
+# knows the terminal (TERM_PROGRAM). No plan endpoint for one person.
+# See agents/README.md for what each key means.
+id = "devin"
+name = "Devin"
+command = "devin"
+icon = "devin"
+changelog = "https://docs.devin.ai/cli/changelog/stable"
+
+[install]
+winget = "CognitionAI.DevinCLI"
+npm = "devin"
+npm_needs_node = true
+requires = ["git"]
+platform_packages = ["devin-win32-x64", "devin-win32-arm64"]
+
+[update]
+latest = { npm = "devin" }
+
+[detect]
+# Its own script's folder (winget's keeps it in its package's bin folder).
+dirs = ["%LOCALAPPDATA%/devin/cli/bin"]
+
+[uninstall]
+program = ["%LOCALAPPDATA%/devin/cli"]
+path = ["%LOCALAPPDATA%/devin/cli/bin"]
+settings = ["%APPDATA%/devin", "%LOCALAPPDATA%/devin"]
+
+[resume]
+command = "devin --resume {id}"
+flags = ["--resume", "-r"]
+home = ["$DEVIN_SESSIONS_DIR", "%APPDATA%/devin/cli"]
+store = { kind = "sqlite", file = "sessions.db", query = "SELECT id, working_directory, COALESCE(last_activity_at, created_at) FROM sessions WHERE hidden = 0 OR hidden IS NULL" }
+
+[status]
+prompts = ['↵ confirm', 'trust the authors of this directory']
+# Lines its prompts show, as seen on screen: the tests check the patterns above match them.
+examples = [
+    'Do you trust the authors of this directory?',
+    '↑↓ select · ↵ confirm · esc cancel',
+]

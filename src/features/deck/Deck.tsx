@@ -24,13 +24,26 @@ import type { JobState } from "@/lib/setup";
 import { MOCK_JOB } from "@/features/setup/mock";
 import { useDeck } from "./useDeck";
 import { Dictation, dictate } from "@/features/workspace/Dictation";
-import { KeyHelp, showKeys, type Command } from "@/features/workspace/KeyHelp";
+import { KeyHelp, showKeys, type Command, type Row } from "@/features/workspace/KeyHelp";
 import { handles } from "@/features/workspace/Terminal";
 import { FileDrop } from "@/features/workspace/FileDrop";
 import { PaneSearch } from "@/features/workspace/PaneSearch";
 import { showSearch } from "@/features/workspace/scrollbackSearch";
 import { AutoShell } from "@/features/workspace/AutoShell";
 import { SessionsSidebar } from "@/features/workspace/SessionsSidebar";
+import { MachineSwitcher } from "@/features/machines/MachineSwitcher";
+import { AddMachineDialog, AskpassDialog } from "@/features/machines/MachineDialogs";
+import { CreateKeyDialog, SetUpKeyDialog } from "@/features/machines/KeyDialogs";
+import { MachinesSettings } from "@/features/machines/MachinesSettings";
+import {
+  isMachine,
+  showAddMachine,
+  showCreateKey,
+  showSetUpKey,
+  showSwitcher,
+  useLinks,
+  useMachines,
+} from "@/features/machines/machines";
 import { useStatuses } from "@/features/workspace/status";
 import { useSessions } from "@/features/workspace/useSessions";
 import { find } from "@/features/workspace/layout";
@@ -95,6 +108,8 @@ export function Deck() {
           label: a.name,
           brand: a.provider ?? a.id,
           installed: a.installed,
+          leftovers: a.leftovers,
+          plan: a.plan,
           version: a.version,
           latest: updates.checks[a.id]?.updateAvailable ? updates.checks[a.id].latest : a.version,
           notesUrl: updates.checks[a.id]?.changelog || undefined,
@@ -136,6 +151,9 @@ export function Deck() {
       } else if (e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         showSearch();
+      } else if (e.shiftKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        showSwitcher();
       } else if (!e.shiftKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         toWorkspace();
@@ -163,9 +181,72 @@ export function Deck() {
     setGoneJob(liveJob?.id);
   }, [liveJob?.id]);
 
+  // Where the session you're in opens its terminals: its machine, else Settings' shell when
+  // that's a WSL distribution, else this PC.
+  const { machines } = useMachines();
+  const links = useLinks();
+  const hereMachine =
+    sp.current?.machine ?? (isMachine(settings.shell ?? undefined) ? settings.shell! : undefined);
+  const openMachines = () => onCommand("layout.focus", { panel: "settings", entityId: "machines" });
+  /** Opens a terminal on `machine` (none: this PC) in the session you're in. */
+  const terminalOn = (machine?: string) => {
+    toWorkspace();
+    sp.openShell("right", undefined, machine ?? null);
+  };
+  const machineRows: { title: string; rows: Row[] }[] = [
+    {
+      title: "Machines",
+      rows: [
+        { keys: ["Ctrl", "Shift", "M"], does: "Switch machine for this session", run: "machines" },
+        { does: "New terminal on This PC", run: "machine-terminal:local" },
+        ...machines.map((m): Row => ({
+          does: `New terminal on ${m.name} (${m.kind === "wsl" ? "WSL" : "SSH"})`,
+          run: `machine-terminal:${m.id}`,
+        })),
+        ...machines.map((m): Row => ({
+          does: `New session on ${m.name}`,
+          run: `machine-session:${m.id}`,
+        })),
+        ...machines
+          .filter((m) => links[m.id] && links[m.id].state !== "up")
+          .map((m): Row => ({ does: `Reconnect ${m.name}`, run: `machine-reconnect:${m.id}` })),
+        { does: "Add SSH machine", run: "machine-add" },
+        { does: "Create SSH key", run: "machine-key-create" },
+        ...machines
+          .filter((m) => m.kind === "ssh")
+          .map((m): Row => ({
+            does: m.key ? `Change key for ${m.name}` : `Set up key on ${m.name}`,
+            run: `machine-key:${m.id}`,
+          })),
+        { does: "Manage machines", run: "machine-manage" },
+      ],
+    },
+  ];
+
   // The command list's commands (Ctrl+Shift+P): on the focused pane of the session you're in.
   const runCommandOf = (c: Command) => {
+    if (c.startsWith("machine-terminal:")) {
+      const id = c.slice("machine-terminal:".length);
+      return terminalOn(id === "local" ? undefined : id);
+    }
+    if (c.startsWith("machine-session:")) {
+      toWorkspace();
+      return sp.addSession(c.slice("machine-session:".length));
+    }
+    if (c.startsWith("machine-key:")) return showSetUpKey(c.slice("machine-key:".length));
+    if (c.startsWith("machine-reconnect:"))
+      return void runCommand("machine.connect", { id: c.slice("machine-reconnect:".length) }).catch(
+        () => undefined,
+      );
     switch (c) {
+      case "machines":
+        return showSwitcher();
+      case "machine-add":
+        return showAddMachine();
+      case "machine-key-create":
+        return showCreateKey();
+      case "machine-manage":
+        return openMachines();
       case "session":
         toWorkspace();
         return sp.addSession();
@@ -193,7 +274,8 @@ export function Deck() {
     if (c === "copy") h?.copy();
     else if (c === "paste") h?.paste();
     else if (c === "restart") return sp.actions.restart(pane);
-    else sp.actions.shortcut(pane, c);
+    // What's left are the pane's own (the machines' returned above).
+    else sp.actions.shortcut(pane, c as "right" | "down" | "zoom" | "close");
     if (c !== "close") h?.focus();
   };
 
@@ -236,11 +318,32 @@ export function Deck() {
           }}
           onSettings={() => onCommand("layout.focus", { panel: "settings", entityId: "general" })}
           onUpdates={() => onCommand("layout.focus", { panel: "settings", entityId: "updates" })}
+          machine={
+            <MachineSwitcher
+              current={hereMachine}
+              onPick={(m) => {
+                if (!sp.current) return;
+                sp.setMachine(sp.current.id, m);
+                // A terminal there straight away, unless the focused pane is already there.
+                const focused = sp.current.layout.focus
+                  ? find(sp.current.layout.root, sp.current.layout.focus)
+                  : undefined;
+                if ((focused?.shell ?? undefined) !== m) terminalOn(m);
+              }}
+              onNewSession={(m) => {
+                toWorkspace();
+                sp.addSession(m);
+              }}
+              onManage={openMachines}
+            />
+          }
         />
         <main className="relative flex min-w-0 flex-1 flex-col">
           {panel === "settings" && (
             <SettingsSpace section={section} onCommand={onCommand}>
-              {section === "connections" ? (
+              {section === "machines" ? (
+                <MachinesSettings />
+              ) : section === "connections" ? (
                 <ConnectionsSettings
                   status={DEMO ? MOCK_GITHUB : github}
                   startWebLogin={
@@ -301,7 +404,17 @@ export function Deck() {
               />
             ))}
           <Dictation target={() => sp.current?.layout.focus} />
-          <KeyHelp run={runCommandOf} />
+          <KeyHelp run={runCommandOf} extra={machineRows} />
+          <AddMachineDialog
+            onAdded={(m) => {
+              // Straight to it: a terminal there, which connects (and signs in).
+              if (sp.current) sp.setMachine(sp.current.id, m.id);
+              terminalOn(m.id);
+            }}
+          />
+          <AskpassDialog />
+          <SetUpKeyDialog />
+          <CreateKeyDialog />
           <PaneSearch
             sessions={sp.sessions}
             agents={agents}
@@ -332,6 +445,7 @@ export function Deck() {
               }
             }
             version={version}
+            machine={isMachine(focusedPane?.shell) ? focusedPane!.shell : undefined}
           />
         </main>
         {shownJob && shownJob.id !== hiddenToast && (

@@ -17,12 +17,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        harness: [claude, codex, agy, grok, copilot, cursor]
+        harness:
+          [
+            claude,
+            codex,
+            agy,
+            grok,
+            copilot,
+            cursor,
+            droid,
+            kimi,
+            minimax,
+            hermes,
+            kilo,
+            devin,
+            cline,
+          ]
         plan: ["0", "1"]
         exclude:
           - harness: agy # one plan: the vendor script
             plan: "1"
           - harness: cursor # one plan: the vendor script
+            plan: "1"
+          - harness: minimax # one plan: the vendor script
+            plan: "1"
+          - harness: hermes # one plan: the vendor script
+            plan: "1"
+          - harness: cline # one plan: Bun
             plan: "1"
     steps:
       - uses: actions/checkout@v4
@@ -54,12 +75,12 @@ jobs:
           "== uninstall entries"
           foreach ($root in 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall') {
             Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
-              Where-Object { "$($_.DisplayName) $($_.Publisher)" -match 'Claude|Anthropic|Codex|OpenAI|Antigravity|agy|Grok|xAI|Copilot|GitHub|Cursor|Anysphere' } |
+              Where-Object { "$($_.DisplayName) $($_.Publisher)" -match 'Claude|Anthropic|Codex|OpenAI|Antigravity|agy|Grok|xAI|Copilot|GitHub|Cursor|Anysphere|Factory|Droid|Kimi|Moonshot|MiniMax|Hermes|Nous|Kilo|Devin|Cognition|Cline' } |
               ForEach-Object { "{0} | {1} | {2} | loc={3} | un={4} | quiet={5}" -f $root, $_.PSChildName, $_.DisplayName, $_.InstallLocation, $_.UninstallString, $_.QuietUninstallString }
           }
           "== appx"; Get-AppxPackage | Where-Object { $_.Name -match 'Claude|Anthropic|Codex|OpenAI|Antigravity|Grok|xAI|Copilot|Cursor' } | ForEach-Object { "$($_.Name) $($_.InstallLocation)" }
           "== folders"
-          $c = @("$env:USERPROFILE\.local","$env:USERPROFILE\.claude","$env:USERPROFILE\.claude.json","$env:USERPROFILE\.codex","$env:LOCALAPPDATA\agy","$env:USERPROFILE\.gemini","$env:USERPROFILE\.grok","$env:LOCALAPPDATA\Programs","$env:LOCALAPPDATA\Microsoft\WinGet\Packages","$env:LOCALAPPDATA\Microsoft\WinGet\Links","$env:APPDATA\npm","$env:LOCALAPPDATA\AnthropicClaude","$env:LOCALAPPDATA\claude","$env:LOCALAPPDATA\OpenAI","$env:LOCALAPPDATA\xAI","$env:LOCALAPPDATA\grok","$env:USERPROFILE\.copilot","$env:USERPROFILE\.bun","$env:LOCALAPPDATA\cursor-agent","$env:LOCALAPPDATA\cursor-compile-cache","$env:USERPROFILE\.cursor","$env:APPDATA\Cursor")
+          $c = @("$env:USERPROFILE\.local","$env:USERPROFILE\.claude","$env:USERPROFILE\.claude.json","$env:USERPROFILE\.codex","$env:LOCALAPPDATA\agy","$env:USERPROFILE\.gemini","$env:USERPROFILE\.grok","$env:LOCALAPPDATA\Programs","$env:LOCALAPPDATA\Microsoft\WinGet\Packages","$env:LOCALAPPDATA\Microsoft\WinGet\Links","$env:APPDATA\npm","$env:LOCALAPPDATA\AnthropicClaude","$env:LOCALAPPDATA\claude","$env:LOCALAPPDATA\OpenAI","$env:LOCALAPPDATA\xAI","$env:LOCALAPPDATA\grok","$env:USERPROFILE\.copilot","$env:USERPROFILE\.bun","$env:LOCALAPPDATA\cursor-agent","$env:LOCALAPPDATA\cursor-compile-cache","$env:USERPROFILE\.cursor","$env:APPDATA\Cursor","$env:USERPROFILE\bin","$env:USERPROFILE\.factory","$env:USERPROFILE\.kimi-code","$env:USERPROFILE\.minimax-code","$env:USERPROFILE\.minimax","$env:LOCALAPPDATA\hermes","$env:USERPROFILE\.config\kilo","$env:APPDATA\devin","$env:LOCALAPPDATA\devin","$env:USERPROFILE\.cline")
           foreach ($d in $c) { if (Test-Path $d) { "-- $d"; Get-ChildItem $d -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 40 | ForEach-Object { "   " + $_.FullName.Replace($env:USERPROFILE,'~') } } }
       - name: Uninstall ${{ matrix.harness }} (everything on plan 1)
         working-directory: src-tauri

@@ -1,0 +1,41 @@
+# Grok Build (xAI). It publishes no machine-readable latest version: "latest unknown".
+# See agents/README.md for what each key means.
+id = "grok"
+name = "Grok Build"
+command = "grok"
+icon = "grok"
+changelog = "https://x.ai/changelog/build"
+# The CLI proxy's /billing (monthly credits, weekly share).
+usage = "grok"
+
+[install]
+winget = "xAI.GrokBuild"
+script = "https://x.ai/cli/install.ps1"
+script_bin = "~/.grok/bin"
+
+[update]
+self = ["update"]
+
+[detect]
+dirs = ["~/.grok/bin"]
+script_install = ["/.grok/"]
+
+[uninstall]
+# Its program, completions, docs, downloads and bundled Git; the rest of ~\.grok is settings and
+# sessions.
+program = [
+    "~/.grok/bin",
+    "~/.grok/completions",
+    "~/.grok/docs",
+    "~/.grok/downloads",
+    "%LOCALAPPDATA%/grok",
+]
+path = ["~/.grok/bin"]
+settings = ["~/.grok"]
+
+[resume]
+command = "grok --resume {id}"
+flags = ["--resume", "-r"]
+home = ["$GROK_HOME", "~/.grok"]
+# sessions/<folder>/<id>/summary.json
+store = { kind = "reader", name = "grok" }

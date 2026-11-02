@@ -21,13 +21,31 @@ export const STATUS_LABEL: Record<Status, string> = {
 /**
  * What only an agent's own prompt shows: its choices under a pointer (`❯ 1. Yes`), a yes or
  * no, a key to press. Not the question in words: "Would you like to…" or "approve" is just as
- * likely the agent's reply, idle at its input, and read as asking it never stopped.
+ * likely the agent's reply, idle at its input, and read as asking it never stopped. These are
+ * the shapes many agents share; an agent's own words are in its file in `agents/`
+ * (`[status] prompts`).
  */
-const CHOICE =
-  /^\s*[❯›>]\s*\d+\.\s|trust and continue|allow (once|always)|\[y\/n\]|\(y\/n\)|\[y\]\s*yes|enter to confirm|esc to cancel|press enter to continue|waiting for (your )?(approval|input)/im;
+const CHOICE = new RegExp(
+  [
+    String.raw`^\s*[❯›>▶]\s*\d+\.\s`,
+    "trust and continue",
+    "allow (once|always)",
+    String.raw`\[y\/n\]`,
+    String.raw`\(y\/n\)`,
+    String.raw`\[y\]\s*(yes|approve)`,
+    "enter to confirm",
+    "esc to cancel",
+    "press enter to continue",
+    // A status line that says only this ("Waiting for approval…"), not a reply that says it.
+    String.raw`^\W*waiting for (your )?(approval|input)\W*$`,
+  ].join("|"),
+  "im",
+);
 
-/** An agent asking you something: a yes or no, an approval or a choice. */
-export const asks = (screen: string) => CHOICE.test(screen);
+/** An agent asking you something: a yes or no, an approval or a choice, or its own prompt's
+ * words (`own`, from its file). */
+export const asks = (screen: string, own?: RegExp) =>
+  CHOICE.test(screen) || (!!own && own.test(screen));
 
 /** What an agent says it's doing in the terminal's title, which it sets itself. */
 export type Signal = "working" | "needs" | "idle";
@@ -37,21 +55,43 @@ const SPINNER = /^[⠀-⣿◐-◓] /;
 const CODEX_SPINNER = /(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)/;
 
 /**
- * The title Claude Code and Codex set: a spinner while they work, Claude's `✳ ` once it's
- * waiting at its input, Codex's "Action Required" when it asks. The surest sign there is,
- * where the screen only suggests. Other agents' titles say nothing.
+ * What a title says, by its reader (the agent's file's `[status] title`): Claude Code's and
+ * Codex's spinner while they work, Claude's `✳ ` once it's waiting at its input, Codex's
+ * "Action Required" when it asks, MiniMax Code's state first ("Working | …", "Needs approval
+ * | …"). The surest sign there is, where the screen only suggests. Other agents' titles say
+ * nothing.
  */
-export function fromTitle(agent: string | undefined, title: string): Signal | undefined {
+export function fromTitle(reader: string | undefined, title: string): Signal | undefined {
   if (!title) return undefined;
-  if (agent === "claude") {
+  if (reader === "minimax") {
+    const state = title.split(" | ")[0].trim().toLowerCase();
+    if (state === "working") return "working";
+    if (state.startsWith("needs ")) return "needs";
+    if (["ready", "done", "failed", "stopped", "error"].includes(state)) return "idle";
+    return undefined;
+  }
+  if (reader === "claude") {
     if (SPINNER.test(title)) return "working";
     if (title.startsWith("✳ ")) return "idle";
   }
-  if (agent === "codex") {
+  if (reader === "codex") {
     if (title.includes("Action Required")) return "needs";
     if (CODEX_SPINNER.test(title)) return "working";
     return "idle";
   }
+  return undefined;
+}
+
+/**
+ * What an agent reports of itself on OSC 7501 (MiniMax Code, Devin): `state=working`,
+ * `state=blocked:kind=permission`, `state=idle`, `state=done`… with `:app=…` after. Its own word,
+ * like a title, but meant for the terminal: it comes first. `state=clear` takes it back.
+ */
+export function fromProgram(data: string): Signal | undefined {
+  const state = /(?:^|;)state=([a-z]+)/i.exec(data)?.[1]?.toLowerCase();
+  if (state === "working") return "working";
+  if (state === "blocked") return "needs";
+  if (state === "idle" || state === "done" || state === "error") return "idle";
   return undefined;
 }
 

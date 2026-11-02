@@ -4,6 +4,11 @@
 //!
 //! If the host goes away, every terminal it held has ended: each one the app knew of gets its
 //! `exit`, and the next request starts a new host.
+//!
+//! A remote host (WSL, SSH: `crate::remote`) is reached through a program's input and output
+//! (`wsl.exe`, `ssh`) instead of a pipe. There, the connection dropping doesn't end the
+//! terminals (they run on in the host over there): the client says it's down, and connects
+//! again only when told to.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -26,10 +31,20 @@ const START: Duration = Duration::from_secs(8);
 
 type Answer = Result<Value, Failure>;
 type Launch = Box<dyn Fn() -> std::io::Result<()> + Send + Sync>;
+/// Opens a remote host's stream (starting the program that carries it).
+pub type Dial = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<Stream>> + Send>>
+        + Send
+        + Sync,
+>;
+/// Called when a remote host's connection drops (not when it's closed on purpose).
+pub type OnDown = Arc<dyn Fn() + Send + Sync>;
 
 struct Conn {
     tx: mpsc::UnboundedSender<String>,
     alive: Arc<AtomicBool>,
+    /// Closed on purpose (`disconnect`): a remote's drop isn't reported.
+    closing: Arc<AtomicBool>,
 }
 
 pub struct HostClient {
@@ -43,6 +58,9 @@ pub struct HostClient {
     /// The terminals this app has opened or attached, still running.
     known: Arc<Mutex<HashSet<String>>>,
     next: AtomicU64,
+    /// A remote host: reached by `dial`, never started from here.
+    dial: Option<Dial>,
+    on_down: Option<OnDown>,
 }
 
 impl HostClient {
@@ -61,7 +79,23 @@ impl HostClient {
             pending: Arc::default(),
             known: Arc::default(),
             next: AtomicU64::new(1),
+            dial: None,
+            on_down: None,
         }
+    }
+
+    /// A remote host, `name` (`wsl:Ubuntu`, `ssh:<id>`), reached through `dial`. It connects only
+    /// on `connect`; a request while it's down fails at once rather than dialing (an SSH dial
+    /// may ask you for a password).
+    pub fn remote(name: String, dial: Dial, sink: Arc<dyn PtySink>, on_down: OnDown) -> Self {
+        let mut c = HostClient::new(name, None, sink);
+        c.dial = Some(dial);
+        c.on_down = Some(on_down);
+        c
+    }
+
+    pub fn is_remote(&self) -> bool {
+        self.dial.is_some()
     }
 
     /// This user's host for this channel, started from a copy of this exe when needed.
@@ -80,7 +114,7 @@ impl HostClient {
 
     /// Connects now (starting a host if needed); a connection that's up is kept.
     pub fn connect(&self) -> AppResult<()> {
-        self.sender().map(|_| ())
+        self.sender_dialing(true).map(|_| ())
     }
 
     /// Whether a connection is up.
@@ -100,13 +134,25 @@ impl HostClient {
     /// Drops the connection; the host keeps every terminal running.
     pub fn disconnect(&self) {
         lock(&self.known).clear();
-        self.conn.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(c) = self.conn.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            c.closing.store(true, Ordering::SeqCst);
+        }
     }
 
     fn sender(&self) -> AppResult<mpsc::UnboundedSender<String>> {
+        self.sender_dialing(!self.is_remote())
+    }
+
+    fn sender_dialing(&self, dial: bool) -> AppResult<mpsc::UnboundedSender<String>> {
         let mut conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(c) = conn.as_ref().filter(|c| c.alive.load(Ordering::SeqCst)) {
             return Ok(c.tx.clone());
+        }
+        if !dial {
+            return Err(unreachable_host(&format!(
+                "{} isn't connected",
+                self.endpoint
+            )));
         }
         let stream = self.open_stream()?;
         let c = self.start(stream);
@@ -116,7 +162,8 @@ impl HostClient {
         let hello: Value = self.ask_on(
             &tx,
             Request::Hello {
-                build: Some(super::host::build()),
+                // A remote host runs its own build; it isn't replaced by this app's.
+                build: (!self.is_remote()).then(super::host::build),
             },
             ANSWER,
         )?;
@@ -133,6 +180,13 @@ impl HostClient {
 
     /// Connects, or starts a host and waits for it to come up.
     fn open_stream(&self) -> AppResult<Stream> {
+        if let Some(dial) = &self.dial {
+            let (dial, handle) = (dial.clone(), self.rt.handle().clone());
+            return std::thread::spawn(move || handle.block_on(dial()))
+                .join()
+                .map_err(|_| unreachable_host("connect thread panicked"))?
+                .map_err(|e| unreachable_host(&e.to_string()));
+        }
         if let Ok(s) = self.dial() {
             return Ok(s);
         }
@@ -169,6 +223,8 @@ impl HostClient {
         let (rd, mut wr) = tokio::io::split(stream);
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let alive = Arc::new(AtomicBool::new(true));
+        let closing = Arc::new(AtomicBool::new(false));
+        let (on_down, quit) = (self.on_down.clone(), closing.clone());
         self.rt.spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if wr.write_all(msg.as_bytes()).await.is_err() {
@@ -210,12 +266,19 @@ impl HostClient {
                     message: "the terminal host stopped".into(),
                 }));
             }
+            // A remote host is only out of reach: its terminals run on over there.
+            if let Some(down) = on_down {
+                if !quit.load(Ordering::SeqCst) {
+                    down();
+                }
+                return;
+            }
             let gone: Vec<String> = lock(&known).drain().collect();
             for id in gone {
                 sink.exit(&id, None);
             }
         });
-        Conn { tx, alive }
+        Conn { tx, alive, closing }
     }
 
     /// Sends `req` and waits for its answer.
@@ -381,6 +444,77 @@ impl HostClient {
         )
     }
 
+    /// The agent under `pty_id`'s shell, as the host's machine sees it (protocol 2).
+    pub fn agent(&self, pty_id: &str, agents: &[(String, String)]) -> AppResult<Option<String>> {
+        self.ask(
+            Request::Agent {
+                pty_id: pty_id.into(),
+                agents: agents.to_vec(),
+            },
+            ANSWER,
+        )
+    }
+
+    /// How `pty_id`'s agent would be resumed, read on the host's machine (protocol 2).
+    pub fn resume(
+        &self,
+        pty_id: &str,
+        agents: &[(String, String)],
+        since: u64,
+        cwd: Option<String>,
+        taken: &[String],
+    ) -> AppResult<Option<Value>> {
+        self.ask(
+            Request::Resume {
+                pty_id: pty_id.into(),
+                agents: agents.to_vec(),
+                since,
+                cwd,
+                taken: taken.to_vec(),
+            },
+            ANSWER,
+        )
+    }
+
+    /// The host's machine (protocol 2).
+    pub fn probe(&self) -> AppResult<super::proto::Probe> {
+        self.ask(Request::Probe, ANSWER)
+    }
+
+    /// Which of `paths` are files on the host's machine, made absolute from `cwd`.
+    pub fn files(&self, cwd: &str, paths: &[String]) -> AppResult<Vec<Option<String>>> {
+        self.ask(
+            Request::Files {
+                cwd: cwd.into(),
+                paths: paths.to_vec(),
+            },
+            ANSWER,
+        )
+    }
+
+    /// Writes a file into the host's `drops` folder; its path there.
+    pub fn upload(&self, name: &str, base64: String) -> AppResult<String> {
+        self.ask(
+            Request::Upload {
+                name: name.into(),
+                base64,
+            },
+            Duration::from_secs(120),
+        )
+    }
+
+    /// Adds a key's line to (or removes a key from) `~/.ssh/authorized_keys` on the host's
+    /// machine; the keys there (protocol 3).
+    pub fn authorized_keys(&self, add: Option<&str>, remove: Option<&str>) -> AppResult<Value> {
+        self.ask(
+            Request::AuthorizedKeys {
+                add: add.map(Into::into),
+                remove: remove.map(Into::into),
+            },
+            ANSWER,
+        )
+    }
+
     /// Asks the host to close everything and end.
     pub fn shutdown(&self) -> AppResult<()> {
         self.ask::<Value>(Request::Shutdown, ANSWER).map(|_| ())
@@ -417,9 +551,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-trait Duplex: AsyncRead + AsyncWrite + Send + Unpin {}
+pub trait Duplex: AsyncRead + AsyncWrite + Send + Unpin {}
 impl<T: AsyncRead + AsyncWrite + Send + Unpin> Duplex for T {}
-type Stream = Box<dyn Duplex>;
+pub type Stream = Box<dyn Duplex>;
 
 #[cfg(windows)]
 async fn dial(endpoint: &str) -> std::io::Result<Stream> {

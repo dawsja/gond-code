@@ -1,3 +1,5 @@
+import { statusSpec } from "@/lib/agentStatus";
+
 /**
  * Agent CLIs paste images themselves: on their image-paste key they read the picture off the
  * clipboard and attach it ("[Image #1]"). A paste whose clipboard has no text (a screenshot,
@@ -6,8 +8,7 @@
  */
 export function imagePasteKey(agentId: string | undefined): string | undefined {
   if (!agentId) return;
-  // Claude Code on Windows takes Alt+V (Ctrl+V is its key only under WSL).
-  if (agentId === "claude") return "\x1bv";
-  // Ctrl+V: Codex and the rest.
-  return "\x16";
+  // Its file's `[status] paste`: Alt+V for Claude Code (its Ctrl+V is for WSL), Kimi Code and
+  // Hermes; Ctrl+V for the rest.
+  return statusSpec(agentId).paste === "alt+v" ? "\x1bv" : "\x16";
 }

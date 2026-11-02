@@ -123,6 +123,21 @@ describe("an agent waiting on you", () => {
     ).toBe(true);
   });
 
+  it("is seen in an agent's own prompt words, from its file", async () => {
+    const { asks } = await import("./status");
+    // Kimi Code's, as agents/kimi.toml says them; every agent's file has examples the Rust
+    // tests check against its patterns.
+    const kimi = new RegExp(["approve (once|for this session)", "↵ confirm"].join("|"), "im");
+    expect(asks("✓ Approve for this session\n↵ confirm · esc deny", kimi)).toBe(true);
+    // Without its words, only the shapes every agent shares count.
+    expect(asks("Run this command?\n▶ 1. Approve once")).toBe(true);
+    expect(asks("Approve once, it said.")).toBe(false);
+    // Said in a reply, it isn't one.
+    expect(asks("No approval required for read-only tools.")).toBe(false);
+    expect(asks("Thinking: there's some risk it could hang waiting for input.")).toBe(false);
+    expect(asks("  Waiting for approval…")).toBe(true);
+  });
+
   it("isn't the agent's own reply, idle at its input", async () => {
     const { asks } = await import("./status");
     const idle =
@@ -158,6 +173,20 @@ describe("an agent waiting on you", () => {
     expect(fromTitle("codex", "Action Required · gond-code")).toBe("needs");
     expect(fromTitle("codex", "gond-code")).toBe("idle");
     expect(fromTitle("opencode", "⠋ busy")).toBeUndefined();
+    expect(fromTitle("minimax", "Working | gond (mvs_1234) | MCode")).toBe("working");
+    expect(fromTitle("minimax", "Needs approval | gond | MCode")).toBe("needs");
+    expect(fromTitle("minimax", "Done | gond | MCode")).toBe("idle");
+    expect(fromTitle("minimax", "MCode")).toBeUndefined();
+  });
+
+  it("is read from what MiniMax Code and Devin report on OSC 7501", async () => {
+    const { fromProgram } = await import("./status");
+    expect(fromProgram("state=working:app=mcode")).toBe("working");
+    expect(fromProgram("state=blocked:kind=permission:app=devin")).toBe("needs");
+    expect(fromProgram("state=idle:app=mcode")).toBe("idle");
+    expect(fromProgram("state=done:app=devin:msg=Finished")).toBe("idle");
+    expect(fromProgram("state=clear")).toBeUndefined();
+    expect(fromProgram("nonsense")).toBeUndefined();
   });
 
   it("isn't moved by the terminal's own focus and cursor reports", async () => {

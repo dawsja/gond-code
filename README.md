@@ -2,7 +2,8 @@
 
 A Windows app that hosts your coding agents in a terminal workspace. Each pane is a terminal in
 your default shell; type an agent there (Claude Code, Codex, Antigravity, Grok Build, opencode,
-Pi, GitHub Copilot or Cursor) and Gond Code sees it running. Panes are grouped into named
+Pi, GitHub Copilot, Cursor, Droid, Kimi Code, MiniMax Code, Hermes Agent, Kilo Code, Devin or
+Cline) and Gond Code sees it running. Panes are grouped into named
 **Sessions**, and the sidebar lists every agent by what it's doing: needs you, working, done or
 idle.
 
@@ -39,11 +40,17 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
 - **Drag and drop:** drop files, folders or screenshots on a pane to type their paths in, the
   way its shell writes them (Git Bash and WSL included). A screenshot or other file in the
   temp folder is copied somewhere lasting first, so the agent can still read it.
-- **Agents come back after a restart of the PC:** a pane that was running an agent (Claude Code,
-  Codex, Antigravity, Grok Build, opencode, Pi, GitHub Copilot or Cursor) opens its shell in the
-  folder the agent ran in and resumes its conversation with the agent's own resume command.
+- **Agents come back after a restart of the PC:** a pane that was running an agent (any of the
+  built-in ones) opens its shell in the folder the agent ran in and resumes its conversation with the agent's own resume command.
   Gond reads which conversation from the agent's own session store and command line; it installs
   nothing into them.
+- **Machines: this PC, WSL and SSH.** The switcher above Settings (Ctrl+Shift+M) picks where a
+  session's terminals open: this PC, a WSL distribution, or a computer you add over SSH (your
+  own ssh config, keys and ssh-agent; machines you add are `Host`s in `~/.ssh/gond/config`,
+  which `~/.ssh/config` includes). Create an SSH key in Gond and set it up on a machine in one
+  click, so it stops asking for a password. Gond's terminal host runs over there, so agents in
+  WSL or on the SSH machine show up in the sidebar like local ones, and their terminals keep
+  running when the connection drops or Gond quits; Gond reconnects and picks them back up.
 - **Agents outlive the app:** the terminals run in a background terminal host, so quitting,
   updating or a crash leaves every shell and agent working. When Gond Code opens again, each
   pane picks its terminal back up with what it printed meanwhile. (Settings → General can close
@@ -69,7 +76,8 @@ bun run dev           # the UI alone in a browser, on mock data
 bun run typecheck     # tsc --noEmit
 bun run lint          # eslint, prettier --check, cargo fmt --check
 bun run test          # vitest, then cargo test
-bun run dist:win      # the NSIS installer, in src-tauri/target/release/bundle/nsis/
+bun run remote        # gond-remote, the terminal host for WSL and SSH machines (Linux, both arches)
+bun run dist:win      # the NSIS installer (gond-remote inside), in src-tauri/target/release/bundle/nsis/
 ```
 
 A local debug build: `bun x tauri build --debug --no-bundle`, then run

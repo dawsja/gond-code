@@ -26,6 +26,14 @@ import openai from "@lobehub/icons-static-svg/icons/openai.svg?raw";
 import pi from "./pi-color.svg?raw";
 import piMono from "./pi.svg?raw";
 import opencode from "@lobehub/icons-static-svg/icons/opencode.svg?raw";
+import cline from "@lobehub/icons-static-svg/icons/cline.svg?raw";
+import devin from "@lobehub/icons-static-svg/icons/devin-color.svg?raw";
+import devinMono from "@lobehub/icons-static-svg/icons/devin.svg?raw";
+import hermesagent from "@lobehub/icons-static-svg/icons/hermesagent.svg?raw";
+import kilocode from "@lobehub/icons-static-svg/icons/kilocode.svg?raw";
+// Factory's Droid: Factory's own mark (factory.ai/favicon.svg), white on its black square there;
+// LobeHub has none.
+import droid from "./droid.svg?raw";
 import openrouter from "@lobehub/icons-static-svg/icons/openrouter.svg?raw";
 import qwen from "@lobehub/icons-static-svg/icons/qwen-color.svg?raw";
 import xai from "@lobehub/icons-static-svg/icons/xai.svg?raw";
@@ -61,6 +69,7 @@ export const COLOR: Record<string, string> = {
   debianShell,
   linuxShell,
   pi,
+  devin,
   figma,
   antigravity,
   claude,
@@ -87,6 +96,11 @@ export const MONO: Record<string, string> = {
   anthropic,
   antigravity: antigravityMono,
   cursor,
+  cline,
+  devin: devinMono,
+  droid,
+  hermesagent,
+  kilocode,
   figma: figmaMono,
   notion,
   github,

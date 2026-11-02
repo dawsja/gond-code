@@ -1,3 +1,4 @@
+import { setAgentStatuses } from "@/lib/agentStatus";
 import { useCallback, useEffect, useState } from "react";
 import { callOrRun, isRegistered, liveBackend, runCommand, useAppState } from "@/lib/appState";
 import { useWorkspace } from "@/features/shell/useWorkspace";
@@ -33,7 +34,14 @@ export function useDeck() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   // agent.detect again after an install, so the harness list shows it as installed.
   const refreshAgents = useCallback(
-    () => void callOrRun("agent_detect", "agent.detect", {}).then(setAgents, () => undefined),
+    () =>
+      void callOrRun("agent_detect", "agent.detect", {}).then(
+        (a) => {
+          setAgentStatuses(a);
+          setAgents(a);
+        },
+        () => undefined,
+      ),
     [],
   );
   useEffect(refreshAgents, [refreshAgents]);

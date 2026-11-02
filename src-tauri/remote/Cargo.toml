@@ -1,0 +1,45 @@
+[package]
+name = "gond-remote"
+version = "0.2.2"
+description = "Gond Code's terminal host for another machine: WSL, or a computer over SSH."
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+# Built for Linux (x86_64 and aarch64, musl, static) and shipped inside Gond Code, which copies it
+# to the machine it reaches: see src/main.rs and ../src/remote.rs.
+
+[[bin]]
+name = "gond-remote"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+base64 = "=0.23.1"
+thiserror = "=2.0.21"
+time = { version = "=0.3.55", features = ["formatting", "parsing"] }
+dirs = "=7.0.0"
+ulid = "=3.0.0"
+schemars = "=1.2.3"
+regex = "=1.13.1"
+# The agents' files (agents/*.toml), which the host reads too.
+toml = "=0.9.8"
+which = "=8.0.6"
+portable-pty = "=0.9.0"
+vt100 = "=0.18.1"
+tokio = { version = "=1.54.1", features = ["net", "io-util", "io-std", "macros", "rt-multi-thread", "sync", "time"] }
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(gond_remote)"] }

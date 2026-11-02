@@ -50,7 +50,15 @@ export type Project = {
   versions?: number;
 };
 
-export type AgentKind = "claude" | "codex" | "custom";
+/** A built-in agent's id (its file in `agents/`), or `custom`. */
+export type AgentKind = string;
+/** How an agent's status shows in a pane (its file's `[status]`). */
+export type AgentStatus = {
+  title?: string | null;
+  prompts: string[];
+  scan: string;
+  paste: string;
+};
 export type AgentInfo = {
   id: string;
   kind: AgentKind;
@@ -60,6 +68,12 @@ export type AgentInfo = {
   provider?: string;
   installed: boolean;
   version?: string;
+  /** Not installed, but what it left is still here: uninstalling clears it. */
+  leftovers?: boolean;
+  /** Gond reads its plan usage (Settings → Usage). */
+  plan?: boolean;
+  /** How its status shows in a pane; none for a custom agent. */
+  status?: AgentStatus;
 };
 
 export type Tint = "blue" | "green" | "purple" | "pink" | "amber" | "orange" | "red";

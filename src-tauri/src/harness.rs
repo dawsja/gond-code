@@ -11,6 +11,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::agents::detect;
+use crate::agents::spec::Spec;
 use crate::install::Step;
 
 /// How a harness got onto this machine, read from where its binary lives.
@@ -64,144 +65,101 @@ impl Plan {
     }
 }
 
-/// A harness Gond can install and update (the v0.1 drivers).
+/// An agent Gond can install and update, as its file in `agents/` says (`agents::spec`).
 pub struct Harness {
     pub id: &'static str,
     pub name: &'static str,
     pub command: &'static str,
-    /// Brand icon key (@lobehub/icons).
+    /// Brand icon key.
     pub provider: &'static str,
+    pub changelog: &'static str,
     winget: Option<&'static str>,
     vendor_script: Option<&'static str>,
-    /// Where the vendor script puts the program (under the profile). Gond puts it on the user
-    /// PATH after the script, so a terminal finds it even if the script didn't (a no-op when
-    /// it did).
-    vendor_bin_dir: Option<&'static str>,
+    /// Where the vendor script puts the program, from the user's folder (`.local\\bin`). Gond
+    /// puts it on the user PATH after the script, so a terminal finds it even if the script
+    /// didn't (a no-op when it did).
+    vendor_bin_dir: Option<String>,
+    /// Arguments the vendor script takes (Hermes': `-NonInteractive`): it then runs as a script
+    /// block, `& ([scriptblock]::Create((irm <url>))) <args>`.
+    vendor_args: Option<&'static str>,
+    /// Its vendor script comes before winget.
+    script_first: bool,
     bun_package: Option<&'static str>,
-    /// The harness's own update subcommand, for vendor installs.
-    self_update: Option<&'static [&'static str]>,
     /// Its registry package runs on Node, so a Bun install needs Node too.
     bun_needs_node: bool,
-    pub changelog: &'static str,
+    /// Its own update command's arguments, for a vendor install.
+    self_update: Option<Vec<String>>,
+    /// Prerequisites it needs to run, whichever way it's installed: installed first in the
+    /// same job when missing.
+    requires: Vec<&'static str>,
+    /// The per-platform packages its npm package pulls in (its native program), which Bun
+    /// keeps beside it: they go too when it's uninstalled.
+    platform_packages: Vec<&'static str>,
+    /// The program it leaves running in the background, which holds its files: stopped, where
+    /// it runs from the agent's own folders, before an update or an uninstall.
+    background: Option<&'static str>,
 }
 
-pub const CATALOG: &[Harness] = &[
-    Harness {
-        id: "claude",
-        name: "Claude Code",
-        command: "claude",
-        provider: "claude",
-        winget: Some("Anthropic.ClaudeCode"),
-        vendor_script: Some("https://claude.ai/install.ps1"),
-        vendor_bin_dir: Some(".local\\bin"),
-        bun_package: Some("@anthropic-ai/claude-code"),
-        self_update: Some(&["update"]),
-        bun_needs_node: true,
-        changelog: "https://github.com/anthropics/claude-code/releases",
-    },
-    Harness {
-        id: "codex",
-        name: "Codex",
-        command: "codex",
-        provider: "codex",
-        winget: Some("OpenAI.Codex"),
-        vendor_script: Some("https://chatgpt.com/codex/install.ps1"),
-        vendor_bin_dir: Some("AppData\\Local\\Programs\\OpenAI\\Codex\\bin"),
-        bun_package: Some("@openai/codex"),
-        self_update: Some(&["update"]),
-        bun_needs_node: true,
-        changelog: "https://github.com/openai/codex/releases",
-    },
-    Harness {
-        id: "agy",
-        name: "Antigravity",
-        command: "agy",
-        provider: "antigravity",
-        winget: None,
-        vendor_script: Some("https://antigravity.google/cli/install.ps1"),
-        vendor_bin_dir: Some("AppData\\Local\\agy\\bin"),
-        bun_package: None,
-        // `agy update` is unverified: re-run the installer instead.
-        self_update: None,
-        bun_needs_node: false,
-        changelog: "https://github.com/google-antigravity/antigravity-cli/releases",
-    },
-    Harness {
-        id: "grok",
-        name: "Grok Build",
-        command: "grok",
-        provider: "grok",
-        winget: Some("xAI.GrokBuild"),
-        vendor_script: Some("https://x.ai/cli/install.ps1"),
-        vendor_bin_dir: Some(".grok\\bin"),
-        bun_package: None,
-        self_update: Some(&["update"]),
-        bun_needs_node: false,
-        changelog: "https://x.ai/changelog/build",
-    },
-    // v0.2, back: winget's SST.opencode, else the npm package
-    // through Bun (its launcher runs on Node). No Windows vendor script; it updates itself.
-    Harness {
-        id: "opencode",
-        name: "opencode",
-        command: "opencode",
-        provider: "opencode",
-        winget: Some("SST.opencode"),
-        vendor_script: None,
-        vendor_bin_dir: None,
-        bun_package: Some("opencode-ai"),
-        self_update: Some(&["upgrade"]),
-        bun_needs_node: true,
-        changelog: "https://github.com/sst/opencode/releases",
-    },
-    // Pi (pi.dev): the npm package through Bun, on Node 22.19+. Not on
-    // winget, and its own installer can stop to ask about PATH, so Bun installs, updates and
-    // removes it.
-    Harness {
-        id: "pi",
-        name: "Pi",
-        command: "pi",
-        provider: "pi",
-        winget: None,
-        vendor_script: None,
-        vendor_bin_dir: None,
-        bun_package: Some("@earendil-works/pi-coding-agent"),
-        self_update: None,
-        bun_needs_node: true,
-        changelog: "https://github.com/earendil-works/pi/releases",
-    },
-    // GitHub Copilot CLI: winget's GitHub.Copilot (a per-user package with a `copilot`
-    // alias), else the npm package through Bun (its loader runs on Node). No Windows
-    // script; `copilot update` updates the winget install in place.
-    Harness {
-        id: "copilot",
-        name: "GitHub Copilot",
-        command: "copilot",
-        provider: "copilot",
-        winget: Some("GitHub.Copilot"),
-        vendor_script: None,
-        vendor_bin_dir: None,
-        bun_package: Some("@github/copilot"),
-        self_update: Some(&["update"]),
-        bun_needs_node: true,
-        changelog: "https://github.com/github/copilot-cli/releases",
-    },
-    // Cursor's CLI: only Cursor's own script (%LOCALAPPDATA%\cursor-agent, which it puts on
-    // the user PATH); `cursor-agent update` updates it.
-    Harness {
-        id: "cursor",
-        name: "Cursor",
-        command: "cursor-agent",
-        provider: "cursor",
-        winget: None,
-        vendor_script: Some("https://cursor.com/install?win32=true"),
-        vendor_bin_dir: Some("AppData\\Local\\cursor-agent"),
-        bun_package: None,
-        self_update: Some(&["update"]),
-        bun_needs_node: false,
-        changelog: "https://cursor.com/changelog",
-    },
-];
+impl Harness {
+    /// An agent, from its file.
+    fn of(s: &'static Spec) -> Self {
+        let i = &s.install;
+        Harness {
+            id: &s.id,
+            name: &s.name,
+            command: &s.command,
+            provider: &s.icon,
+            changelog: &s.changelog,
+            winget: i.winget.as_deref(),
+            vendor_script: i.script.as_deref(),
+            vendor_bin_dir: i
+                .script_bin
+                .as_deref()
+                .and_then(crate::agents::spec::under_home),
+            vendor_args: i.script_args.as_deref(),
+            script_first: i.script_first,
+            bun_package: i.npm.as_deref(),
+            bun_needs_node: i.npm_needs_node,
+            self_update: s.update.own.clone(),
+            requires: i.requires.iter().map(String::as_str).collect(),
+            platform_packages: i.platform_packages.iter().map(String::as_str).collect(),
+            background: s.uninstall.background.as_deref(),
+        }
+    }
+
+    /// A prerequisite Gond sets up (Git, Node…): winget, else its script.
+    fn tool(
+        name: &'static str,
+        command: &'static str,
+        winget: &'static str,
+        script: Option<&'static str>,
+    ) -> Self {
+        Harness {
+            id: "",
+            name,
+            command,
+            provider: "",
+            changelog: "",
+            winget: Some(winget),
+            vendor_script: script,
+            vendor_bin_dir: None,
+            vendor_args: None,
+            script_first: false,
+            bun_package: None,
+            bun_needs_node: false,
+            self_update: None,
+            requires: vec![],
+            platform_packages: vec![],
+            background: None,
+        }
+    }
+}
+
+/// Every agent Gond can install, in its files' order.
+pub fn catalog() -> &'static [Harness] {
+    static ALL: std::sync::OnceLock<Vec<Harness>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| crate::agents::spec::all().iter().map(Harness::of).collect())
+}
 
 /// Prerequisites Gond can set up: (id, name, command, winget id, vendor script).
 /// Without winget, Git, GitHub CLI and Node come from their official releases.
@@ -221,19 +179,7 @@ pub const PREREQS: &[(&str, &str, &str, &str, Option<&str>)] = &[
 /// The plan that installs prerequisite `id`: winget, or the vendor script without it.
 pub fn prereq_step(id: &str, path_var: Option<OsString>) -> Option<Step> {
     let &(_, name, command, winget, script) = PREREQS.iter().find(|p| p.0 == id)?;
-    let probe = Harness {
-        id: "",
-        name,
-        command,
-        provider: "",
-        winget: Some(winget),
-        vendor_script: script,
-        vendor_bin_dir: None,
-        bun_package: None,
-        self_update: None,
-        bun_needs_node: false,
-        changelog: "",
-    };
+    let probe = Harness::tool(name, command, winget, script);
     let winget_here = detect::find("winget", path_var).is_some();
     let plan = if winget_here {
         probe.winget_plan("install", winget)
@@ -298,7 +244,7 @@ pub fn install_steps(
         .get(index)
         .cloned()
         .ok_or_else(|| format!("{} has {} install plans", h.name, plans.len()))?;
-    let mut needs = vec![];
+    let mut needs: Vec<&str> = h.requires.to_vec();
     if plan.source == Source::Bun {
         needs.push("bun");
         if h.bun_needs_node {
@@ -317,7 +263,7 @@ pub fn install_steps(
 }
 
 pub fn get(id: &str) -> Option<&'static Harness> {
-    CATALOG.iter().find(|h| h.id == id)
+    catalog().iter().find(|h| h.id == id)
 }
 
 impl Harness {
@@ -327,6 +273,20 @@ impl Harness {
 
     pub fn bun_package_name(&self) -> Option<&'static str> {
         self.bun_package
+    }
+
+    pub fn platform_packages(&self) -> &[&'static str] {
+        &self.platform_packages
+    }
+
+    /// The program it keeps running in the background, if any (`background`).
+    pub fn background_program(&self) -> Option<&'static str> {
+        self.background
+    }
+
+    /// Whether it keeps a program running in the background (`background`).
+    pub fn runs_in_background(&self) -> bool {
+        self.background.is_some()
     }
 
     fn provides(&self) -> Option<String> {
@@ -364,12 +324,17 @@ impl Harness {
                 "-Command",
                 // Windows PowerShell's download progress bar slows Invoke-WebRequest many
                 // times over, even hidden (Cursor's script took minutes): off for the script.
-                &format!("$ProgressPreference = 'SilentlyContinue'; irm {url} | iex"),
+                &match self.vendor_args {
+                    None => format!("$ProgressPreference = 'SilentlyContinue'; irm {url} | iex"),
+                    Some(args) => format!(
+                        "$ProgressPreference = 'SilentlyContinue'; & ([scriptblock]::Create((irm {url}))) {args}"
+                    ),
+                },
             ]
             .map(String::from)
             .into(),
             from: url.into(),
-            adds_to_path: self.vendor_bin_dir.map(String::from),
+            adds_to_path: self.vendor_bin_dir.clone(),
             provides: self.provides(),
         }
     }
@@ -387,14 +352,16 @@ impl Harness {
         }
     }
 
-    /// Ways to install, best first: winget, then the vendor's script, then Bun.
+    /// Ways to install, best first: winget, then the vendor's script (the other way round for
+    /// `script_first`), then Bun.
     pub fn install_plans(&self) -> Vec<Plan> {
         let mut out = vec![];
         if let Some(id) = self.winget {
             out.push(self.winget_plan("install", id));
         }
         if let Some(url) = self.vendor_script {
-            out.push(self.vendor_plan(url));
+            let at = if self.script_first { 0 } else { out.len() };
+            out.insert(at, self.vendor_plan(url));
         }
         if let Some(pkg) = self.bun_package {
             out.push(self.bun_plan(pkg));
@@ -408,7 +375,7 @@ impl Harness {
         match source {
             Source::Winget => self.winget.map(|id| self.winget_plan("upgrade", id)),
             Source::Bun => self.bun_package.map(|p| self.bun_plan(p)),
-            Source::Vendor => match self.self_update {
+            Source::Vendor => match &self.self_update {
                 Some(args) => Some(Plan {
                     source: Source::Vendor,
                     program: self.command.into(),
@@ -432,16 +399,11 @@ pub fn source_of(bin: &Path) -> Source {
         Source::Winget
     } else if p.contains("/.bun/bin/") || p.contains("/.bun/install/") {
         Source::Bun
-    // The Claude installer uses ~/.local/bin; the Codex and Grok homes are unverified on
-    // Windows until the smoke test records them.
-    } else if p.contains("/.local/bin/")
-        || p.contains("/appdata/local/programs/")
-        // agy's installer: %LOCALAPPDATA%\agy\bin (recorded on windows-latest, 1.4.10).
-        || p.contains("/appdata/local/agy/")
-        // Cursor's script: %LOCALAPPDATA%\cursor-agent (recorded on Windows, 2026.10.22).
-        || p.contains("/appdata/local/cursor-agent/")
-        || p.contains("/.grok/")
-        || p.contains("/.codex/")
+    // Where an agent's own script puts it (its file's `detect.script_install`).
+    } else if crate::agents::spec::all()
+        .iter()
+        .flat_map(|s| &s.detect.script_install)
+        .any(|piece| p.contains(piece.as_str()))
     {
         Source::Vendor
     } else {
@@ -469,7 +431,7 @@ pub struct HarnessInfo {
 /// Probes every catalog harness. Blocks a few seconds: call it off the async runtime.
 pub fn list(path_var: Option<OsString>) -> Vec<HarnessInfo> {
     std::thread::scope(|s| {
-        let handles: Vec<_> = CATALOG
+        let handles: Vec<_> = catalog()
             .iter()
             .map(|h| {
                 let path_var = path_var.clone();
@@ -481,7 +443,7 @@ pub fn list(path_var: Option<OsString>) -> Vec<HarnessInfo> {
                         name: h.name.into(),
                         provider: h.provider.into(),
                         installed: bin.is_some(),
-                        version: bin.as_deref().and_then(detect::version),
+                        version: bin.as_deref().and_then(|b| detect::version_of(h.id, b)),
                         source,
                         can_update: source.is_some_and(|s| h.update_plan(s).is_some()),
                         changelog: h.changelog.into(),
@@ -525,7 +487,7 @@ mod tests {
         );
         // Every vendor script and Bun install names the folder it leaves the program in, so
         // Gond puts it on PATH and a terminal can run the agent (winget does that itself).
-        for h in CATALOG {
+        for h in catalog() {
             for p in h.install_plans() {
                 if matches!(p.source, Source::Vendor | Source::Bun) {
                     assert!(
@@ -538,7 +500,7 @@ mod tests {
             }
         }
         // No harness is ever installed with npm.
-        for h in CATALOG {
+        for h in catalog() {
             assert!(h.install_plans().iter().all(|p| p.program != "npm"));
         }
     }
@@ -613,7 +575,10 @@ mod tests {
         let ids: Vec<_> = found.iter().map(|h| h.id.as_str()).collect();
         assert_eq!(
             ids,
-            ["claude", "codex", "agy", "grok", "opencode", "pi", "copilot", "cursor"]
+            [
+                "claude", "codex", "agy", "grok", "opencode", "pi", "copilot", "cursor", "droid",
+                "kimi", "minimax", "hermes", "kilo", "devin", "cline"
+            ]
         );
         assert!(found
             .iter()
@@ -673,6 +638,61 @@ mod tests {
                 r"C:\Users\d\AppData\Local\Microsoft\WinGet\Packages\GitHub.Copilot_Microsoft.Winget.Source_8wekyb3d8bbwe\copilot.exe",
                 Source::Winget,
             ),
+        ] {
+            assert_eq!(source_of(Path::new(path)), want, "{path}");
+        }
+    }
+
+    /// The seven added in 0.3: each plan, Hermes' script without its wizard, Git first for the
+    /// agents whose shell is Git Bash, and how each is updated.
+    #[test]
+    fn the_new_agents_plans() {
+        let kinds = |id: &str| {
+            get(id)
+                .unwrap()
+                .install_plans()
+                .iter()
+                .map(|p| p.source)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(kinds("droid"), [Source::Vendor, Source::Bun]);
+        assert_eq!(kinds("kimi"), [Source::Vendor, Source::Winget, Source::Bun]);
+        assert_eq!(kinds("minimax"), [Source::Vendor]);
+        assert_eq!(kinds("hermes"), [Source::Vendor]);
+        assert_eq!(kinds("kilo"), [Source::Winget, Source::Bun]);
+        assert_eq!(kinds("devin"), [Source::Winget, Source::Bun]);
+        assert_eq!(kinds("cline"), [Source::Bun]);
+        let hermes = &get("hermes").unwrap().install_plans()[0];
+        assert_eq!(
+            hermes.args.last().unwrap(),
+            "$ProgressPreference = 'SilentlyContinue'; & ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -NonInteractive"
+        );
+        let empty = tempfile::tempdir().unwrap();
+        let path = Some(empty.path().as_os_str().to_owned());
+        let labels: Vec<_> = install_steps(get("kimi").unwrap(), Some(0), path)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.label)
+            .collect();
+        assert_eq!(labels, ["Install Git", "Install Kimi Code"]);
+        let update = |id: &str, s: Source| {
+            let p = get(id).unwrap().update_plan(s).unwrap();
+            format!("{} {}", p.program, p.args.join(" "))
+        };
+        assert_eq!(update("droid", Source::Vendor), "droid update");
+        assert!(update("kimi", Source::Vendor).starts_with("powershell "));
+        assert_eq!(update("hermes", Source::Vendor), "hermes update");
+        assert_eq!(update("cline", Source::Bun), "bun add -g cline@latest");
+        assert!(update("kilo", Source::Winget).starts_with("winget upgrade --id KiloCode.Kilo"));
+        for (path, want) in [
+            (r"C:\Users\d\bin\droid.exe", Source::Vendor),
+            (r"C:\Users\d\.kimi-code\bin\kimi.exe", Source::Vendor),
+            (r"C:\Users\d\.minimax-code\mcode.cmd", Source::Vendor),
+            (
+                r"C:\Users\d\AppData\Local\hermes\bin\hermes.exe",
+                Source::Vendor,
+            ),
+            (r"C:\Users\d\.bun\bin\cline.exe", Source::Bun),
         ] {
             assert_eq!(source_of(Path::new(path)), want, "{path}");
         }

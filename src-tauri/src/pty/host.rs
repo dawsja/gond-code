@@ -546,6 +546,20 @@ fn handle(mgr: &PtyManager, req: Request) -> Result<Value, AppError> {
             Value::Null
         }
         Request::Prune { keep } => json!(mgr.prune(&keep)),
+        Request::Agent { pty_id, agents } => super::here::agent(mgr, &pty_id, &agents),
+        Request::Resume {
+            pty_id,
+            agents,
+            since,
+            cwd,
+            taken,
+        } => super::here::resume(mgr, &pty_id, &agents, since, cwd.as_deref(), &taken),
+        Request::Probe => v(super::here::probe()),
+        Request::Files { cwd, paths } => super::here::files(&cwd, &paths),
+        Request::Upload { name, base64 } => super::here::upload(&name, &base64)?,
+        Request::AuthorizedKeys { add, remove } => {
+            super::here::authorized_keys(add.as_deref(), remove.as_deref())?
+        }
         Request::Hello { .. } | Request::Read { .. } | Request::Shutdown => Value::Null,
     })
 }

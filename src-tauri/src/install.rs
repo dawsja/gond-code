@@ -742,6 +742,14 @@ fn run_step(
     if let Some(p) = &path_var {
         cmd.env("PATH", p);
     }
+    // A vendor script calls Windows' own tools by name (`tar.exe`, `curl.exe`): those first,
+    // before any of the same name another PATH entry has (Git's GNU tar takes `C:\…` for a
+    // host, and MiniMax Code's script failed on it).
+    if plan.program.eq_ignore_ascii_case("powershell") {
+        if let Some(p) = windows_tools_first(path_var.as_deref()) {
+            cmd.env("PATH", p);
+        }
+    }
     // Vendor scripts run in Windows PowerShell 5.1. A PSModulePath inherited from
     // PowerShell 7 (Gond started from a pwsh terminal, or CI) hides 5.1's own modules,
     // so `Get-FileHash` "isn't recognized" and Claude's installer fails. Without
@@ -1264,8 +1272,38 @@ fn gond_step(plan: &Plan, job: &mut JobState) -> Result<(), String> {
             }
             Ok(())
         }
+        // Stops program args[0] where it runs from one of the other args (an agent's own
+        // folder): what it left running in the background, so its files can be replaced.
+        "stop" => {
+            let Some((exe, dirs)) = plan.args.split_first() else {
+                return Ok(());
+            };
+            for (pid, image) in crate::agents::running::programs_named(exe) {
+                let image = image.to_string_lossy().replace('\\', "/").to_lowercase();
+                let inside = dirs.iter().any(|d| {
+                    let d = d.replace('\\', "/").to_lowercase();
+                    image.starts_with(&format!("{}/", d.trim_end_matches('/')))
+                });
+                if inside {
+                    crate::proctree::kill_tree(pid);
+                    keep_tail(&mut job.details, &format!("Stopped {exe} ({pid})"));
+                }
+            }
+            Ok(())
+        }
         other => Err(format!("unknown Gond step {other}")),
     }
+}
+
+/// `path` with Windows' own folders (`System32`, its PowerShell) in front. None off Windows.
+fn windows_tools_first(path: Option<&std::ffi::OsStr>) -> Option<OsString> {
+    let root = std::env::var_os("SystemRoot")?;
+    let sys = std::path::Path::new(&root).join("System32");
+    let own = [sys.clone(), sys.join("WindowsPowerShell").join("v1.0")];
+    let rest: Vec<std::path::PathBuf> = path
+        .map(|p| std::env::split_paths(p).collect())
+        .unwrap_or_default();
+    std::env::join_paths(own.iter().cloned().chain(rest)).ok()
 }
 
 /// How long a removal waits out a file that's briefly in use.

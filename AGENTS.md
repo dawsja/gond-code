@@ -21,6 +21,10 @@ split terminal panes, each running an agent's own CLI or a plain shell. Read
   `UPDATE_COMMANDS=1 cargo test --lib commands_json` in `src-tauri`.
 - Windows-only code goes behind `#[cfg(windows)]`; everything else must compile and test on
   Linux. Logic lives outside `commands/` so it tests without Tauri.
+- **The agents Gond supports are data:** one file each in `agents/` (`agents/kimi.toml`), built
+  into the app. When an agent's CLI changes (install, update, folders, resume, prompts), fix
+  its file, not the code; [agents/README.md](agents/README.md) says what each key means. Then
+  `cargo test --lib spec` in `src-tauri`.
 - Don't add back what the product left out (docs/PRODUCT.md, "Not in the product").
 
 ## Dev and prod

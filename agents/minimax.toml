@@ -1,0 +1,48 @@
+# MiniMax Code (`mcode`). Only MiniMax's script: its launcher, releases and (when this PC's Node
+# won't do) its own Node in ~\.minimax-code. Not through Bun: it needs Node's native SQLite
+# module. Not on winget (MiniMax.MiniMaxCode is the desktop app). ~\.minimax is shared with
+# MiniMax's desktop app.
+# See agents/README.md for what each key means.
+id = "minimax"
+name = "MiniMax Code"
+command = "mcode"
+icon = "minimax"
+changelog = "https://github.com/MiniMax-AI/minimax-code/releases"
+# platform.minimax.io/v1/api/openplatform/coding_plan/remains with its sign-in.
+usage = "minimax"
+
+[install]
+script = "https://filecdn.minimax.chat/public/install.ps1"
+script_bin = "~/.minimax-code"
+
+[update]
+self = ["update"]
+latest = { npm = "@minimax-ai/code" }
+
+[detect]
+dirs = ["~/.minimax-code"]
+script_install = ["/.minimax-code/"]
+# mcode is Node (its own or this PC's) running …\.minimax-code\releases\…\@minimax-ai\code\cli.js.
+markers = [".minimax-code", "@minimax-ai"]
+
+[uninstall]
+program = ["~/.minimax-code"]
+path = ["~/.minimax-code"]
+settings = ["~/.minimax"]
+
+[resume]
+command = "mcode --session {id}"
+flags = ["--session", "--resume"]
+home = ["$MINIMAX_DATA_DIR", "~/.minimax"]
+# Top-level sessions not archived.
+store = { kind = "sqlite", file = "v2/sqlite/runtime-state.sqlite", query = "SELECT session_id, workspace_dir, updated_at_ms FROM local_runtime_sessions WHERE archived = 0 AND (parent_session_id IS NULL OR parent_session_id = '')" }
+
+[status]
+# "Working | …", "Needs approval | …"; it also reports on OSC 7501.
+title = "minimax"
+prompts = ['^\s*◆\s*approval required', 'enter confirm · esc deny']
+# Lines its prompts show, as seen on screen: the tests check the patterns above match them.
+examples = [
+    '◆ Approval required ─────────────── Bash',
+    '↑/↓ choose · Enter confirm · Esc deny · Ctrl+C stop',
+]

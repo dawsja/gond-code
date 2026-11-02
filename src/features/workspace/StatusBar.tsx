@@ -6,6 +6,57 @@ import { liveBackend, runCommand } from "@/lib/appState";
 import { useAppName } from "@/lib/appName";
 import { cn } from "@/lib/utils";
 import { usePaneFolder } from "./paneFolder";
+import { LinkDot, MachineIcon } from "@/features/machines/MachineIcon";
+import { machineName, useLink, useLinks, useMachines } from "@/features/machines/machines";
+
+/** The machine the focused pane runs on, and the folder its prompt shows there. */
+function MachinePlace({ machine, folder }: { machine: string; folder?: string }) {
+  const link = useLink(machine);
+  const links = useLinks();
+  const { machines } = useMachines();
+  const state =
+    link?.state === "up"
+      ? undefined
+      : link?.state === "connecting"
+        ? "connecting…"
+        : link?.state === "down"
+          ? link.retrying
+            ? "reconnecting…"
+            : "out of reach"
+          : undefined;
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1.5"
+      data-slot="machine"
+      title={folder ? `${machineName(machine, machines, links)}: ${folder}` : undefined}
+    >
+      <MachineIcon id={machine} size={13} />
+      <span
+        className="truncate font-medium text-sidebar-foreground"
+        title={machineName(machine, machines, links)}
+      >
+        {machineName(machine, machines, links)}
+      </span>
+      {link && link.state !== "up" && <LinkDot state={link.state} />}
+      {state ? (
+        <>
+          <span className="text-faint">·</span>
+          <span className={cn(link?.state === "down" && "text-tone-warn")}>{state}</span>
+        </>
+      ) : (
+        folder && (
+          <>
+            <span className="text-faint">·</span>
+            <FolderIcon className="size-[13px] shrink-0" aria-hidden />
+            <span className="truncate font-mono tracking-normal text-sidebar-foreground">
+              {folder}
+            </span>
+          </>
+        )
+      )}
+    </span>
+  );
+}
 
 /** `folder.git`: a folder's name, and the repository and branch when it's in one. */
 export type Place = { folder: string; repo?: string; branch?: string };
@@ -48,7 +99,10 @@ export function StatusBar({
   path,
   mock,
   version,
+  machine,
 }: {
+  /** The machine the focused pane runs on, if not this PC: its folder is that machine's. */
+  machine?: string;
   /** The focused pane: a shell's folder follows its prompt. */
   paneId?: string;
   /** The focused pane's own folder (its project's). */
@@ -57,8 +111,9 @@ export function StatusBar({
   mock?: Place;
   version?: string;
 }) {
-  const here = usePaneFolder(paneId) ?? path;
-  const place = usePlace(here, mock);
+  const prompt = usePaneFolder(paneId);
+  const here = prompt ?? path;
+  const place = usePlace(machine ? undefined : here, mock);
   const name = useAppName();
   return (
     <footer
@@ -66,7 +121,9 @@ export function StatusBar({
       className="flex h-[26px] shrink-0 items-center justify-between gap-4 border-t border-sidebar-border bg-sidebar px-3 text-[11.5px] text-muted-foreground"
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        {place?.repo ? (
+        {machine ? (
+          <MachinePlace machine={machine} folder={prompt} />
+        ) : place?.repo ? (
           <Hint text={here ?? place.repo}>
             <span className="flex min-w-0 items-center gap-1.5" data-slot="repo">
               <ProviderIcon id="gitbash" label="Git" size={13} />

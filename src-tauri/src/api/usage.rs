@@ -26,8 +26,12 @@ pub struct NoInput {}
 /// One reading at a time.
 static REFRESHING: AtomicBool = AtomicBool::new(false);
 
-/// The agents whose plan Gond can read.
-pub const PLAN_AGENTS: [&str; 6] = ["claude", "codex", "grok", "agy", "copilot", "cursor"];
+/// The agents whose plan Gond can read, with their reader (their file's `usage`).
+pub fn plan_agents() -> impl Iterator<Item = (&'static str, &'static str)> {
+    crate::agents::spec::all()
+        .iter()
+        .filter_map(|s| Some((s.id.as_str(), s.usage.as_deref()?)))
+}
 
 /// How often plan limits are read again while an agent with a plan runs.
 const EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
@@ -35,7 +39,7 @@ const EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 /// Whether to read again now: an agent with a plan runs, and either one just started (that
 /// wasn't running at the last look) or the last reading is older than `EVERY`.
 fn due(running: &[String], before: &[String], since_last: Option<std::time::Duration>) -> bool {
-    let planned = |a: &String| PLAN_AGENTS.contains(&a.as_str());
+    let planned = |a: &String| plan_agents().any(|(id, _)| id == a);
     let started = running.iter().any(|a| planned(a) && !before.contains(a));
     running.iter().any(planned) && (started || since_last.is_none_or(|d| d >= EVERY))
 }
@@ -120,8 +124,8 @@ pub fn refresh(s: &Services, fetch: crate::http::Fetch, post: crate::http::Post)
                 .map(std::path::PathBuf::from)
                 .or_else(|| dirs::home_dir().map(|h| h.join(dir)))
         };
-        for agent in PLAN_AGENTS {
-            let windows = match agent {
+        for (agent, reader) in plan_agents() {
+            let windows = match reader {
                 "claude" => home("CLAUDE_CONFIG_DIR", ".claude")
                     .and_then(|c| crate::plan_usage::claude_token(&c))
                     .map(|t| crate::plan_usage::claude(&t, fetch))
@@ -145,6 +149,21 @@ pub fn refresh(s: &Services, fetch: crate::http::Fetch, post: crate::http::Post)
                 "cursor" => dirs::data_dir()
                     .and_then(|r| crate::plan_usage::cursor_token(&r))
                     .map(|t| crate::plan_usage::cursor(&t, post))
+                    .unwrap_or_default(),
+                "kimi" => home("KIMI_CODE_HOME", ".kimi-code")
+                    .and_then(|h| crate::plan_usage::kimi_token(&h))
+                    .map(|(t, api)| crate::plan_usage::kimi(&t, api, fetch))
+                    .unwrap_or_default(),
+                "minimax" => home("MINIMAX_DATA_DIR", ".minimax")
+                    .and_then(|h| crate::plan_usage::minimax_token(&h))
+                    .map(|(t, api)| crate::plan_usage::minimax(&t, api, fetch))
+                    .unwrap_or_default(),
+                // %LOCALAPPDATA%\hermes on Windows.
+                "hermes" => std::env::var_os("HERMES_HOME")
+                    .map(std::path::PathBuf::from)
+                    .or_else(|| dirs::data_local_dir().map(|d| d.join("hermes")))
+                    .and_then(|h| crate::plan_usage::hermes_token(&h))
+                    .map(|(t, portal)| crate::plan_usage::hermes(&t, &portal, fetch))
                     .unwrap_or_default(),
                 _ => vec![],
             };

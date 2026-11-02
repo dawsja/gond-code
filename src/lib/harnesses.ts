@@ -8,6 +8,11 @@ export type Harness = {
   brand: string;
   installed: boolean;
   version?: string;
+  /** Not installed, but its settings or a PATH entry are still here (an uninstall that
+   * stopped halfway): it can still be uninstalled. */
+  leftovers?: boolean;
+  /** Gond reads its plan usage (Settings → Usage). */
+  plan?: boolean;
   /** harness.check: where it comes from and what's newer. */
   source?: { kind: "npm" | "winget" | "vendor" | "bun"; name: string; verified?: boolean };
   latest?: string;

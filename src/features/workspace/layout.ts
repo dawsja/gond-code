@@ -143,9 +143,10 @@ export function one(saved: Record<string, Layout>): Layout {
 }
 
 /**
- * A session: a named group of panes you switch between.
+ * A session: a named group of panes you switch between. `machine`: where its new terminals
+ * open (`wsl:<distro>`, `ssh:<id>`); none is this PC (Settings' shell).
  */
-export type Session = { id: string; name: string; layout: Layout };
+export type Session = { id: string; name: string; layout: Layout; machine?: string };
 
 /** What's kept: every session, in order, and the one you're in. */
 export type Saved = { sessions: Session[]; current?: string };

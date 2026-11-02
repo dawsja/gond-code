@@ -38,8 +38,11 @@ runs nothing on an agent's behalf.
    `pty.attach` for a terminal still running under its id, and only opens a new one if there
    is none.
 4. Every 2 s the pane asks `pty.agent` which agent runs under its shell (`agents/running.rs`,
-   by program name in the shell's process tree). While one does, the pane shows it, reads
-   Working / Needs you / Done from the screen (`status.ts`), and the sidebar lists it.
+   by program name in the shell's process tree; MiniMax Code's `mcode`, Node running its script,
+   by the script's folder). While one does, the pane shows it, reads Working / Needs you / Done
+   (`status.ts`: the agent's title, its OSC 7501 report, then the screen), and the sidebar lists
+   it. Panes run with `TERM_PROGRAM=gond-code`: without it Devin takes ConPTY for the old
+   console host and sends no OSC 7501.
 
 ### The terminal host
 The terminals live in a background process so they outlive the app (`pty/host.rs`,
@@ -89,6 +92,60 @@ The terminals live in a background process so they outlive the app (`pty/host.rs
   `false`. It logs to `host\host.log`.
 - Quitting detaches (Settings `keepTerminals`, default on) or closes them all.
 
+### Machines: WSL and SSH
+A pane's `shell` can be a machine (`wsl:<distro>`, `ssh:<id>`; a session's `machine` is where
+its new panes open). Its terminal then runs in a terminal host on that machine (`remote.rs`,
+`remote/`).
+- `gond-remote` is the host's own code (`pty/`, `agents/running.rs`, `cwd.rs`, `resume.rs`, `spec.rs` with `agents/`),
+  built for Linux (x86_64, aarch64; static musl, linked by rust-lld) without the app: its
+  `main.rs` includes those files and stands in for the modules they reach for. It's built
+  with `--cfg gond_remote` (no SQLite, so the conversations agents keep in SQLite, opencode's,
+  Antigravity's and the like, aren't read there). `bun run remote` builds it; `bun run dist:win` bundles it as `remote/<arch>/` beside
+  the app, and a debug build takes it from `remote/target`.
+- `remote::open` runs `wsl.exe -d <distro> --exec /bin/sh -c <script>` or Windows' OpenSSH
+  `ssh -T … <host> "exec /bin/sh -c '<script>'"`. The script says the machine's OS, arch and
+  home; the app answers the helper's hash; a missing helper is sent over the same stream (size,
+  bytes, checked with `sha256sum`) to `~/.gond/bin/<hash>/` (`.gond-dev` for Dev); then it runs
+  `gond-remote attach`, which starts the host if none runs (in its own session, so a hangup
+  passes it by) and carries the protocol between its stdio and the host's socket. One
+  connection per machine carries all its panes.
+- One host per machine, whichever build started it: a newer helper joins the running host
+  (requests are only ever added), which ends once it has no terminals and no window for 30 s.
+- Protocol 2 adds what the app can't read from here: `agent` (the agent under a terminal's
+  shell, by `/proc`: a program by the name it was started as, a script runtime (`node`, `bun`,
+  `python`, `sh`) by its script), `resume`, `probe`, `files` and `upload` (`pty/here.rs`).
+- `HostClient::remote` dials through `remote::open` and connects only when told (`Hub::ensure`):
+  a request while it's down fails at once. A connection that drops doesn't end its terminals:
+  `/machines/<id>` goes `down` and `Hub` retries (1 s … 2 min), unless signing in failed. Each
+  time a machine comes up its `up` count grows and its panes attach again (`pty.attach` with
+  their `shell`), redrawn from the host's screen.
+- WSL stops a distribution ~15 s after its last `wsl.exe` ends. So after connecting, the app
+  starts `wsl.exe … gond-remote keepalive` in its own terminal host on Windows (owner
+  `keepalive:<machine>`), which outlives the app and ends when the host there does. It looks at
+  the host's socket and live record, never connects (a connection is a window and would take the
+  output stream).
+- SSH questions: `ssh` runs with `SSH_ASKPASS` = this exe and `SSH_ASKPASS_REQUIRE=force`;
+  `lib::subcommand` sees `GOND_ASKPASS` and passes the question over a user-only named pipe to
+  the app, which shows it at `/askpass/<id>` until `machine.askpass.answer`. Nothing is kept.
+- SSH keys (`sshkeys.rs`): the key pairs in `~/.ssh`. A key made here is OpenSSH's own format
+  (the `ssh-key` crate: ED25519, or RSA 4096), a passphrase encrypting it as ssh-keygen does,
+  the private file created readable by you alone (Windows' OpenSSH refuses a key others can
+  read). A machine signs in with a key through its `IdentityFile` in Gond's ssh config.
+  Putting a key on a machine (`Hub::authorize`) goes over the connection: protocol 3's
+  `authorizedKeys` request has the host there add the line to `~/.ssh/authorized_keys` (a new
+  `.ssh` 700, a new file 600; other lines untouched). A host from an older Gond answers that it
+  doesn't know the request; then a one-off `ssh` with a short `sh` script adds it. Then
+  `Hub::check_key` signs in with that key alone (`IdentitiesOnly`, no password). A connect
+  where ssh asked for a password sets `password` on `/machines/<id>`. Gond runs Windows' own
+  OpenSSH (`System32\OpenSSH\ssh.exe`) before any other `ssh` on PATH.
+- SSH machines are `Host`s in Gond's own ssh config, `~/.ssh/gond/config` (Dev:
+  `config-dev`), which `~/.ssh/config` includes from its first line (`sshconfig.rs`): `ssh
+  <name>` works in any terminal, and the list moves with `~/.ssh`. Adding a machine writes its
+  `Host` (and the `Include`, if it isn't there); removing it takes the `Host` out, and the
+  `Include` stays. A host your ssh config already sets up gets an empty `Host`. Connecting runs
+  `ssh <name>` and puts the `Include` back if it's gone. `GOND_SSH_OPTIONS` adds ssh options
+  (a test's own known_hosts).
+
 ### Resume after a restart of the PC
 While an agent runs in a pane, the pane asks `agent.resume` when it starts and every 20 s:
 Rust finds the agent under the pane's shell, reads the folder it really runs in from its process
@@ -99,7 +156,12 @@ started, that another pane doesn't have: Claude Code's `projects/<folder>/<id>.j
 `sessions/…/rollout-…-<id>.jsonl`, Copilot's `session-state/<id>/workspace.yaml` (or exactly the
 one whose `inuse.<pid>.lock` names the process), Cursor's `chats/<hash>/<id>/meta.json`, Grok's
 `sessions/<folder>/<id>/summary.json`, opencode's `opencode.db` (`session` table), Pi's
-`sessions/--<folder>--/<time>_<id>.jsonl` and Antigravity's `conversation_summaries.db`. Each
+`sessions/--<folder>--/<time>_<id>.jsonl`, Antigravity's `conversation_summaries.db`, Droid's
+`sessions/<folder>/<id>.jsonl` (its first line names the folder), Kimi Code's
+`session_index.jsonl`, MiniMax Code's `v2/sqlite/runtime-state.sqlite`, Hermes' `state.db` (the
+folder from the Python its `hermes.exe` launcher starts: the launcher's own is `%TEMP%`), Kilo
+Code's `kilo.db` (opencode's), Devin's `%APPDATA%\devin\cli\sessions.db` and Cline's
+`data/db/sessions.db`. Each
 format was read off a real install. The pane keeps
 `{ agent, session, command, cwd }` as `resume` in `sessions.json`. A pane that opens without its
 terminal (`pty.attach` finds none) starts its shell in `cwd` and types `command` once the prompt
@@ -129,18 +191,24 @@ src/                       React app
   features/connections/    Settings → Plugins (GitHub)
   features/setup/          Git and GitHub CLI installs and the progress toast
   features/speech/         speech to text setting and recording
+  features/machines/       the machine switcher, Add SSH machine, ssh's questions, Settings →
+                           Machines
   features/shell/          workspace hook, the sidebar's update button
   lib/ipc.ts               the only place that calls invoke/listen
   lib/restart.ts           saves before Restart to update
   lib/commands.generated.json  the registry with schemas (checked by a test)
+src-tauri/remote/          gond-remote: the terminal host for WSL and SSH machines (Linux)
 src-tauri/src/             Rust
   main.rs lib.rs           builder, plugins, `gond-code path|purge-data` subcommands
   channel.rs appdata.rs    Gond Code or Gond Code Dev; where each keeps its data
   api/                     registry.rs, state.rs and one file per area (harness, layout,
                            projects, pty, speech, usage, git, github, builtin)
   commands/                thin #[tauri::command] wrappers (command_run, state_get, window)
-  agents/                  detect.rs (finding agent CLIs), running.rs (the agent in a pane)
-  pty/                     PtyManager, scrollback
+  agents/                  spec.rs (the agents, from the repo's agents/*.toml, built in),
+                           detect.rs (finding agent CLIs), running.rs (the agent in a pane),
+                           resume.rs (its conversation)
+  pty/                     PtyManager, scrollback; here.rs answers about this machine
+  remote.rs api/machines.rs  WSL and SSH machines: connecting, the helper, ssh's questions
   projects.rs              folders
   clipboard.rs             the clipboard for a paste into a pane
   editors.rs api/files.rs  `file:line` links: which printed paths are files (`file.resolve`),
@@ -194,6 +262,10 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
 ## 6. Where data lives
 - `%APPDATA%\GondCode` (`appdata::roaming()`): `gond-code.db` (SQLite, WAL), `sessions.json`,
   and `screens\` (shell screens saved for an update, removed once read).
+- `~/.ssh/gond/config` (Dev: `config-dev`): the SSH machines you added, as `Host`s;
+  `~/.ssh/config` gets an `Include` of it.
+- On a WSL or SSH machine: `~/.gond` (Dev: `~/.gond-dev`): the helper in `bin/<hash>/`, the
+  host's socket `pty.sock`, its log and live record in `host/`, and dropped files in `drops/`.
 - `%LOCALAPPDATA%\GondCode` (`appdata::local()`): the speech model.
 - Gond keeps no secrets. What older versions' accounts left (keys under `GondCode/` in
   Credential Manager, sign-in homes in `%LOCALAPPDATA%\GondCode\accounts`) is removed at
@@ -216,7 +288,8 @@ get an amber dot (`channel::badge`). `updater.rs` neither checks nor installs in
 "Gond Code Dev"). Prod's identity is tauri.conf.json's and must never change.
 
 ## 7. Packaging and updates
-- `bun run dist:win` → `tauri build --bundles nsis`. The installer is per user. Its hooks
+- `bun run dist:win` → `scripts/build-remote.ts` (gond-remote for both Linux arches), then
+  `tauri build --bundles nsis --config src-tauri/tauri.remote.conf.json`, which bundles them. The installer is per user. Its hooks
   (`windows/hooks.nsh`) remove the `bin` folder and PATH entry older builds added, delete the
   speech model on uninstall, and run `purge-data` when "Delete the application data" is ticked
   (never on an update).

@@ -43,12 +43,37 @@ fn runs_from_install(p: &Proc, command: &str) -> bool {
     if name.is_empty() {
         return false;
     }
-    image_of(p.pid).is_some_and(|path| {
-        path.to_string_lossy()
-            .to_lowercase()
+    let marks = markers(&name);
+    let marked = |text: &str| {
+        text.to_lowercase()
             .split(['\\', '/'])
-            .any(|segment| segment == name)
-    })
+            .any(|segment| segment == name || marks.iter().any(|m| m == segment))
+    };
+    if image_of(p.pid).is_some_and(|path| marked(&path.to_string_lossy())) {
+        return true;
+    }
+    // This PC's own Node running the agent's script: its arguments say whose.
+    !marks.is_empty() && super::cwd::args(p.pid).is_some_and(|args| args.iter().any(|a| marked(a)))
+}
+
+/// Folders that mark an agent whose command isn't its folder's name (its file's
+/// `detect.markers`): MiniMax Code's `mcode` is Node running
+/// `…\.minimax-code\releases\…\@minimax-ai\code\cli.js`.
+fn markers(command: &str) -> &'static [String] {
+    super::spec::all()
+        .iter()
+        .find(|s| s.command.eq_ignore_ascii_case(command))
+        .map(|s| s.detect.markers.as_slice())
+        .unwrap_or(&[])
+}
+
+/// Every running process whose program is `exe` (`cline.exe`), with its full path.
+pub fn programs_named(exe: &str) -> Vec<(u32, std::path::PathBuf)> {
+    snapshot()
+        .into_iter()
+        .filter(|p| p.exe.eq_ignore_ascii_case(exe))
+        .filter_map(|p| image_of(p.pid).map(|i| (p.pid, i)))
+        .collect()
 }
 
 /// The full path of process `pid`'s program.
@@ -97,15 +122,116 @@ pub fn agent_process_under(
     None
 }
 
-/// Every process now. Empty off Windows.
+/// Every process now. On Linux (WSL, an SSH machine) from `/proc`; empty elsewhere.
 pub fn snapshot() -> Vec<Proc> {
     #[cfg(windows)]
     {
         win::snapshot()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::snapshot()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         vec![]
+    }
+}
+
+/// Script runtimes an agent CLI runs under on Linux (`node /usr/bin/claude`, a shell script).
+const RUNTIMES: &[&str] = &[
+    "node", "bun", "deno", "python", "python3", "sh", "bash", "dash", "zsh",
+];
+
+/// The name a Linux process goes by, from its command line: the program it was started as
+/// (`claude`, a symlink to a versioned binary, is `claude`), or for a script runtime the
+/// script it runs (`node /home/me/.npm/bin/pi` is `pi`). `comm` when there's no command line.
+pub fn linux_name(cmdline: &[String], comm: &str) -> String {
+    let base = |s: &str| {
+        std::path::Path::new(s)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let Some(first) = cmdline.first().map(|a| base(a)).filter(|a| !a.is_empty()) else {
+        return comm.to_string();
+    };
+    // `sh -c "…"` runs a command line, not a script named for an agent.
+    if RUNTIMES.contains(&first.as_str()) && !cmdline.iter().any(|a| a == "-c") {
+        if let Some(script) = cmdline.iter().skip(1).find(|a| !a.starts_with('-')) {
+            let name = base(script);
+            let stem = name
+                .strip_suffix(".js")
+                .or_else(|| name.strip_suffix(".mjs"))
+                .or_else(|| name.strip_suffix(".py"))
+                .unwrap_or(&name);
+            if !stem.is_empty() && !matches!(stem, "cli" | "index" | "main") {
+                return stem.to_string();
+            }
+        }
+    }
+    first
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::Proc;
+
+    pub fn snapshot() -> Vec<Proc> {
+        let Ok(dir) = std::fs::read_dir("/proc") else {
+            return vec![];
+        };
+        dir.flatten()
+            .filter_map(|e| {
+                let pid: u32 = e.file_name().to_str()?.parse().ok()?;
+                let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+                let (comm, parent) = parse_stat(&stat)?;
+                let cmdline: Vec<String> = std::fs::read(format!("/proc/{pid}/cmdline"))
+                    .map(|b| {
+                        b.split(|&c| c == 0)
+                            .filter(|a| !a.is_empty())
+                            .map(|a| String::from_utf8_lossy(a).into_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some(Proc {
+                    pid,
+                    parent,
+                    exe: super::linux_name(&cmdline, &comm),
+                })
+            })
+            .collect()
+    }
+
+    /// `(comm, ppid)` from `/proc/<pid>/stat`: `pid (comm) state ppid …`, where comm may hold
+    /// spaces and parentheses itself.
+    pub fn parse_stat(stat: &str) -> Option<(String, u32)> {
+        let open = stat.find('(')?;
+        let close = stat.rfind(')')?;
+        let comm = stat.get(open + 1..close)?.to_string();
+        let mut rest = stat.get(close + 1..)?.split_whitespace();
+        let _state = rest.next()?;
+        Some((comm, rest.next()?.parse().ok()?))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn stat_lines_with_odd_names_parse() {
+            assert_eq!(
+                super::parse_stat("42 (a (b) c) S 7 42 42 0"),
+                Some(("a (b) c".into(), 7))
+            );
+        }
+
+        /// This very test process is in the snapshot, under its parent.
+        #[test]
+        fn the_snapshot_holds_this_process() {
+            let me = std::process::id();
+            let procs = super::snapshot();
+            let p = procs.iter().find(|p| p.pid == me).expect("this process");
+            assert_eq!(p.parent, std::os::unix::process::parent_id());
+        }
     }
 }
 
@@ -194,5 +320,35 @@ mod tests {
         );
         // Not a sandbox helper that only starts with the name.
         assert!(!is("codex-windows-sandbox-setup.exe", "codex"));
+    }
+
+    /// On Linux an agent is named by how it was started: a symlinked binary by the link, an
+    /// npm one (`node …/bin/pi`) by its script, never by the runtime.
+    #[test]
+    fn linux_processes_are_named_as_they_were_started() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(linux_name(&v(&["claude"]), "2.1.4"), "claude");
+        assert_eq!(
+            linux_name(&v(&["/usr/bin/node", "/home/me/.npm/bin/pi"]), "node"),
+            "pi"
+        );
+        assert_eq!(
+            linux_name(&v(&["node", "--no-warnings", "/usr/bin/codex"]), "node"),
+            "codex"
+        );
+        assert_eq!(linux_name(&v(&["node", "/opt/app/cli.js"]), "node"), "node");
+        assert_eq!(linux_name(&v(&["-bash"]), "bash"), "-bash");
+        assert_eq!(linux_name(&v(&["bash", "-l"]), "bash"), "bash");
+        assert_eq!(
+            linux_name(&v(&["/bin/sh", "/home/me/bin/grok"]), "sh"),
+            "grok"
+        );
+        assert_eq!(linux_name(&v(&["sh", "-c", "claude"]), "sh"), "sh");
+        assert_eq!(linux_name(&[], "kworker/0:1"), "kworker/0:1");
+        let procs = [p(10, 1, "bash"), p(11, 10, "pi")];
+        assert_eq!(
+            agent_under(10, &procs, &[("pi".into(), "pi".into())]).as_deref(),
+            Some("pi")
+        );
     }
 }

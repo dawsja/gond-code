@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 pub mod client;
+pub mod here;
 pub mod host;
 pub mod hub;
 pub mod proto;
@@ -81,10 +82,20 @@ impl Spawn {
         self
     }
 
+    /// No program: this machine's shell (a remote host's user's, the app can't know it). A
+    /// folder that isn't there: the home folder.
     fn command(&self) -> CommandBuilder {
-        let mut cmd = CommandBuilder::new(&self.program);
+        let program = if self.program.as_os_str().is_empty() {
+            default_shell()
+        } else {
+            self.program.clone()
+        };
+        let mut cmd = CommandBuilder::new(&program);
         cmd.args(&self.args);
-        cmd.cwd(&self.cwd);
+        match dirs::home_dir().filter(|_| !self.cwd.is_dir()) {
+            Some(home) => cmd.cwd(home),
+            None => cmd.cwd(&self.cwd),
+        }
         if !self.env.is_empty() {
             cmd.env_clear();
             for (k, v) in &self.env {
@@ -337,6 +348,11 @@ impl PtyManager {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         cmd.env_remove("NO_COLOR");
+        // Which terminal this is. Without it an agent on Windows takes the pane for the old
+        // console host and holds back: Devin warns "Unsupported terminal" and sends no status
+        // (OSC 7501), which Gond reads.
+        cmd.env("TERM_PROGRAM", "gond-code");
+        cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         let pair = native_pty_system()
             .openpty(size(cols, rows))
             .map_err(failed)?;

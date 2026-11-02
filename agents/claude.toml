@@ -1,0 +1,45 @@
+# Claude Code (Anthropic). How Gond installs, updates, finds, resumes and reads this agent.
+# See agents/README.md for what each key means.
+id = "claude"
+name = "Claude Code"
+command = "claude"
+icon = "claude"
+changelog = "https://github.com/anthropics/claude-code/releases"
+usage = "claude"
+
+[install]
+winget = "Anthropic.ClaudeCode"
+script = "https://claude.ai/install.ps1"
+# The script leaves claude.exe in ~\.local\bin without putting it on PATH.
+script_bin = "~/.local/bin"
+npm = "@anthropic-ai/claude-code"
+npm_needs_node = true
+
+[update]
+self = ["update"]
+latest = { npm = "@anthropic-ai/claude-code" }
+
+[detect]
+dirs = ["~/.local/bin"]
+script_install = ["/.local/bin/"]
+
+[uninstall]
+# claude.exe, its versions and lock state; ~\.local\bin is shared with other tools.
+program = ["~/.local/bin/claude.exe", "~/.local/share/claude", "~/.local/state/claude"]
+shared_path = "~/.local/bin"
+settings = ["~/.claude", "~/.claude.json"]
+
+[resume]
+command = "claude --resume {id}"
+flags = ["--resume", "-r"]
+home = ["$CLAUDE_CONFIG_DIR", "~/.claude"]
+# projects/<folder, every non-alphanumeric as ->/<id>.jsonl
+store = { kind = "reader", name = "claude" }
+
+[status]
+# A spinner while it works, "✳ " once it waits at its input.
+title = "claude"
+# It asks at the bottom of the pane or at its cursor; a choice higher up is the conversation.
+scan = "bottom"
+# Alt+V on Windows (Ctrl+V is its key only under WSL).
+paste = "alt+v"

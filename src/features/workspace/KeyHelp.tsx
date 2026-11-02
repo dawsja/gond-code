@@ -24,9 +24,17 @@ export type Command =
   | "dictate"
   | "session"
   | "settings"
-  | "updates";
+  | "updates"
+  | "machines"
+  | "machine-add"
+  | "machine-key-create"
+  | `machine-key:${string}`
+  | "machine-manage"
+  | `machine-terminal:${string}`
+  | `machine-session:${string}`
+  | `machine-reconnect:${string}`;
 
-type Row = { keys?: string[]; does: string; run?: Command };
+export type Row = { keys?: string[]; does: string; run?: Command };
 
 /** Every command and key Gond Code answers to. Enter or a click runs a command. */
 const GROUPS: { title: string; rows: Row[] }[] = [
@@ -78,7 +86,14 @@ const GROUPS: { title: string; rows: Row[] }[] = [
  * The commands and keys, a command-menu-style list: type to find one, ↑↓ and Enter (or a
  * click) to run it on the focused pane.
  */
-export function KeyHelp({ run }: { run?: (c: Command) => void }) {
+export function KeyHelp({
+  run,
+  extra = [],
+}: {
+  run?: (c: Command) => void;
+  /** More groups (the machines there are), after the built-in ones. */
+  extra?: { title: string; rows: Row[] }[];
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -94,12 +109,15 @@ export function KeyHelp({ run }: { run?: (c: Command) => void }) {
   }, []);
 
   const find = q.trim().toLowerCase();
-  const groups = GROUPS.map((g) => ({
-    ...g,
-    rows: g.rows.filter(
-      (r) => !find || `${r.does} ${(r.keys ?? []).join(" ")}`.toLowerCase().includes(find),
-    ),
-  })).filter((g) => g.rows.length);
+  const groups = [...GROUPS, ...extra]
+    .map((g) => ({
+      ...g,
+      rows: g.rows.filter(
+        (r) =>
+          !find || `${g.title} ${r.does} ${(r.keys ?? []).join(" ")}`.toLowerCase().includes(find),
+      ),
+    }))
+    .filter((g) => g.rows.length);
   // The rows that do something, in order: ↑↓ move among them.
   const runnable = run ? groups.flatMap((g) => g.rows.filter((r) => r.run)) : [];
   const chosen = runnable[Math.min(sel, runnable.length - 1)];

@@ -1,0 +1,34 @@
+# Antigravity (Google). Google's models run through it; Gemini CLI isn't supported.
+# See agents/README.md for what each key means.
+id = "agy"
+name = "Antigravity"
+command = "agy"
+icon = "antigravity"
+changelog = "https://github.com/google-antigravity/antigravity-cli/releases"
+# Google's Cloud Code API (retrieveUserQuotaSummary, retrieveUserQuota) with agy's sign-in.
+usage = "agy"
+
+[install]
+script = "https://antigravity.google/cli/install.ps1"
+script_bin = "%LOCALAPPDATA%/agy/bin"
+
+[update]
+# `agy update` is unverified: its script runs again.
+latest = { github = "google-antigravity/antigravity-cli" }
+
+[detect]
+dirs = ["%LOCALAPPDATA%/agy/bin"]
+script_install = ["/appdata/local/agy/"]
+
+[uninstall]
+program = ["%LOCALAPPDATA%/agy"]
+path = ["%LOCALAPPDATA%/agy/bin"]
+# Only its own folder in ~\.gemini.
+settings = ["~/.gemini/antigravity-cli"]
+
+[resume]
+command = "agy --conversation {id}"
+flags = ["--conversation"]
+home = ["~/.gemini/antigravity-cli"]
+# conversation_summaries.db, its workspace URIs.
+store = { kind = "reader", name = "agy" }

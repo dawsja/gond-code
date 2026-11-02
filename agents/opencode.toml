@@ -1,0 +1,32 @@
+# opencode. No Windows script; it updates itself. See agents/README.md for what each key means.
+id = "opencode"
+name = "opencode"
+command = "opencode"
+icon = "opencode"
+changelog = "https://github.com/sst/opencode/releases"
+
+[install]
+winget = "SST.opencode"
+# Its launcher runs on Node.
+npm = "opencode-ai"
+npm_needs_node = true
+
+[update]
+self = ["upgrade"]
+latest = { npm = "opencode-ai" }
+
+[uninstall]
+# winget or Bun remove the program.
+settings = [
+    "~/.config/opencode",
+    "~/.local/share/opencode",
+    "~/.local/state/opencode",
+    "~/.cache/opencode",
+]
+
+[resume]
+command = "opencode --session {id}"
+flags = ["--session", "-s"]
+home = ["$XDG_DATA_HOME/opencode", "~/.local/share/opencode"]
+# Top-level sessions only: a sub-agent's has a parent. time_updated is in milliseconds.
+store = { kind = "sqlite", file = "opencode.db", query = "SELECT id, directory, time_updated FROM session WHERE parent_id IS NULL OR parent_id = ''" }

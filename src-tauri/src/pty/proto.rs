@@ -13,7 +13,7 @@ use serde_json::Value;
 use super::Spawn;
 use crate::error::AppError;
 
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
@@ -79,6 +79,64 @@ pub enum Request {
     },
     /// Closes every terminal and ends the host.
     Shutdown,
+    // Protocol 2: what a remote host (WSL, SSH) answers about its own machine, where the
+    // app can't see the processes or files itself.
+    /// → the agent (id) running under the terminal's shell, or null. `agents`: (id, command).
+    #[serde(rename_all = "camelCase")]
+    Agent {
+        pty_id: String,
+        agents: Vec<(String, String)>,
+    },
+    /// → `agents::resume::Resume` or null: how the terminal's agent would be resumed.
+    #[serde(rename_all = "camelCase")]
+    Resume {
+        pty_id: String,
+        agents: Vec<(String, String)>,
+        /// When the pane saw the agent start, in ms since 1970.
+        since: u64,
+        cwd: Option<String>,
+        taken: Vec<String>,
+    },
+    /// → `Probe`: the machine the host runs on.
+    Probe,
+    /// → each path that is a file, made absolute from `cwd` (`file:line` links).
+    #[serde(rename_all = "camelCase")]
+    Files {
+        cwd: String,
+        paths: Vec<String>,
+    },
+    /// Writes a dropped file into the host's `drops` folder → its full path there.
+    #[serde(rename_all = "camelCase")]
+    Upload {
+        name: String,
+        base64: String,
+    },
+    /// The host's `~/.ssh/authorized_keys`: `add` a key's line (unless that key is there),
+    /// `remove` a key's lines (by its base64) → the keys there, `{ type, key, comment }`
+    /// (protocol 3).
+    #[serde(rename_all = "camelCase")]
+    AuthorizedKeys {
+        #[serde(default)]
+        add: Option<String>,
+        #[serde(default)]
+        remove: Option<String>,
+    },
+}
+
+/// The machine a host runs on (`Probe`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Probe {
+    /// `linux`, `windows`…
+    pub os: String,
+    pub arch: String,
+    pub user: String,
+    pub home: String,
+    pub shell: String,
+    pub hostname: String,
+    /// `PRETTY_NAME` from /etc/os-release, when there is one.
+    #[serde(default)]
+    pub distro: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

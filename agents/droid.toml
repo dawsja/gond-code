@@ -1,0 +1,50 @@
+# Droid (Factory). Its script (one droid.exe in ~\bin), else the npm package through Bun (a Node
+# launcher in front of the native program). No winget package (FactoryAI.Factory is the desktop
+# app). Its script stops every running droid before it copies, so it isn't the updater.
+# Its sign-in is encrypted with a key in Credential Manager: no plan usage.
+# See agents/README.md for what each key means.
+id = "droid"
+name = "Droid"
+command = "droid"
+icon = "droid"
+changelog = "https://docs.factory.com/changelog/release-notes"
+
+[install]
+script = "https://app.factory.ai/cli/windows"
+script_bin = "~/bin"
+npm = "droid"
+npm_needs_node = true
+platform_packages = [
+    "@factory/cli-win32-x64",
+    "@factory/cli-win32-x64-baseline",
+    "@factory/cli-win32-arm64",
+]
+
+[update]
+self = ["update"]
+latest = { text = "https://downloads.factory.ai/factory-cli/LATEST" }
+
+[detect]
+dirs = ["~/bin"]
+script_install = ["/bin/droid.exe"]
+
+[uninstall]
+# ~\bin may hold other tools: only droid.exe (and the one an update replaced) goes, and ~\bin
+# leaves PATH once nothing else is in it.
+program = ["~/bin/droid.exe", "~/bin/droid.exe.old"]
+shared_path = "~/bin"
+settings = ["~/.factory"]
+
+[resume]
+command = "droid --resume {id}"
+flags = ["--resume", "-r"]
+home = ["$FACTORY_HOME_OVERRIDE", "~/.factory"]
+# sessions/-C-Users-me-proj/<id>.jsonl, its first line {"type":"session_start","id","cwd"}.
+store = { kind = "jsonl-head", dir = "sessions", type = "session_start", id = "id", cwd = "cwd" }
+
+[status]
+prompts = ['^\s*↳?\s*awaiting approval']
+# Lines its prompts show, as seen on screen: the tests check the patterns above match them.
+examples = [
+    '↳ Awaiting approval',
+]

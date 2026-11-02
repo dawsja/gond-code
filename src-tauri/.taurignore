@@ -1,0 +1,2 @@
+# The remote host (gond-remote) builds on its own: its build output never restarts Gond Code Dev.
+remote/

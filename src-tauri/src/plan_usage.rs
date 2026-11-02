@@ -527,9 +527,267 @@ pub fn cursor(token: &str, post: Post) -> Vec<UsageWindow> {
     }
 }
 
+/// An RFC 3339 time, or one in milliseconds since 1970, as RFC 3339.
+fn rfc3339(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
+        return Some(s.to_string());
+    }
+    let ms = v.as_f64().filter(|ms| *ms > 0.0)?;
+    time::OffsetDateTime::from_unix_timestamp((ms / 1000.0) as i64)
+        .ok()?
+        .format(&time::format_description::well_known::Rfc3339)
+        .ok()
+}
+
+/// Kimi Code's sign-in (`<home>\credentials\kimi-code*.json`, the newest), unless it has
+/// expired, and the API its region uses.
+pub fn kimi_token(home: &Path) -> Option<(String, &'static str)> {
+    let newest = std::fs::read_dir(home.join("credentials"))
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("kimi-code") && n.ends_with(".json"))
+        })
+        .max_by_key(|p| p.metadata().and_then(|m| m.modified()).ok())?;
+    let v: Value = serde_json::from_slice(&std::fs::read(newest).ok()?).ok()?;
+    let token = v["access_token"].as_str().filter(|t| !t.is_empty())?;
+    let expires = v["expires_at"].as_i64().unwrap_or(i64::MAX);
+    if expires <= time::OffsetDateTime::now_utc().unix_timestamp() {
+        return None;
+    }
+    // `global` signs in at kimi.ai; mainland China at kimi.com.
+    let region = std::fs::read_to_string(home.join("region")).unwrap_or_default();
+    let api = if region.trim() == "mainland-cn" {
+        "https://api.kimi.com"
+    } else {
+        "https://api.kimi.ai"
+    };
+    Some((token.to_string(), api))
+}
+
+/// Kimi Code's windows from `/coding/v1/usages`, as its `/usage` shows them: the 5 hours, the
+/// week and the month the plan has.
+pub fn kimi_windows(v: &Value) -> Vec<UsageWindow> {
+    let u = &v["usages"];
+    [
+        ("limit_5h", "session", None),
+        ("limit_7d", "weekly", None),
+        ("limit_month_total", "monthly", None),
+    ]
+    .into_iter()
+    .filter_map(|(field, name, label): (&str, &str, Option<String>)| {
+        let w = &u[field];
+        let used = w["used_ratio"].as_f64()?;
+        Some(window(
+            name,
+            label,
+            used * 100.0,
+            rfc3339(&w["reset_time"]).as_deref(),
+        ))
+    })
+    .collect()
+}
+
+/// Kimi Code's plan limits.
+pub fn kimi(token: &str, api: &str, fetch: Fetch) -> Vec<UsageWindow> {
+    let req = Request {
+        url: format!("{api}/coding/v1/usages"),
+        headers: vec![
+            ("Authorization".into(), format!("Bearer {token}")),
+            ("Accept".into(), "application/json".into()),
+        ],
+    };
+    match fetch(&req, TIMEOUT) {
+        Ok((200, body)) => kimi_windows(&serde_json::from_str(&body).unwrap_or_default()),
+        _ => vec![],
+    }
+}
+
+/// MiniMax Code's sign-in (`<data>\auth\prod\<region>\mcode-public\auth.json`), unless it has
+/// expired, and the platform its region uses.
+pub fn minimax_token(data: &Path) -> Option<(String, &'static str)> {
+    let now_ms = time::OffsetDateTime::now_utc().unix_timestamp() * 1000;
+    [
+        ("en", "https://platform.minimax.io"),
+        ("cn", "https://www.minimaxi.com"),
+    ]
+    .into_iter()
+    .find_map(|(region, api)| {
+        let f = data
+            .join("auth")
+            .join("prod")
+            .join(region)
+            .join("mcode-public")
+            .join("auth.json");
+        let v: Value = serde_json::from_slice(&std::fs::read(f).ok()?).ok()?;
+        let rec = v["records"].as_object()?.values().find(|r| {
+            r["accessToken"].as_str().is_some_and(|t| !t.is_empty())
+                && r["expiresAtMs"].as_i64().unwrap_or(i64::MAX) > now_ms
+        })?;
+        Some((rec["accessToken"].as_str()?.to_string(), api))
+    })
+}
+
+/// MiniMax Code's windows from `coding_plan/remains`: the 5-hour interval and the week, as
+/// its `/status` shows them (the first model's: the plan's own).
+pub fn minimax_windows(v: &Value) -> Vec<UsageWindow> {
+    if v["base_resp"]["status_code"].as_i64().unwrap_or(0) != 0 {
+        return vec![];
+    }
+    let Some(m) = v["model_remains"].as_array().and_then(|a| a.first()) else {
+        return vec![];
+    };
+    let mut out = vec![];
+    for (left, end, name) in [
+        ("current_interval_remaining_percent", "end_time", "session"),
+        (
+            "current_weekly_remaining_percent",
+            "weekly_end_time",
+            "weekly",
+        ),
+    ] {
+        if let Some(left) = m[left].as_f64() {
+            out.push(window(
+                name,
+                None,
+                100.0 - left,
+                rfc3339(&m[end]).as_deref(),
+            ));
+        }
+    }
+    out
+}
+
+/// MiniMax Code's plan limits.
+pub fn minimax(token: &str, api: &str, fetch: Fetch) -> Vec<UsageWindow> {
+    let req = Request {
+        url: format!("{api}/v1/api/openplatform/coding_plan/remains"),
+        headers: vec![
+            ("Authorization".into(), format!("Bearer {token}")),
+            ("Accept".into(), "application/json".into()),
+        ],
+    };
+    match fetch(&req, TIMEOUT) {
+        Ok((200, body)) => minimax_windows(&serde_json::from_str(&body).unwrap_or_default()),
+        _ => vec![],
+    }
+}
+
+/// Hermes' Nous Portal sign-in (`<home>\auth.json`), unless it has expired, and its portal.
+pub fn hermes_token(home: &Path) -> Option<(String, String)> {
+    let v: Value = serde_json::from_slice(&std::fs::read(home.join("auth.json")).ok()?).ok()?;
+    let nous = &v["providers"]["nous"];
+    let token = nous["access_token"].as_str().filter(|t| !t.is_empty())?;
+    let expired = nous["expires_at"]
+        .as_str()
+        .and_then(|e| {
+            time::OffsetDateTime::parse(e, &time::format_description::well_known::Rfc3339).ok()
+        })
+        .is_some_and(|e| e <= time::OffsetDateTime::now_utc());
+    if expired {
+        return None;
+    }
+    let portal = nous["portal_base_url"]
+        .as_str()
+        .filter(|u| u.starts_with("https://"))
+        .unwrap_or("https://portal.nousresearch.com")
+        .trim_end_matches('/')
+        .to_string();
+    Some((token.to_string(), portal))
+}
+
+/// Hermes' windows from the Portal's account: its subscription's usage gauges (`used_bp`, in
+/// hundredths of a percent). None without a subscription.
+pub fn hermes_windows(v: &Value) -> Vec<UsageWindow> {
+    let Some(gauges) = v["usage_window"]["gauges"].as_array() else {
+        return vec![];
+    };
+    gauges
+        .iter()
+        .filter_map(|g| {
+            let used = g["used_bp"].as_f64()? / 100.0;
+            let label = g["label"].as_str().map(String::from);
+            let name = match g["scope"].as_str().or(g["id"].as_str()).unwrap_or("") {
+                s if s.contains("week") => "weekly",
+                s if s.contains("month") => "monthly",
+                _ => "session",
+            };
+            Some(window(
+                name,
+                label,
+                used,
+                rfc3339(&g["resets_at_ms"]).as_deref(),
+            ))
+        })
+        .collect()
+}
+
+/// Hermes' plan limits on the Nous Portal.
+pub fn hermes(token: &str, portal: &str, fetch: Fetch) -> Vec<UsageWindow> {
+    let req = Request {
+        url: format!("{portal}/api/oauth/account"),
+        headers: vec![
+            ("Authorization".into(), format!("Bearer {token}")),
+            ("Accept".into(), "application/json".into()),
+        ],
+    };
+    match fetch(&req, TIMEOUT) {
+        Ok((200, body)) => hermes_windows(&serde_json::from_str(&body).unwrap_or_default()),
+        _ => vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The answers Kimi Code's, MiniMax Code's and the Nous Portal's endpoints gave on
+    /// 2026-11-02, trimmed (a Kimi plan with 5 hours and a month; a MiniMax plan untouched; a
+    /// Portal account without a subscription), and a Portal one with gauges.
+    #[test]
+    fn kimi_minimax_and_hermes_limits_become_windows() {
+        let kimi = serde_json::json!({"usages": {
+            "limit_5h": {"used_ratio": 0, "reset_time": "2026-11-02T19:15:16Z"},
+            "limit_month_total": {"used_ratio": 0.0226, "reset_time": "2026-11-24T00:00:00Z"},
+            "limit_month_code": {"used_ratio": 0.0226, "reset_time": "2026-11-24T00:00:00Z"}
+        }});
+        let w = kimi_windows(&kimi);
+        assert_eq!(w.len(), 2);
+        assert_eq!((w[0].name.as_str(), w[0].percent_left), ("session", 100.0));
+        assert_eq!((w[1].name.as_str(), w[1].percent_left), ("monthly", 97.7));
+        assert_eq!(w[1].resets_at.as_deref(), Some("2026-11-24T00:00:00Z"));
+
+        let mm = serde_json::json!({"model_remains": [{
+            "end_time": 1793655592956_i64, "weekly_end_time": 1794242392956_i64,
+            "current_interval_remaining_percent": 100, "current_weekly_remaining_percent": 64
+        }], "base_resp": {"status_code": 0}});
+        let w = minimax_windows(&mm);
+        assert_eq!(w.len(), 2);
+        assert_eq!((w[1].name.as_str(), w[1].percent_left), ("weekly", 64.0));
+        assert!(w[0]
+            .resets_at
+            .as_deref()
+            .is_some_and(|r| r.starts_with("2026-11-")));
+        let failed = serde_json::json!({"base_resp": {"status_code": 1004}});
+        assert!(minimax_windows(&failed).is_empty());
+
+        let none =
+            serde_json::json!({"subscription": null, "paid_service_access": {"allowed": false}});
+        assert!(hermes_windows(&none).is_empty());
+        let subscribed = serde_json::json!({"usage_window": {"gauges": [
+            {"id": "5h", "scope": "rolling_5h", "label": "5 hours", "used_bp": 2500, "resets_at_ms": 1793655592956_i64},
+            {"id": "week", "scope": "weekly", "label": "Week", "used_bp": 10000}
+        ]}});
+        let w = hermes_windows(&subscribed);
+        assert_eq!((w[0].name.as_str(), w[0].percent_left), ("session", 75.0));
+        assert_eq!(
+            (w[1].name.as_str(), w[1].status.as_deref()),
+            ("weekly", Some("rejected"))
+        );
+    }
 
     /// The answer Claude's usage endpoint gave on 2026-10-31 (Claude Max), trimmed.
     #[test]

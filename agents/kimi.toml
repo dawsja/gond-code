@@ -1,0 +1,53 @@
+# Kimi Code (Moonshot AI), the TypeScript CLI that replaced the Python kimi-cli.
+# Its script first (kimi.exe in ~\.kimi-code\bin, from the global mirror), then winget (whose
+# package downloads from code.kimi.com, which many networks can't reach), else Bun (Node 22.19+).
+# Its shell tool is Git Bash. `kimi upgrade --yes` crashes as it exits (2.4.1, a libuv
+# assertion), so its script runs again to update it.
+# See agents/README.md for what each key means.
+id = "kimi"
+name = "Kimi Code"
+command = "kimi"
+icon = "kimi"
+changelog = "https://github.com/MoonshotAI/kimi-code/releases"
+# api.kimi.ai/coding/v1/usages (api.kimi.com for mainland China, by ~\.kimi-code\region).
+usage = "kimi"
+
+[install]
+script = "https://code.kimi.ai/kimi-code/install.ps1"
+script_bin = "~/.kimi-code/bin"
+script_first = true
+winget = "MoonshotAI.KimiCodeCLI"
+npm = "@moonshot-ai/kimi-code"
+npm_needs_node = true
+requires = ["git"]
+
+[update]
+latest = { text = "https://code.kimi.ai/kimi-code/latest" }
+
+[detect]
+dirs = ["~/.kimi-code/bin"]
+script_install = ["/.kimi-code/"]
+
+[uninstall]
+# kimi.exe, the copy an update replaced, its staged update, the rg and fd it fetched. The rest
+# of ~\.kimi-code is settings, sign-in and sessions.
+program = ["~/.kimi-code/bin/kimi.exe", "~/.kimi-code/bin"]
+path = ["~/.kimi-code/bin"]
+settings = ["~/.kimi-code"]
+
+[resume]
+command = "kimi --session {id}"
+flags = ["--session", "-S", "--resume", "-r"]
+home = ["$KIMI_CODE_HOME", "~/.kimi-code"]
+# session_index.jsonl: a line per session with its id, folder and working folder.
+store = { kind = "reader", name = "kimi" }
+
+[status]
+prompts = ['approve (once|for this session)', '↵ confirm']
+paste = "alt+v"
+# Lines its prompts show, as seen on screen: the tests check the patterns above match them.
+examples = [
+    '▶ 1. Approve once',
+    '  2. Approve for this session',
+    '↑/↓ select · 1/2/3/4 choose · ↵ confirm · ctrl+e preview',
+]

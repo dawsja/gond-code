@@ -1,0 +1,36 @@
+# Cline. The npm package through Bun (a Node launcher in front of the native program). Not on
+# winget (Cline.ClineDesktop is the desktop app), no Windows script. Its account has a credit
+# balance, not a plan.
+# See agents/README.md for what each key means.
+id = "cline"
+name = "Cline"
+command = "cline"
+icon = "cline"
+changelog = "https://github.com/cline/cline/releases"
+
+[install]
+npm = "cline"
+npm_needs_node = true
+platform_packages = ["@cline/cli-windows-x64", "@cline/cli-windows-arm64"]
+
+[update]
+latest = { npm = "cline" }
+
+[uninstall]
+settings = ["~/.cline"]
+# Its hub (`cline.exe --cline-hub-daemon`), which holds its program.
+background = "cline.exe"
+
+[resume]
+command = "cline --id {id}"
+flags = ["--id"]
+home = ["$CLINE_DIR", "~/.cline"]
+store = { kind = "sqlite", file = "data/db/sessions.db", query = "SELECT session_id, cwd, COALESCE(updated_at, started_at) FROM sessions" }
+
+[status]
+prompts = ['^\s*cline needs permission', 'approve tool call\?']
+# Lines its prompts show, as seen on screen: the tests check the patterns above match them.
+examples = [
+    'Cline needs permission',
+    'Approve tool call?',
+]
