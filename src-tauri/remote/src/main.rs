@@ -26,16 +26,7 @@ mod process;
 #[path = "../../src/proctree.rs"]
 mod proctree;
 
-mod agents {
-    #[path = "../../../src/agents/cwd.rs"]
-    pub mod cwd;
-    #[path = "../../../src/agents/resume.rs"]
-    pub mod resume;
-    #[path = "../../../src/agents/running.rs"]
-    pub mod running;
-    #[path = "../../../src/agents/spec.rs"]
-    pub mod spec;
-}
+mod agents;
 
 /// The app's errors, as far as the host code uses them.
 mod error {
