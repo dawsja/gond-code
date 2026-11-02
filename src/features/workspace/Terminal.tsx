@@ -429,6 +429,12 @@ export function Terminal({
       });
     });
 
+    const ownRightClick = (e: MouseEvent) => {
+      if (e.button !== 2) return;
+      e.stopPropagation();
+      if (e.type === "mousedown") live.current.onFocus();
+    };
+
     // Draws once the terminal font is in (or straight away where fonts can't be waited on).
     loadTerminalFont(terminalFont()).finally(async () => {
       if (disposed) return;
@@ -446,6 +452,11 @@ export function Terminal({
       }
       fit.fit();
       resize.observe(el);
+      // A right-click is for the pane's menu, never the program: one that asks for the mouse
+      // (Claude Code does) gets no right button, else it pastes under the menu as it opens.
+      // The menu's Paste is there for that. The pane still takes the focus.
+      el.addEventListener("mousedown", ownRightClick, true);
+      el.addEventListener("mouseup", ownRightClick, true);
       t.textarea?.addEventListener("focus", () => live.current.onFocus());
       // xterm's hidden input, named for agents and the legibility audit.
       t.textarea?.setAttribute("data-local", "pane.input");
@@ -543,6 +554,8 @@ export function Terminal({
     return () => {
       disposed = true;
       window.clearTimeout(pendingCue);
+      el.removeEventListener("mousedown", ownRightClick, true);
+      el.removeEventListener("mouseup", ownRightClick, true);
       stopSaving();
       stopFont();
       window.clearInterval(tick);
