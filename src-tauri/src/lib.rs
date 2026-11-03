@@ -11,6 +11,7 @@ pub mod drop;
 pub mod editors;
 pub mod error;
 pub mod fallback;
+pub mod folders;
 pub mod git;
 pub mod github;
 pub mod grok_usage;

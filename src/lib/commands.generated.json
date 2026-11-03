@@ -648,19 +648,20 @@
   },
   {
     "name": "folder.open",
-    "summary": "Open a folder's project in File Explorer",
+    "summary": "Open an existing directory in File Explorer",
     "risk": "read",
     "humanOnly": true,
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
-        "projectId": {
+        "path": {
+          "description": "An existing directory on this PC; `~` means your home folder.",
           "type": "string"
         }
       },
       "required": [
-        "projectId"
+        "path"
       ],
       "title": "FolderInput",
       "type": "object"

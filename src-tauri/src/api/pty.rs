@@ -37,7 +37,8 @@ pub struct OpenInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FolderInput {
-    pub project_id: String,
+    /// An existing directory on this PC; `~` means your home folder.
+    pub path: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -167,16 +168,17 @@ fn terminal_target(
     store: &crate::store::Store,
     project_id: Option<&str>,
 ) -> AppResult<(String, std::path::PathBuf)> {
-    match project_id {
-        Some(p) => Ok((
-            project_owner(p),
-            std::path::PathBuf::from(crate::projects::get(store, p)?.path),
-        )),
-        None => Ok((
-            "home".into(),
-            dirs::home_dir().ok_or_else(|| AppError::Invalid("no home folder".into()))?,
-        )),
+    if let Some(id) = project_id.filter(|id| !id.is_empty()) {
+        match crate::projects::get(store, id) {
+            Ok(project) => return Ok((project_owner(id), project.path.into())),
+            Err(AppError::NotFound(_)) => {}
+            Err(error) => return Err(error),
+        }
     }
+    Ok((
+        "home".into(),
+        dirs::home_dir().ok_or_else(|| AppError::Invalid("no home folder".into()))?,
+    ))
 }
 
 pub fn register(r: &mut Registry<Services>) {
@@ -193,13 +195,13 @@ pub fn register(r: &mut Registry<Services>) {
     r.add(
         Def::new(
             "folder.open",
-            "Open a folder's project in File Explorer",
+            "Open an existing directory in File Explorer",
             Risk::Read,
         )
         .human_only(),
-        |call, i: FolderInput| -> AppResult<()> {
-            let p = crate::projects::get(&call.ctx.store, &i.project_id)?;
-            tauri_plugin_opener::open_path(&p.path, None::<&str>)
+        |_, i: FolderInput| -> AppResult<()> {
+            let path = crate::folders::directory(&i.path, dirs::home_dir().as_deref())?;
+            tauri_plugin_opener::open_path(path, None::<&str>)
                 .map_err(|e| AppError::Invalid(e.to_string()))
         },
     );
@@ -575,6 +577,20 @@ mod terminal {
     use crate::api::{registry, Actor, Services};
     use crate::git::tests::temp_repo;
     use serde_json::json;
+
+    #[test]
+    fn saved_project_ids_resolve_without_the_frontend_project_list() {
+        let store = crate::store::Store::open_in_memory().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let project = crate::projects::add(&store, dir.path()).unwrap();
+        let target = super::terminal_target(&store, Some(&project.id)).unwrap();
+        assert_eq!(target.1, std::path::PathBuf::from(&project.path));
+        crate::projects::remove(&store, &project.id).unwrap();
+        for id in [Some(project.id.as_str()), Some(""), None] {
+            let target = super::terminal_target(&store, id).unwrap();
+            assert_eq!(target, ("home".into(), dirs::home_dir().unwrap()));
+        }
+    }
 
     /// A project's terminal runs a shell in its folder: what you type there runs, and its
     /// output reads back.

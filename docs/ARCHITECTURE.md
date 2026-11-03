@@ -44,6 +44,24 @@ runs nothing on an agent's behalf.
    it. Panes run with `TERM_PROGRAM=gond-code`: without it Devin takes ConPTY for the old
    console host and sends no OSC 7501.
 
+### A pane's folder
+`pty.open` starts in its registered project's folder, else home (or the supplied `cwd`).
+Saved project IDs are sent even before the UI project list loads; Rust resolves them and falls
+back to home for empty or removed IDs, without swallowing other lookup errors.
+For a local shell, `Terminal.tsx` reads the folder its prompt shows, including a prompt near
+the cursor above the bottom of the screen. The reader preserves buffer order with bottom rows
+last, so older prompts cannot override the live prompt after scrollback. Prompt-derived UNC
+paths (`\\host\share`, including `\\wsl$`) are rejected inside `promptFolder` for every
+consumer, including restart snapshot cwd; the pane-folder store also filters them defensively. Terminal
+output is untrusted and must not cause a network probe. The resolver falls back to saved resume
+cwd, registered start folder or home. Rust still validates explicit paths as directories.
+It keeps the last accepted folder while an agent runs;
+it does not ask the agent. WSL and custom prompts may not show a readable folder.
+Open folder resolves the pane's last prompt folder, else its saved resume cwd, else its
+registered start folder, else home. `folder.open` accepts a path, not a project id, and
+validates an existing directory before handing it to File Explorer. The menu entry is hidden
+for WSL/SSH panes: those paths belong to another machine, not local Explorer.
+
 ### The terminal host
 The terminals live in a background process so they outlive the app (`pty/host.rs`,
 `pty/client.rs`, `pty/hub.rs`, `pty/proto.rs`).

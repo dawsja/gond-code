@@ -20,7 +20,8 @@ import { setPaneAgent } from "./paneAgent";
 import { fileLinks } from "./fileLinks";
 import { paneFolder, setPaneFolder } from "./paneFolder";
 import { searchLines, type Hit, type Line } from "./scrollbackSearch";
-import { promptFolder } from "./prompt";
+import { promptFolder, promptRows } from "./prompt";
+import { savePaneScreen } from "./paneScreen";
 import {
   asks,
   atInput,
@@ -320,24 +321,7 @@ export function Terminal({
           runCommand("sound.play", { cue: s }).catch(() => undefined);
       }, 1000);
     };
-    const lines = () => {
-      const b = t.buffer.active;
-      const out: string[] = [];
-      for (let y = Math.max(0, b.baseY + t.rows - 14); y < b.baseY + t.rows; y++)
-        out.push(b.getLine(y)?.translateToString(true) ?? "");
-      return out;
-    };
-    // What an agent shows you: the pane's last rows, and the rows up to its cursor, since an
-    // agent drawn inline (Claude Code's questions) sits at the cursor, high in a tall pane.
-    const screen = () => {
-      const b = t.buffer.active;
-      const out = lines();
-      const bottom = Math.max(0, b.baseY + t.rows - 14);
-      const end = Math.min(b.baseY + b.cursorY + 2, bottom);
-      for (let y = Math.max(0, end - 14); y < end; y++)
-        out.push(b.getLine(y)?.translateToString(true) ?? "");
-      return out.join("\n");
-    };
+    const screen = () => promptRows(t).join("\n");
     // Every row on screen, top to bottom.
     const visible = () => {
       const b = t.buffer.active;
@@ -400,11 +384,7 @@ export function Terminal({
     };
     const stopSaving = onBeforeRestart(async () => {
       if (!ptyId || !shellsOnly()) return;
-      await runCommand("pane.screen.save", {
-        paneId,
-        screen: serialize.serialize({ scrollback: 2000 }),
-        cwd: promptFolder(lines()),
-      });
+      await savePaneScreen(paneId, t, serialize);
     });
     const tick = window.setInterval(() => {
       if (state === "exited") return;
@@ -413,7 +393,7 @@ export function Terminal({
       if (agent && ticks % 40 === 0) reportAgent();
       // A shell can cd anywhere: the status bar follows the folder its prompt shows.
       if (!agent) {
-        const folder = promptFolder(lines());
+        const folder = promptFolder(screen().split("\n"));
         if (folder) setPaneFolder(paneId, folder);
         return;
       }
@@ -614,7 +594,7 @@ export function Terminal({
             // Once the shell shows its prompt (8 s at most), as if you typed it.
             const typeIt = () => {
               if (disposed) return;
-              if (!promptFolder(lines()) && Date.now() - started < 8000)
+              if (!promptFolder(screen().split("\n")) && Date.now() - started < 8000)
                 return void window.setTimeout(typeIt, 250);
               t.write("\x1b[2m[Resuming the agent that was running here]\x1b[0m\r\n");
               void callOrRun("pty_write", "pty.write", {

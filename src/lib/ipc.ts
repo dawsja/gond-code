@@ -15,14 +15,15 @@ export const mockBackend = () => !isTauri() || import.meta.env.VITE_GOND_MOCK ==
 /** Command name → [args, result]. Mirrors the #[tauri::command]s in src-tauri. */
 export interface Commands {
   app_version: [None, string];
+  folder_open: [{ path: string }, null];
   project_add: [{ path: string }, Project];
   project_list: [None, Project[]];
   project_remove: [{ projectId: string }, null];
   project_touch: [{ projectId: string }, null];
   agent_detect: [None, AgentInfo[]];
   pty_open: [
-    { threadId?: string; projectId?: string; cols: number; rows: number },
-    { ptyId: string },
+    { key?: string; projectId?: string; shell?: string; cwd?: string; cols: number; rows: number },
+    { ptyId: string; shell?: string },
   ];
   pty_write: [{ ptyId: string; data: string }, null];
   pty_resize: [{ ptyId: string; cols: number; rows: number }, null];
@@ -45,6 +46,7 @@ export interface Events {
  */
 export const REGISTRY_NAME: Partial<Record<keyof Commands, string>> = {
   app_version: "app.version",
+  folder_open: "folder.open",
   project_add: "project.add",
   project_list: "project.list",
   project_remove: "project.remove",
