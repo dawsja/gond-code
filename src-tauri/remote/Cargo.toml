@@ -1,6 +1,6 @@
 [package]
 name = "gond-remote"
-version = "0.3.1"
+version = "0.3.2"
 description = "Gond Code's terminal host for another machine: WSL, or a computer over SSH."
 edition = "2021"
 rust-version = "1.85"
