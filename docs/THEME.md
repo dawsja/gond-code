@@ -10,9 +10,11 @@ carries `dark`, and the tint is `data-tint` on it (`src/lib/theme.ts`).
 **Window chrome:** Windows' own dark title bar, dark before the window
 shows so it never flashes white.
 
-**Logo:** Gond Code's mark, a black rounded square with a faint light edge and the Gond bot's eyes as a
-white `>` and `|` (`docs/gond-code.svg` for the UI, `docs/gond-code-1024.png` for Windows icons; pinned in `docs/brand.sha256`). Gond's cog
-(`docs/gond.svg`) means Gond itself.
+**Logo:** Gond Code's mark is an ink rounded square matching Gond and Gond Agent (outer
+radius 300, ring radius 287), with a faint light edge and the Gond bot's eyes as a white `>`
+and `|`. `docs/gond-code.svg` is the source; `docs/gond-code-1024.png` and Windows icons are
+derived from it (pinned in `docs/brand.sha256`). It appears in OS chrome, not in the React UI.
+Gond's cog (`docs/gond.svg`) means Gond itself.
 
 ## Fonts and shape
 - **Inter Variable** for UI, **JetBrains Mono Variable** for code
