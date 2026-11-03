@@ -24,11 +24,11 @@ it("opens the pane's current folder before its resume or registered start folder
   }
 });
 
-it("reads forward-slash drive and UNC prompts without losing roots or path case", () => {
+it("reads forward-slash drive prompts but rejects UNC prompts", () => {
   expect(promptFolder(["PS c:/Users/X/>"])).toBe("c:/Users/X");
   expect(promptFolder(["PS c:/> "])).toBe("c:/");
-  expect(promptFolder(["PS \\\\server\\share\\folder> "])).toBe("\\\\server\\share\\folder");
-  expect(promptFolder(["PS \\\\wsl$\\Ubuntu\\home\\x> "])).toBe("\\\\wsl$\\Ubuntu\\home\\x");
+  expect(promptFolder(["PS \\\\server\\share\\folder> "])).toBeUndefined();
+  expect(promptFolder(["PS \\\\wsl$\\Ubuntu\\home\\x> "])).toBeUndefined();
 });
 
 it("discards prompt-derived UNC paths and uses trusted folder fallbacks", () => {

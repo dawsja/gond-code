@@ -51,7 +51,8 @@ back to home for empty or removed IDs, without swallowing other lookup errors.
 For a local shell, `Terminal.tsx` reads the folder its prompt shows, including a prompt near
 the cursor above the bottom of the screen. The reader preserves buffer order with bottom rows
 last, so older prompts cannot override the live prompt after scrollback. Prompt-derived UNC
-paths (`\\host\share`, including `\\wsl$`) are discarded before folder tracking: terminal
+paths (`\\host\share`, including `\\wsl$`) are rejected inside `promptFolder` for every
+consumer, including restart snapshot cwd; the pane-folder store also filters them defensively. Terminal
 output is untrusted and must not cause a network probe. The resolver falls back to saved resume
 cwd, registered start folder or home. Rust still validates explicit paths as directories.
 It keeps the last accepted folder while an agent runs;

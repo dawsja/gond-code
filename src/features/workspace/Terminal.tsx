@@ -21,6 +21,7 @@ import { fileLinks } from "./fileLinks";
 import { paneFolder, setPaneFolder } from "./paneFolder";
 import { searchLines, type Hit, type Line } from "./scrollbackSearch";
 import { promptFolder, promptRows } from "./prompt";
+import { savePaneScreen } from "./paneScreen";
 import {
   asks,
   atInput,
@@ -383,11 +384,7 @@ export function Terminal({
     };
     const stopSaving = onBeforeRestart(async () => {
       if (!ptyId || !shellsOnly()) return;
-      await runCommand("pane.screen.save", {
-        paneId,
-        screen: serialize.serialize({ scrollback: 2000 }),
-        cwd: promptFolder(screen().split("\n")),
-      });
+      await savePaneScreen(paneId, t, serialize);
     });
     const tick = window.setInterval(() => {
       if (state === "exited") return;
