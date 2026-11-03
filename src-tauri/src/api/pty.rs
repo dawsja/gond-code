@@ -37,7 +37,8 @@ pub struct OpenInput {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FolderInput {
-    pub project_id: String,
+    /// An existing directory on this PC; `~` means your home folder.
+    pub path: String,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -193,13 +194,13 @@ pub fn register(r: &mut Registry<Services>) {
     r.add(
         Def::new(
             "folder.open",
-            "Open a folder's project in File Explorer",
+            "Open an existing directory in File Explorer",
             Risk::Read,
         )
         .human_only(),
-        |call, i: FolderInput| -> AppResult<()> {
-            let p = crate::projects::get(&call.ctx.store, &i.project_id)?;
-            tauri_plugin_opener::open_path(&p.path, None::<&str>)
+        |_, i: FolderInput| -> AppResult<()> {
+            let path = crate::folders::directory(&i.path, dirs::home_dir().as_deref())?;
+            tauri_plugin_opener::open_path(path, None::<&str>)
                 .map_err(|e| AppError::Invalid(e.to_string()))
         },
     );

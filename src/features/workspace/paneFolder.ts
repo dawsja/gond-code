@@ -1,7 +1,9 @@
 import { useSyncExternalStore } from "react";
+import { isMachine } from "@/features/machines/machines";
+import type { Pane } from "./layout";
 
 // The folder a shell pane's prompt shows right now (`promptFolder`), per pane. Terminal keeps
-// it up to date; the status bar reads the focused pane's. Agents don't move, so they have none.
+// it up to date; while an agent runs, the last known folder stays available.
 
 const folders = new Map<string, string>();
 const listeners = new Set<() => void>();
@@ -25,3 +27,17 @@ export function usePaneFolder(paneId: string | undefined) {
 
 /** The folder `paneId`'s prompt shows now, outside React (a link resolves from it). */
 export const paneFolder = (paneId: string) => folders.get(paneId);
+
+/** A local folder action never receives a project id or another machine's path. */
+export function folderForPane(
+  pane: Pane,
+  projects: readonly { id: string; path: string }[],
+): string | undefined {
+  if (isMachine(pane.shell)) return undefined;
+  return (
+    paneFolder(pane.id) ||
+    pane.resume?.cwd ||
+    projects.find((p) => p.id === pane.projectId)?.path ||
+    "~"
+  );
+}

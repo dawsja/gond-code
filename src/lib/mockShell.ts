@@ -25,6 +25,10 @@ const COMMANDS: Record<string, (s: Shell, args: string) => string> = {
       .join("  ") + "\r\n",
   "git status": (s) =>
     `On branch gond/${s.cwd.split("\\").pop()}\r\nChanges not staged for commit:\r\n  ${RED}modified:   src/main.tsx${RESET}\r\n`,
+  cd: (s, args) => {
+    if (/^[a-z]:[\\/]/i.test(args)) s.cwd = args;
+    return "";
+  },
   echo: (_, args) => `${args}\r\n`,
   clear: () => "\x1b[2J\x1b[H",
 };

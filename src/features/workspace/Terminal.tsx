@@ -403,7 +403,7 @@ export function Terminal({
       await runCommand("pane.screen.save", {
         paneId,
         screen: serialize.serialize({ scrollback: 2000 }),
-        cwd: promptFolder(lines()),
+        cwd: promptFolder(screen().split("\n")),
       });
     });
     const tick = window.setInterval(() => {
@@ -413,7 +413,7 @@ export function Terminal({
       if (agent && ticks % 40 === 0) reportAgent();
       // A shell can cd anywhere: the status bar follows the folder its prompt shows.
       if (!agent) {
-        const folder = promptFolder(lines());
+        const folder = promptFolder(screen().split("\n"));
         if (folder) setPaneFolder(paneId, folder);
         return;
       }
@@ -614,7 +614,7 @@ export function Terminal({
             // Once the shell shows its prompt (8 s at most), as if you typed it.
             const typeIt = () => {
               if (disposed) return;
-              if (!promptFolder(lines()) && Date.now() - started < 8000)
+              if (!promptFolder(screen().split("\n")) && Date.now() - started < 8000)
                 return void window.setTimeout(typeIt, 250);
               t.write("\x1b[2m[Resuming the agent that was running here]\x1b[0m\r\n");
               void callOrRun("pty_write", "pty.write", {

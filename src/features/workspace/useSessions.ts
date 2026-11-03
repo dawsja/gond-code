@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isRegistered, liveBackend, runCommand } from "@/lib/appState";
+import { callOrRun, isRegistered, liveBackend, runCommand } from "@/lib/appState";
 import { notify } from "@/lib/notify";
 import { onBeforeRestart } from "@/lib/restart";
 import { errorText, type Project } from "@/lib/types";
@@ -28,6 +28,7 @@ import { showKeys } from "./KeyHelp";
 import { showSearch } from "./scrollbackSearch";
 import { showSwitcher } from "@/features/machines/machines";
 import type { Shortcut } from "./Terminal";
+import { folderForPane } from "./paneFolder";
 
 /** The folder you last opened a terminal in. */
 const remembered = (key: string) => {
@@ -333,10 +334,14 @@ export function useSessions({ projects }: { projects: Project[] }) {
           () => undefined,
         );
       },
-      openFolder: (pid: string) =>
-        void runCommand("folder.open", { projectId: pid }).catch((e) =>
+      openFolder: (paneId: string) => {
+        const pane = paneOf(paneId)?.pane;
+        const path = pane && folderForPane(pane, projects);
+        if (!path) return;
+        return callOrRun("folder_open", "folder.open", { path }).catch((e) =>
           notify.error("Couldn't open the folder", { description: errorText(e) }),
-        ),
+        );
+      },
       resize: (splitId: string, ratio: number) =>
         change((s) => ({ ...s, root: resize(s.root, splitId, ratio) })),
       /** A pane dragged onto another: swapped with it, or put beside it on `side`. */
@@ -349,7 +354,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
         })),
     }),
 
-    [focus, shortcut, change],
+    [focus, shortcut, change, projects],
   );
 
   /** A pane's new name (a session's goes through renameSession). */
@@ -370,9 +375,11 @@ export function useSessions({ projects }: { projects: Project[] }) {
   const opener = useCallback(
     (p: Pane) =>
       async ({ cols, rows, cwd }: { cols: number; rows: number; cwd?: string }) => {
-        const opened = await runCommand<{ ptyId: string; shell?: string }>("pty.open", {
+        const opened = await callOrRun("pty_open", "pty.open", {
           key: p.id,
-          ...(p.projectId ? { projectId: p.projectId } : {}),
+          ...(projects.some((project) => project.id === p.projectId)
+            ? { projectId: p.projectId }
+            : {}),
           ...(p.shell ? { shell: p.shell } : {}),
           ...(cwd ? { cwd } : {}),
           cols,
@@ -386,7 +393,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
           );
         return opened;
       },
-    [change],
+    [change, projects],
   );
 
   return {

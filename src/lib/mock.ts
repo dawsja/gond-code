@@ -94,6 +94,10 @@ let typed = 0;
 
 const handlers: { [K in keyof Commands]: (args: Commands[K][0]) => Commands[K][1] } = {
   app_version: () => "0.1.0-dev",
+  folder_open: ({ path }) => {
+    if (!path) throw { code: "invalid", message: "no folder path" };
+    return null;
+  },
   project_add: ({ path }) => {
     if (/downloads/i.test(path)) {
       throw { code: "not_a_git_repo", message: `${path} is not a git repository.` };
@@ -124,9 +128,9 @@ const handlers: { [K in keyof Commands]: (args: Commands[K][0]) => Commands[K][1
     return null;
   },
   agent_detect: () => agents,
-  pty_open: ({ projectId }) => {
+  pty_open: ({ projectId, cwd: start }) => {
     const ptyId = id();
-    const cwd = projects.find((p) => p.id === projectId)?.path ?? "C:\\";
+    const cwd = start ?? projects.find((p) => p.id === projectId)?.path ?? "C:\\";
     const write = startShell(
       cwd,
       (data) => setTimeout(() => emit("pty:data", { ptyId, data })),

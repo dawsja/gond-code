@@ -136,7 +136,7 @@ export type PaneActions = {
   shortcut: (paneId: string, s: Shortcut) => void;
   rename: (paneId: string) => void;
   restart: (paneId: string) => void;
-  openFolder: (projectId: string) => void;
+  openFolder: (paneId: string) => void;
   resize: (splitId: string, ratio: number) => void;
   move: (paneId: string, target: string, to: Side | "swap") => void;
   agentRun: (paneId: string, run?: { ptyId: string; since: number; cwd?: string }) => void;
@@ -514,9 +514,11 @@ function PaneView({
         <ContextMenuItem onSelect={() => actions.restart(pane.id)}>
           <RotateCwIcon /> Restart terminal
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => actions.openFolder(pane.projectId)}>
-          <FolderOpenIcon /> Open folder
-        </ContextMenuItem>
+        {!machine && (
+          <ContextMenuItem onSelect={() => actions.openFolder(pane.id)}>
+            <FolderOpenIcon /> Open folder
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={() => actions.shortcut(pane.id, "zoom")}>
           {zoomed ? <Minimize2Icon /> : <Maximize2Icon />} {zoomed ? "Unzoom pane" : "Zoom pane"}
           <ContextMenuShortcut>Ctrl ⇧ Z</ContextMenuShortcut>

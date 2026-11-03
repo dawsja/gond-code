@@ -18,7 +18,7 @@ refuse any caller but the window.
 | `app.update.install` | **outward**, **human only** | `{}` → `null`: downloads the newer version with its progress in `/update`, verifies its signature, then restarts into it; the sessions and panes come back as saved (`invalid` in Gond Code Dev) |
 | `app.update.status` | read | `{}` → `{ current, phase, channel, checkedAt?, available?: { version, notes?, date? }, percent?, error? }`: this version (`channel` is `prod`, or `dev` for Gond Code Dev, which never updates), the newer one if any, and how a check or download is going (also at `/update`) |
 | `app.version` | read | `{}` → `string` |
-| `folder.open` | read | `{ projectId }` → `null`: opens the project's folder in File Explorer |
+| `folder.open` | read, **human only** | `{ path }` → `null`: opens an existing local directory in File Explorer; `~` means home, `/c/…` and `/mnt/c/…` are Windows drives. Rejects files and missing directories. The pane menu uses its last prompt folder, else resume cwd, else registered start folder, else home; hidden on WSL/SSH panes |
 | `folder.git` | read | `{ path }` → `{ folder, repo?, branch? }`: the git repository and branch a folder is in (the status bar) |
 | `layout.focus` | read, **human only** | `{ panel: "chat" \| "settings", entityId? }` → `null`: shows the workspace (`chat`) or a Settings section (`entityId`: general, usage, harnesses, connections, updates). It changes only what's on screen |
 | `sessions.get` | read | `{}` → the saved sessions (`{ sessions: { id, name, layout }[], current? }`, each layout a tree of right/down splits whose leaves are panes), or `null` before any. A `spaces.json` from before the rename is read until the next save |

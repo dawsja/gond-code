@@ -8,9 +8,9 @@ export function promptFolder(lines: string[]): string | undefined {
     .filter((l) => l.trim())
     .slice(-6)
     .reverse()) {
-    const win = /^(?:PS )?([A-Za-z]:\\[^>]*?)>/.exec(line.trim());
+    const win = /^(?:PS )?((?:[A-Za-z]:[\\/]|\\\\)[^>]*?)>/.exec(line.trim());
     // A drive root keeps its backslash: "C:" alone means that drive's current folder.
-    if (win) return /^[A-Za-z]:\\$/.test(win[1]) ? win[1] : win[1].replace(/\\$/, "");
+    if (win) return /^[A-Za-z]:[\\/]$/.test(win[1]) ? win[1] : win[1].replace(/[\\/]$/, "");
     const bash = /\bMINGW(?:64|32) (\/[a-zA-Z](?:\/\S*)?)/.exec(line);
     if (bash) {
       const [, drive, rest = ""] = /^\/([a-zA-Z])(\/.*)?$/.exec(bash[1]) ?? [];
