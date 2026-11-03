@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { applyOps, createStateStore } from "./state";
+import { describe, expect, it, vi } from "vitest";
+import { applyOps, connectState, createStateStore, type Patch } from "./state";
+
+const invoke = vi.fn();
+const listen = vi.fn();
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => true,
+  invoke: (...args: unknown[]) => invoke(...args),
+}));
+vi.mock("@tauri-apps/api/event", () => ({ listen: (...args: unknown[]) => listen(...args) }));
 
 describe("applyOps", () => {
   it("matches the Rust patches and shares untouched subtrees", () => {
@@ -42,4 +50,27 @@ describe("createStateStore", () => {
     expect(s.receive({ epoch: "e2", version: 1, ops: [], cause: {} })).toBe(false);
     expect(calls).toBe(1);
   });
+});
+
+it("does not lose a saved theme patch while the initial snapshot is in flight", async () => {
+  let emit: (event: { payload: Patch }) => void;
+  listen.mockImplementationOnce(async (_name, callback) => {
+    emit = callback;
+    return () => {};
+  });
+  invoke.mockImplementationOnce(async () => {
+    // This snapshot was taken before settings.set, but its reply reaches the UI later.
+    emit({
+      payload: {
+        epoch: "theme",
+        version: 1,
+        cause: {},
+        ops: [{ op: "replace", path: "/settings/theme", value: "light" }],
+      },
+    });
+    return { epoch: "theme", version: 0, value: { settings: { theme: "dark" } } };
+  });
+  const store = await connectState();
+  expect(store.get().value.settings).toEqual({ theme: "light" });
+  expect(store.get().version).toBe(1);
 });

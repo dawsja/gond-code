@@ -1,4 +1,5 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useSyncExternalStore } from "react";
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -7,11 +8,18 @@ import {
   Loader2Icon,
 } from "lucide-react";
 
+const subscribe = (changed: () => void) => {
+  window.addEventListener("gond:theme", changed);
+  return () => window.removeEventListener("gond:theme", changed);
+};
+const resolvedTheme = () =>
+  document.documentElement.classList.contains("dark") ? "dark" : "light";
+
 const Toaster = ({ ...props }: ToasterProps) => {
-  // Gond Code is dark only (no next-themes).
+  const theme = useSyncExternalStore(subscribe, resolvedTheme);
   return (
     <Sonner
-      theme="dark"
+      theme={theme}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

@@ -9,8 +9,9 @@ The design language and the screens as they are now. Palette, fonts and tokens:
   Inner radius = outer radius − the padding between them (a pill inside a pill is a pill).
   Segmented controls, menus and tiles in cards follow it; the layout check's `concentric` rule
   fails a square highlight in a pill track.
-- **Palette:** dark only, near-black surfaces (THEME.md). Gond's Material-200 tones
-  (`--tone-ok/warn/bad/info`) carry state. **One tint** (the person's colour, blue by default)
+- **Palette:** System, Light, Dark (default System; THEME.md). Light uses Gond's linen floor,
+  paper panels and carbon/graphite text; dark retains near-black surfaces. Mode-appropriate
+  `--tone-ok/warn/bad/info` carry state. **One tint** (the person's colour, blue by default)
   marks focus, the focused pane and primary buttons.
 - **Fonts:** Inter Variable for UI, JetBrains Mono for ids and paths; terminals in a Nerd Font
   (JetBrains Mono by default, or Hack or Fira Code). Body 12–13.5px,
@@ -26,7 +27,10 @@ The design language and the screens as they are now. Palette, fonts and tokens:
   Windows' title bar, not drawn in the React UI.
 - **Brand icons:** every agent shows its real mark (`@lobehub/icons`, MIT; Pi's own
   `pi.svg`), colour variants where they exist, mono marks in `--foreground`. A custom agent
-  without one gets a neutral glyph. Never hand-drawn logos.
+  without one gets a neutral glyph. Never hand-drawn logos. Fixed white artwork that would
+  disappear on paper belongs on its own ink tile, never recoloured or inverted. Keep any
+  background already built into a bundled mark (such as Codex's) intact; do not blanket-tile
+  marks that already read in both palettes.
 - **Voice:** plain words. Buttons are named for the act ("Split right", "Restart session"),
   status is one or two words ("Needs you", "Working"), people and agents are named, never
   "the AI".
@@ -36,7 +40,7 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 ## 2. The window
 
 ```
-┌──────────────────────── Windows' own dark title bar ─────────────────────────┐
+┌──────────────────────── Windows' own title bar ──────────────────────────────┐
 ├──────────────┬───────────────────────────────────────────────────────────────┤
 │ Sessions   + │ ┌─ ✦ Claude Code · Opus 5.5 · High ──── ● Working  × ─┐┌─────┐ │
 │  Main        │ │                                                     ││     │ │
@@ -51,9 +55,10 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 └──────────────┴───────────────────────────────────────────────────────────────┘
 ```
 
-- **Title bar:** Windows' own, dark from the first frame, titled "Gond Code" with the app icon.
+- **Title bar:** Windows' own, matching the resolved light/dark appearance, titled "Gond Code" with the app icon.
   Windows gives Minimize / Maximize / Close, snap layouts and the system menu; we draw nothing
-  in it.
+  in it. Apply the saved appearance before showing the window, and update it when the setting
+  changes or Windows changes while in System mode.
 - **Sidebar** (248px, `--sidebar`, right border):
   - **Sessions** with a + (New session): one row per session; the current one on `--hover`.
     Double-click or right-click → Rename; right-click → Close session.
@@ -75,12 +80,14 @@ The design language and the screens as they are now. Palette, fonts and tokens:
 ## 3. Panes
 
 - A pane is a card: 10px radius, 1px `--edge` border that turns `--tint-edge` when focused, on
-  pure black. Panes are laid out flat, so splitting never remounts a terminal.
+  `--background` (linen in light, pure black in dark). Panes are laid out flat, so splitting never remounts a terminal.
 - **Header** (32px, 12px text): the running agent's brand icon (or a terminal glyph), the
   pane's name (Rename edits it in place; else the agent's name, or "Terminal"), then while an
-  agent runs its status (dot and word; amber for Needs you) and a close ×. Focused: a light tint wash; else `#070707`.
-- **Terminal:** xterm.js on the WebGL renderer, the chosen Nerd Font, a palette in Gond's tones (true
-  black ground, saturated ANSI colours, readable brights, 24-bit colour passed through).
+  agent runs its status (dot and word; amber for Needs you) and a close ×. Focused: `--tint-wash`; else `--pane-header`.
+- **Terminal:** xterm.js on the WebGL renderer, the chosen Nerd Font, dual palettes from
+  `src/lib/terminalTheme.ts`: linen ground and dark ANSI colours in light, true-black ground
+  and readable brights in dark. Appearance updates existing terminals in place, not their PTYs,
+  scrollback or selection. Programs' explicit 24-bit colours pass through unchanged.
 - **Keys:** Ctrl+T new terminal beside the pane; Ctrl+Shift+→ split right; Ctrl+Shift+↓ split down; Ctrl+Shift+Z
   zoom; Ctrl+Shift+W close; Ctrl+Shift+C / V copy and paste (Ctrl+C copies when there's a
   selection, else stops the program); Ctrl+Shift+Space dictation, Esc cancels it.
@@ -118,7 +125,7 @@ a session's last terminal opens a fresh one in the same shell.
 
 A section nav (General, Usage, Agents, Plugins, Updates) and the section; below 1100px the nav becomes a
 row of tabs.
-- **General:** Colour (tint swatches), Default shell, Terminal font (JetBrains Mono, Hack or Fira Code
+- **General:** Appearance (System / Light / Dark, default System), Colour (tint swatches), Default shell, Terminal font (JetBrains Mono, Hack or Fira Code
   Nerd Font, each shown in itself; no custom font), Transcription (speech to text: download with progress, or
   why this CPU can't), Sounds (a switch: "Play a sound when an agent is done or needs you"), Quitting
   (keep terminals running), Closing the window (keep running in the tray).
@@ -150,8 +157,8 @@ no console windows, no raw output unless the person asks for details.
   running in the tray" on, the window's × hides to it so the agents keep working.
 - **Single instance:** starting the app again brings the running window forward.
 - **Mica Alt** on Windows 11 (`window.rs`) only where the UI leaves its background transparent;
-  content surfaces stay solid near-black.
-- **No web patterns:** no URLs or routes in the UI, native folder pickers, thin dark scrollbars,
+  content surfaces stay solid in their resolved palette.
+- **No web patterns:** no URLs or routes in the UI, native folder pickers, thin theme-aware scrollbars,
   no page loads, window size and position remembered. Text selection is off for chrome and on
   for content.
 
@@ -163,7 +170,9 @@ no console windows, no raw output unless the person asks for details.
 - Every flex/grid child holding text has `min-w-0`. One-line fields truncate with an ellipsis
   and a tooltip with the full value. Labels and badges never wrap. Numbers are tabular.
 - `scripts/layout-check.ts` (CI: `layout.yml`) audits every screen for overflow, narrow text
-  boxes, concentric corners and the like, and fails on any finding.
+  boxes, concentric corners and the like in both light and dark at every configured size, and
+  fails on any finding. `--screenshots` optionally saves each screen×theme×size render for
+  visual review; a passing DOM audit alone does not verify native chrome or terminal colour rendering.
 - Every rendered entity carries `data-entity` (and `data-id` where it has one); controls carry
   `data-command` (a registry name) or `data-local` for UI-only actions; status is always words
   as well as colour.

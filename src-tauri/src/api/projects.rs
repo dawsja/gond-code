@@ -272,4 +272,32 @@ mod tests {
             "green"
         );
     }
+
+    #[test]
+    fn theme_uses_the_existing_settings_patch_and_state_events() {
+        let (r, s, h) = (registry(), Services::default(), Actor::human());
+        let changes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = changes.clone();
+        s.state
+            .subscribe(move |p| observed.lock().unwrap().push(p.clone()));
+        for (input, expected) in [("light", "light"), ("dark", "dark"), ("future", "system")] {
+            let v = r
+                .run(
+                    &s,
+                    &h,
+                    "settings.set",
+                    json!({ "patch": { "theme": input } }),
+                )
+                .unwrap();
+            assert_eq!(v["theme"], expected);
+            assert_eq!(v["tint"], "blue");
+            assert_eq!(s.state.get("/settings/theme").unwrap().1, expected);
+            assert_eq!(r.run(&s, &h, "settings.get", json!({})).unwrap(), v);
+        }
+        let changes = changes.lock().unwrap();
+        assert_eq!(changes.len(), 3);
+        assert!(changes
+            .iter()
+            .all(|p| p.ops.iter().any(|op| op.path() == "/settings/theme")));
+    }
 }

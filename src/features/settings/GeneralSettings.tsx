@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, MoonIcon, SunIcon, SunMoonIcon } from "lucide-react";
 import { shellBrand } from "@/components/brand/brands";
 import { ProviderIcon } from "@/components/brand/provider-icon";
 import {
@@ -11,22 +11,53 @@ import {
 import { isRegistered, liveBackend, runCommand } from "@/lib/appState";
 import { Switch } from "@/components/ui/switch";
 import { useAppName } from "@/lib/appName";
-import { TINTS } from "@/lib/theme";
+import { THEMES, TINTS } from "@/lib/theme";
 import { fontStack, TERMINAL_FONTS } from "@/lib/terminalFont";
 import { SpeechSetting } from "@/features/speech/SpeechSetting";
 import { cn } from "@/lib/utils";
-import type { Settings, TerminalFont, Tint } from "@/lib/types";
+import type { Settings, TerminalFont, Theme } from "@/lib/types";
 
-// Each tint's own colour, for its swatch (the page's --tint only knows the chosen one).
-const SWATCH: Record<Tint, string> = {
-  blue: "#2F6FD6",
-  purple: "#7650D8",
-  pink: "#CF3D85",
-  red: "#D03A3A",
-  orange: "#E04E0A",
-  amber: "#D98A08",
-  green: "#189C47",
+const THEME_OPTIONS = {
+  system: { label: "System", Icon: SunMoonIcon },
+  light: { label: "Light", Icon: SunIcon },
+  dark: { label: "Dark", Icon: MoonIcon },
 };
+
+function ThemePicker({ value, onChange }: { value: Theme; onChange: (theme: Theme) => void }) {
+  const { label, Icon } = THEME_OPTIONS[value];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Theme: ${label}`}
+        data-command="settings.set"
+        data-arg="theme"
+        className="flex h-9 w-full max-w-72 items-center gap-2 rounded-[10px] border border-edge bg-raised px-2.5 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-tint data-[state=open]:border-tint-edge"
+      >
+        <Icon className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 rounded-2xl p-1.5 flex flex-col gap-0.5">
+        {THEMES.map((theme) => {
+          const { label, Icon } = THEME_OPTIONS[theme];
+          return (
+            <DropdownMenuItem
+              key={theme}
+              role="menuitemradio"
+              aria-checked={theme === value}
+              onSelect={() => onChange(theme)}
+              className={cn("gap-2.5 rounded-xl px-2 py-1.5", theme === value && "bg-tint-wash")}
+            >
+              <Icon className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+              {theme === value && <CheckIcon className="size-3.5 shrink-0 text-tint-ink" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 type Props = {
   settings: Settings;
@@ -195,6 +226,9 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
           transcription and what closing the window does.
         </p>
       </header>
+      <Field label="Theme">
+        <ThemePicker value={settings.theme} onChange={(theme) => onChange({ theme })} />
+      </Field>
       <Field label="Colour">
         <div role="radiogroup" aria-label="Colour" className="flex gap-2">
           {TINTS.map((t) => (
@@ -204,8 +238,8 @@ export function GeneralSettings({ settings, onChange, version }: Props) {
               aria-checked={settings.tint === t}
               aria-label={t}
               onClick={() => onChange({ tint: t })}
-              style={{ background: SWATCH[t] }}
-              className="grid size-7 place-items-center rounded-full text-primary-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+              data-swatch={t}
+              className="grid size-7 place-items-center rounded-full text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30 dark:text-primary-foreground"
             >
               {settings.tint === t && <CheckIcon className="size-4" />}
             </button>

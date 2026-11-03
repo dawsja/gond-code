@@ -1,11 +1,24 @@
 //! Typed app settings over the raw `settings` table. Keys are stored camelCase,
-//! as the UI sends them. The app is dark only, so there is no theme setting.
+//! as the UI sends them.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::{AppError, AppResult};
 use crate::store::{settings as repo, Store};
+
+/// App appearance. Unknown names from a newer build fall back to following the OS.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Light,
+    Dark,
+    #[default]
+    #[serde(other)]
+    System,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -32,6 +45,8 @@ pub enum TerminalFont {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
+    #[serde(default)]
+    pub theme: Theme,
     pub tint: Tint,
     /// The window's X hides Gond Code to the tray, so its agents keep working; Quit is in
     /// the tray menu. Off: X quits.
@@ -64,6 +79,8 @@ pub struct Settings {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Patch {
     #[serde(default)]
+    pub theme: Option<Theme>,
+    #[serde(default)]
     pub tint: Option<Tint>,
     #[serde(default)]
     pub close_to_tray: Option<bool>,
@@ -92,6 +109,9 @@ impl Patch {
     /// The patch as the stored keys `set` merges.
     pub fn into_map(self) -> Map<String, Value> {
         let mut m = Map::new();
+        if let Some(t) = self.theme {
+            m.insert("theme".into(), serde_json::to_value(t).unwrap_or_default());
+        }
         if let Some(t) = self.tint {
             m.insert("tint".into(), serde_json::to_value(t).unwrap_or_default());
         }
@@ -127,6 +147,7 @@ fn yes() -> bool {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            theme: Theme::System,
             tint: Tint::Blue,
             close_to_tray: true,
             keep_terminals: true,
@@ -140,6 +161,7 @@ impl Default for Settings {
 
 /// Every key `Settings` has, as the UI spells it.
 const KEYS: &[&str] = &[
+    "theme",
     "tint",
     "closeToTray",
     "keepTerminals",
@@ -216,6 +238,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&s).unwrap(),
             json!({
+                "theme": "system",
                 "tint": "blue",
                 "closeToTray": true,
                 "keepTerminals": true,
@@ -252,8 +275,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         for bad in [
             json!({ "tint": "green", "fontSize": 14 }),
-            json!({ "theme": "dark" }),
-            json!({ "theme": null }),
+            json!({ "theme": 3 }),
             json!({ "tint": "teal" }),
             json!({ "tint": null }),
             json!({ "shell": 3 }),
@@ -279,6 +301,64 @@ mod tests {
         let mut keys = KEYS.to_vec();
         keys.sort();
         assert_eq!(all, keys);
+    }
+
+    #[test]
+    fn theme_roundtrips_and_patch_preserves_other_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.db");
+        let mut store = Store::open(&path).unwrap();
+        set(&store, patch(json!({ "tint": "pink", "shell": "cmd" }))).unwrap();
+        for theme in [Theme::System, Theme::Light, Theme::Dark] {
+            let value = serde_json::to_value(theme).unwrap();
+            assert_eq!(
+                serde_json::from_value::<Theme>(value.clone()).unwrap(),
+                theme
+            );
+            let dto: Patch = serde_json::from_value(json!({ "theme": value })).unwrap();
+            let s = set(&store, dto.into_map()).unwrap();
+            assert_eq!(s.theme, theme);
+            assert_eq!(s.tint, Tint::Pink);
+            assert_eq!(s.shell.as_deref(), Some("cmd"));
+            drop(store);
+            store = Store::open(&path).unwrap();
+            assert_eq!(get(&store).unwrap(), s);
+        }
+        let dto: Patch = serde_json::from_value(json!({ "sounds": false })).unwrap();
+        let map = dto.into_map();
+        assert!(!map.contains_key("theme"));
+        assert_eq!(set(&store, map).unwrap().theme, Theme::Dark);
+        // Like tint, a null DTO value means no patch, not a nullable preference.
+        let dto: Patch = serde_json::from_value(json!({ "theme": null })).unwrap();
+        assert!(dto.into_map().is_empty());
+        assert_eq!(get(&store).unwrap().theme, Theme::Dark);
+    }
+
+    #[test]
+    fn missing_and_unknown_theme_follow_system() {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("theme");
+        assert_eq!(
+            serde_json::from_value::<Settings>(value.clone())
+                .unwrap()
+                .theme,
+            Theme::System
+        );
+        value["theme"] = json!("future-theme");
+        assert_eq!(
+            serde_json::from_value::<Settings>(value).unwrap().theme,
+            Theme::System
+        );
+
+        let store = Store::open_in_memory().unwrap();
+        store
+            .with(|c| repo::set(c, "theme", &json!("future-theme")))
+            .unwrap();
+        assert_eq!(get(&store).unwrap().theme, Theme::System);
+        let dto: Patch = serde_json::from_value(json!({ "theme": "future-theme" })).unwrap();
+        let s = set(&store, dto.into_map()).unwrap();
+        assert_eq!(s.theme, Theme::System);
+        assert_eq!(serde_json::to_value(s).unwrap()["theme"], "system");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! The native window: Windows' own title bar, dark from the first frame (no custom or folded
+//! The native window: Windows' own title bar, themed from the first frame (no custom or folded
 //! caption), with the app's header row inside the
 //! window below it; one instance; remembered size and position; Mica Alt on Windows 11
 //! where the UI wants it.
@@ -51,15 +51,15 @@ impl InfoCell {
 
 /// Applies the material and shows the window. It starts hidden, so the restored
 /// size and position appear without a flash of the default ones.
-pub fn setup<R: Runtime>(app: &AppHandle<R>) -> WindowInfo {
+pub fn setup<R: Runtime>(app: &AppHandle<R>, store: &crate::store::Store) -> WindowInfo {
     let Some(window) = app.get_webview_window(MAIN) else {
         return WindowInfo {
             mica: false,
             caption: (),
         };
     };
-    // Still hidden here (visible: false), so the first frame is already dark.
-    paint_caption(&window);
+    // Still hidden here (visible: false): use the saved preference before showing it.
+    setup_theme(&window, store);
     #[cfg(windows)]
     answer_microphone(&window);
     let info = WindowInfo {
@@ -105,27 +105,140 @@ fn answer_microphone<R: Runtime>(window: &WebviewWindow<R>) {
     });
 }
 
-/// Windows' own title bar, dark: dark mode, a #030303 caption (the sidebar's colour)
-/// and white caption text. The colours need Windows 11; dark mode alone covers 10.
+/// Resolve a preference without letting an OS event override an explicit choice.
+#[cfg(any(windows, test))]
+fn resolved_theme(preference: crate::settings::Theme, system: tauri::Theme) -> tauri::Theme {
+    match preference {
+        crate::settings::Theme::System => system,
+        crate::settings::Theme::Light => tauri::Theme::Light,
+        crate::settings::Theme::Dark => tauri::Theme::Dark,
+    }
+}
+
+/// Read Windows' app preference, not `window.theme()` (which may still be forced to the
+/// previous choice when changing Dark/Light back to System). Missing registry value = Light.
 #[cfg(windows)]
-fn paint_caption<R: Runtime>(window: &WebviewWindow<R>) {
+fn system_theme() -> tauri::Theme {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let key: Vec<u16> = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let name: Vec<u16> = "AppsUseLightTheme".encode_utf16().chain(Some(0)).collect();
+    let mut light = 1u32;
+    let mut bytes = std::mem::size_of_val(&light) as u32;
+    let status = unsafe {
+        // Safety: valid NUL-terminated strings and a writable DWORD-sized buffer.
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut light as *mut u32).cast(),
+            &mut bytes,
+        )
+    };
+    if status == ERROR_SUCCESS && light == 0 {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    }
+}
+
+#[cfg(windows)]
+fn apply_theme<R: Runtime>(window: &WebviewWindow<R>, preference: crate::settings::Theme) {
+    let forced = match preference {
+        crate::settings::Theme::System => None,
+        crate::settings::Theme::Light => Some(tauri::Theme::Light),
+        crate::settings::Theme::Dark => Some(tauri::Theme::Dark),
+    };
+    // None lets Tauri keep delivering OS theme changes in System mode.
+    let _ = window.set_theme(forced);
+    paint_caption(window, resolved_theme(preference, system_theme()));
+}
+
+#[cfg(windows)]
+fn setup_theme<R: Runtime>(window: &WebviewWindow<R>, store: &crate::store::Store) {
+    apply_theme(
+        window,
+        crate::settings::get(store).unwrap_or_default().theme,
+    );
+    let (app, store) = (window.app_handle().clone(), store.clone());
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::ThemeChanged(_) = event {
+            if let Some(window) = app.get_webview_window(MAIN) {
+                let preference = crate::settings::get(&store).unwrap_or_default().theme;
+                // Read the current OS preference rather than a queued event's old theme.
+                // Do not set_theme here: doing so may itself send another ThemeChanged.
+                paint_caption(&window, resolved_theme(preference, system_theme()));
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn setup_theme<R: Runtime>(_: &WebviewWindow<R>, _: &crate::store::Store) {}
+
+/// The existing settings.set handler persists and publishes /settings/theme. Keep native
+/// work here, outside the Tauri-free registry, and marshal it onto the window thread.
+#[cfg(windows)]
+pub fn watch_theme<R: Runtime>(app: &AppHandle<R>, services: &crate::api::Services) {
+    let (app, store) = (app.clone(), services.store.clone());
+    services.state.subscribe(move |patch| {
+        if !patch
+            .ops
+            .iter()
+            .any(|op| matches!(op.path(), "/settings" | "/settings/theme" | ""))
+        {
+            return;
+        }
+        let (handle, store) = (app.clone(), store.clone());
+        let _ = app.run_on_main_thread(move || {
+            if let Some(window) = handle.get_webview_window(MAIN) {
+                // Read the latest saved preference so queued changes cannot apply stale values.
+                apply_theme(
+                    &window,
+                    crate::settings::get(&store).unwrap_or_default().theme,
+                );
+            }
+        });
+    });
+}
+
+/// Windows' own title bar and the native/WebView background. Caption colours need
+/// Windows 11; immersive dark mode alone covers Windows 10.
+#[cfg(windows)]
+fn paint_caption<R: Runtime>(window: &WebviewWindow<R>, theme: tauri::Theme) {
     use std::ffi::c_void;
     use windows_sys::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
     };
+    let dark = theme == tauri::Theme::Dark;
+    let ground = if dark {
+        tauri::window::Color(0, 0, 0, 255)
+    } else {
+        tauri::window::Color(245, 243, 238, 255) // #f5f3ee, the light floor
+    };
+    let _ = window.set_background_color(Some(ground));
     let Ok(hwnd) = window.hwnd() else { return };
     let hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
     let set = |attr: i32, value: u32| unsafe {
         // Safety: our own live window; a 4-byte value as each attribute expects.
         DwmSetWindowAttribute(hwnd, attr as u32, &value as *const u32 as *const c_void, 4);
     };
-    set(DWMWA_USE_IMMERSIVE_DARK_MODE, 1);
-    set(DWMWA_CAPTION_COLOR, 0x0003_0303); // COLORREF 0x00BBGGRR: #030303
-    set(DWMWA_TEXT_COLOR, 0x00FF_FFFF); // white
+    set(DWMWA_USE_IMMERSIVE_DARK_MODE, u32::from(dark));
+    // COLORREF 0x00BBGGRR: match the neutral sidebar, with contrasting caption text.
+    set(
+        DWMWA_CAPTION_COLOR,
+        if dark { 0x0003_0303 } else { 0x00FF_FFFF },
+    );
+    set(
+        DWMWA_TEXT_COLOR,
+        if dark { 0x00FF_FFFF } else { 0x0020_2020 },
+    );
 }
-
-#[cfg(not(windows))]
-fn paint_caption<R: Runtime>(_: &WebviewWindow<R>) {}
 
 /// A second launch focuses the running window.
 pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>) {
@@ -141,6 +254,16 @@ mod info_tests {
     use super::*;
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[test]
+    fn only_system_follows_os_theme_changes() {
+        use crate::settings::Theme;
+        for os in [tauri::Theme::Light, tauri::Theme::Dark] {
+            assert_eq!(resolved_theme(Theme::System, os), os);
+            assert_eq!(resolved_theme(Theme::Light, os), tauri::Theme::Light);
+            assert_eq!(resolved_theme(Theme::Dark, os), tauri::Theme::Dark);
+        }
+    }
 
     #[test]
     fn a_waiting_ask_gets_the_info_set_later() {

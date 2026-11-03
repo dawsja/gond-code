@@ -1,13 +1,23 @@
 {
-  "//": "Screens the layout check renders at every size: name -> URL search on the mock build. The app is the terminal workspace: sessions of agent panes, and Settings.",
+  "//": "Screens the layout check renders at every size in each theme: name -> URL search on the mock build. The harness adds theme=light/dark; the mock must resolve it. The app is the terminal workspace: sessions of agent panes, and Settings.",
+  "themes": ["light", "dark"],
   "screens": {
-    "workspace": "",
-    "workspace-demo": "?demo",
+    "workspace": "?typed",
+    "workspace-demo": "?demo&typed",
     "setup-toast": "?demo&toast",
     "settings": "?demo&settings=general",
     "usage": "?demo&settings=usage",
     "harnesses": "?demo&settings=harnesses",
-    "connections": "?demo&settings=connections"
+    "connections": "?demo&settings=connections",
+    "commands": "?demo&typed",
+    "add-machine": "?demo",
+    "theme-menu": "?demo&settings=general"
+  },
+  "prepare": {
+    "workspace-demo": { "panes": 2 },
+    "commands": { "event": "gond:keys" },
+    "add-machine": { "event": "gond:add-machine" },
+    "theme-menu": { "menu": "[data-arg='theme']" }
   },
   "sizes": [
     [1024, 768],

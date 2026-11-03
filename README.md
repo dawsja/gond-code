@@ -55,7 +55,10 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn the first t
   pane picks its terminal back up with what it printed meanwhile. (Settings → General can close
   them on quit instead; the tray's "Quit and close all terminals" always does.)
 - **Fast terminals:** xterm.js on WebGL with full 24-bit colour; Rust runs the PTYs (ConPTY).
-- **Settings:** General (colour, default shell, open files in, terminal font, speech to text, sounds, close to tray, keep terminals running), Usage (plan
+- **Appearance:** System, Light or Dark in Settings → General, default System. Light uses Gond's
+  linen and paper palette; dark keeps the near-black workspace. The title bar and terminal
+  palette follow it, and the same seven tint colours work in both.
+- **Settings:** General (appearance, colour, default shell, open files in, terminal font, speech to text, sounds, close to tray, keep terminals running), Usage (plan
   limits), Agents (install, update, uninstall), GitHub (Git and GitHub CLI install and sign-in),
   Updates.
 - **Transcription** (speech to text), optional and local (NVIDIA Parakeet): Ctrl+Shift+Space types what you say
@@ -119,6 +122,23 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
   libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
   libxdo-dev libssl-dev build-essential pkg-config
 ```
+
+### Layout and appearance checks
+
+`scripts/layout-check.ts` drives a mock build over its DevTools port and audits every screen
+in `e2e/layout/screens.json` in light and dark at every configured window size. The mock accepts
+`?theme=light` / `?theme=dark`; the harness checks that the requested mode actually applies.
+The cramped-fixture self-test and zero-findings layout bar remain the same.
+
+```sh
+bun scripts/layout-check.ts --port 9222 --out layout --screenshots
+```
+
+`--screenshots` is optional: it adds `<screen>-<theme>-<width>x<height>.png` to `--out` alongside
+`results.json` and `summary.md`. A generated `.gitignore` keeps these artifacts out of Git when
+the output directory has no ignore file already. Screenshots are for visual review; passing the
+DOM audit is not proof that Windows' native caption or terminal canvas colours render correctly.
+Use Gond Code Dev, never prod, for native checks.
 
 ## Docs
 

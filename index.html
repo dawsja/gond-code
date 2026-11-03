@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="en" class="dark" data-tint="blue">
+<html lang="en" data-theme="system" data-tint="blue">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gond Code</title>
+    <!-- Classic, parser-blocking and same-origin: runs before styles, under script-src 'self'. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

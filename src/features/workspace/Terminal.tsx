@@ -5,12 +5,13 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal as XTerm, type ITheme } from "@xterm/xterm";
+import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { callOrRun, isRegistered, liveBackend, runCommand } from "@/lib/appState";
 import { on, openExternal } from "@/lib/ipc";
 import { onBeforeRestart } from "@/lib/restart";
 import { fontStack, loadTerminalFont, onTerminalFont, terminalFont } from "@/lib/terminalFont";
+import { onTerminalTheme, terminalTheme } from "@/lib/terminalTheme";
 import { errorText } from "@/lib/types";
 import type { Link } from "@/features/machines/machines";
 import { cn } from "@/lib/utils";
@@ -33,35 +34,6 @@ import {
   type Signal,
   type Status,
 } from "./status";
-
-/**
- * Colours in the spirit of Alacritty and Ghostty: a true black ground, soft but saturated ANSI colours in
- * Gond's tones, brights that stay readable, 24-bit colour passed straight through.
- */
-const THEME: ITheme = {
-  background: "#000000",
-  foreground: "#e6e6e6",
-  cursor: "#e6e6e6",
-  cursorAccent: "#000000",
-  selectionBackground: "#2a3b5c",
-  selectionInactiveBackground: "#1d2638",
-  black: "#1c1c1c",
-  red: "#f28b82",
-  green: "#a5d6a7",
-  yellow: "#ffd479",
-  blue: "#82b1ff",
-  magenta: "#d7a6f5",
-  cyan: "#80deea",
-  white: "#d0d0d0",
-  brightBlack: "#6b6b6b",
-  brightRed: "#ffaba3",
-  brightGreen: "#c5ecc6",
-  brightYellow: "#ffe6a6",
-  brightBlue: "#b0cbff",
-  brightMagenta: "#e8c6fb",
-  brightCyan: "#b4f0f7",
-  brightWhite: "#ffffff",
-};
 
 /** What a pane's keys and menu ask of the layout around it. */
 export type Shortcut =
@@ -215,7 +187,10 @@ export function Terminal({
       minimumContrastRatio: 1,
       scrollback: 10000,
       allowProposedApi: true,
-      theme: THEME,
+      theme: terminalTheme(),
+    });
+    const stopTheme = onTerminalTheme((theme) => {
+      t.options.theme = theme;
     });
     const fit = new FitAddon();
     t.loadAddon(fit);
@@ -627,6 +602,7 @@ export function Terminal({
       el.removeEventListener("mouseup", ownRightClick, true);
       stopSaving();
       stopFont();
+      stopTheme();
       window.clearInterval(tick);
       setPaneFolder(paneId, undefined);
       setPaneAgent(paneId, undefined);
@@ -651,7 +627,7 @@ export function Terminal({
     <div
       data-selectable
       onMouseDown={() => live.current.onFocus()}
-      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-black py-1.5 pl-3"
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background py-1.5 pl-3"
     >
       <div ref={box} className="min-h-0 min-w-0 flex-1 overflow-hidden" />
       {away && <Away link={away} name={machineName ?? away.name} />}
@@ -672,7 +648,7 @@ function Away({ link, name }: { link: Link; name: string }) {
       data-slot="machine-away"
       className={cn(
         "absolute inset-0 z-10 grid place-items-center",
-        connecting ? "bg-black/70" : "bg-black/60",
+        connecting ? "bg-background/70" : "bg-background/60",
       )}
     >
       <div className="flex w-[min(400px,90%)] flex-col gap-2.5 rounded-2xl border border-edge bg-card p-4 shadow-[0_18px_50px_rgba(0,0,0,.6)]">

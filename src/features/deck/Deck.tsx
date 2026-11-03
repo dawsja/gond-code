@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHarnessInstalls } from "@/features/harness/useHarnessInstalls";
 import { useSetup } from "@/features/setup/useSetup";
-import { callOrRun, isRegistered, liveBackend, runCommand, useAppState } from "@/lib/appState";
+import { isRegistered, liveBackend, runCommand, useAppState } from "@/lib/appState";
 import type { DeviceCode, GithubStatus } from "@/lib/github";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
@@ -9,9 +9,8 @@ import { UpdateSettings } from "@/features/settings/UpdateSettings";
 import { SettingsSpace, type SettingsSection } from "@/features/settings/SettingsSpace";
 import { HarnessManager } from "@/features/harness/HarnessManager";
 import { useHarnessChecks } from "@/features/harness/useHarnessChecks";
-import { applyTint } from "@/lib/theme";
-import { setTerminalFont } from "@/lib/terminalFont";
-import type { Project, Settings } from "@/lib/types";
+import { useSettings } from "@/lib/useSettings";
+import type { Project } from "@/lib/types";
 import { MOCK_PROJECTS } from "@/lib/projects";
 import { UsageSettings } from "@/features/usage/UsageSettings";
 import { DEMO } from "./live";
@@ -55,23 +54,6 @@ const URL_TOAST = import.meta.env.DEV && new URLSearchParams(window.location.sea
 
 // sonner loads after first paint; toasts come through lib/notify.
 const Toaster = lazy(() => import("@/components/ui/sonner").then((m) => ({ default: m.Toaster })));
-
-/** Settings (tint and the rest) from the backend. */
-function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ tint: "blue" });
-  const [version, setVersion] = useState<string>();
-  useEffect(() => {
-    callOrRun("settings_get", "settings.get", {}).then(setSettings, () => undefined);
-    callOrRun("app_version", "app.version", {}).then(setVersion, () => undefined);
-  }, []);
-  useEffect(() => applyTint(settings.tint), [settings.tint]);
-  useEffect(() => setTerminalFont(settings.terminalFont), [settings.terminalFont]);
-  const change = (patch: Partial<Settings>) => {
-    setSettings((s) => ({ ...s, ...patch }));
-    callOrRun("settings_set", "settings.set", { patch }).then(setSettings);
-  };
-  return { settings, version, change };
-}
 
 /**
  * Gond Code: a terminal workspace for coding agents. Every pane is a terminal in your default

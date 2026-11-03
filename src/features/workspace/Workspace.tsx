@@ -120,7 +120,7 @@ const SIDE_WORD: Record<Side, string> = {
 type Dragging = { id: string; name: string; px: number; py: number; over?: Landing };
 
 const STATUS_DOT: Record<Status, string> = {
-  working: "bg-tone-info shadow-[0_0_0_3px_rgba(144,202,249,.15)]",
+  working: "bg-tone-info ring-3 ring-tone-info/15",
   needs: "bg-tone-warn",
   done: "bg-tone-ok",
   idle: "bg-faint",
@@ -325,7 +325,7 @@ export function Workspace({
               </div>
             )}
             <span
-              className="pointer-events-none absolute flex -translate-x-1/2 translate-y-3 items-center gap-1.5 rounded-full border border-tint-edge bg-black/85 px-3 py-1 text-[12px] font-medium whitespace-nowrap"
+              className="pointer-events-none absolute flex -translate-x-1/2 translate-y-3 items-center gap-1.5 rounded-full border border-tint-edge bg-background/85 px-3 py-1 text-[12px] font-medium whitespace-nowrap"
               style={{ left: moving.px, top: moving.py }}
             >
               {moving.name}
@@ -394,7 +394,7 @@ function PaneView({
           data-entity="pane"
           data-id={pane.id}
           className={cn(
-            "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-edge bg-black",
+            "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-edge bg-background",
             focused && "border-tint-edge",
             dragging && "opacity-50",
           )}
@@ -404,7 +404,7 @@ function PaneView({
               data-slot="drop"
               className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[10px] border-2 border-tint bg-tint/10"
             >
-              <span className="rounded-full border border-tint-edge bg-black/85 px-3.5 py-1.5 text-[12.5px] font-medium">
+              <span className="rounded-full border border-tint-edge bg-background/85 px-3.5 py-1.5 text-[12.5px] font-medium">
                 {drop.count > 1 ? `Drop to insert ${drop.count} paths` : "Drop to insert the path"}
               </span>
             </div>
@@ -415,7 +415,7 @@ function PaneView({
             data-slot="pane-header"
             className={cn(
               "flex h-8 shrink-0 items-center gap-2 border-b border-border px-2.5 text-[12px] select-none",
-              focused ? "bg-tint-wash/40" : "bg-[#070707]",
+              focused ? "bg-tint-wash/40" : "bg-pane-header",
             )}
           >
             {running ? (

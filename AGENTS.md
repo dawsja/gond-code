@@ -26,6 +26,12 @@ split terminal panes, each running an agent's own CLI or a plain shell. Read
   its file, not the code; [agents/README.md](agents/README.md) says what each key means. Then
   `cargo test --lib spec` in `src-tauri`.
 - Don't add back what the product left out (docs/PRODUCT.md, "Not in the product").
+- **Appearance:** System / Light / Dark, default System (docs/THEME.md). Rust's `settings.theme`
+  is authoritative; localStorage is only a first-paint mirror, never a second settings store.
+  Use semantic light/dark tokens and `src/lib/terminalTheme.ts` for terminal colours. Keep the
+  native caption and existing terminals in sync without restarting PTYs. Check both palettes;
+  `scripts/layout-check.ts --screenshots` saves optional visual-review artifacts, but do not
+  claim native chrome or terminal rendering verified from a DOM audit alone.
 
 ## Dev and prod
 

@@ -70,12 +70,45 @@ export function createStateStore(initial: Snapshot): StateStore {
   };
 }
 
-/** Connects a store to the app: snapshot, then patches; a gap or new epoch refetches. */
+/** Subscribe before taking the snapshot: otherwise a saved theme change between the two
+ * can be missed indefinitely, leaving the page behind the native caption. Buffer during
+ * hydration/resync and replay only patches newer than the snapshot (receive skips duplicates).
+ */
 export async function connectState(): Promise<StateStore> {
   if (!isTauri()) return createStateStore({ epoch: "mock", version: 0, value: {} });
-  const store = createStateStore(await invoke<Snapshot>("state_get"));
-  await listen<Patch>("state:patch", async (e) => {
-    if (!store.receive(e.payload)) store.reset(await invoke<Snapshot>("state_get"));
+  let store: StateStore | undefined;
+  let queued: Patch[] = [];
+  let syncing = false;
+  const resync = async () => {
+    if (syncing) return;
+    syncing = true;
+    try {
+      for (;;) {
+        const snapshot = await invoke<Snapshot>("state_get");
+        if (store) store.reset(snapshot);
+        else store = createStateStore(snapshot);
+        const pending = queued;
+        queued = [];
+        if (pending.every((patch) => store!.receive(patch))) break;
+        // A gap/new epoch: the next snapshot includes it; keep buffering in the meantime.
+      }
+    } finally {
+      syncing = false;
+    }
+  };
+  const unlisten = await listen<Patch>("state:patch", (e) => {
+    if (!store || syncing) queued.push(e.payload);
+    else if (!store.receive(e.payload)) {
+      queued.push(e.payload);
+      // A transient read failure is retried by the next event, without dropping the listener.
+      void resync().catch(() => undefined);
+    }
   });
-  return store;
+  try {
+    await resync();
+    return store!;
+  } catch (error) {
+    unlisten();
+    throw error;
+  }
 }

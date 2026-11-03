@@ -3,6 +3,7 @@ import type { EventCallback } from "@tauri-apps/api/event";
 import type { Commands, Events } from "./ipc";
 import { startShell } from "./mockShell";
 import type { AgentInfo, Project, Settings } from "./types";
+import { normalizeTheme } from "./theme";
 
 const now = () => new Date().toISOString();
 let seq = 0;
@@ -76,6 +77,8 @@ const agents: AgentInfo[] = [
 
 let settings: Settings = {
   tint: "blue",
+  // The layout harness controls only the mock, never the installed app's settings.
+  theme: normalizeTheme(new URLSearchParams(globalThis.location?.search).get("theme")),
   closeToTray: true,
   keepTerminals: true,
   terminalFont: "jetbrains-mono",
@@ -156,7 +159,8 @@ const handlers: { [K in keyof Commands]: (args: Commands[K][0]) => Commands[K][1
     return null;
   },
   settings_get: () => ({ ...settings }),
-  settings_set: ({ patch }) => (settings = { ...settings, ...patch }),
+  settings_set: ({ patch }) =>
+    (settings = { ...settings, ...patch, theme: normalizeTheme(patch.theme ?? settings.theme) }),
 };
 
 // Alternates a git repo with a plain folder, so both paths of "Open folder" can be tried.
