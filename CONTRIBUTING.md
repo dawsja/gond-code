@@ -17,7 +17,11 @@ Setup and the dev loop are in [README.md](README.md); the orientation and testin
   root of its own, so uninstall can remove it. Reach them through `appdata::roaming()` and
   `appdata::local()`, never a written-out path, so Gond Code Dev keeps its own (`GondCodeDev`). Migrations are numbered SQL files in
   `src-tauri/src/store/migrations`; the next free number is 0021.
-- Icons are generated from `docs/gond-code-1024.png` with `bun run icons`; CI checks they match.
+- The logo source is `docs/gond-code.svg`. Render its transparent 1024px PNG with
+  `bunx tauri icon docs/gond-code.svg -o <temp-dir> -p 1024`, then copy the generated
+  `1024x1024.png` to `docs/gond-code-1024.png`. Update both pins in `docs/brand.sha256`
+  with an approved source change. Generate icons with `bun run icons`; CI checks the
+  approved geometry, SVG-to-PNG render and PNG-to-icons derivation.
 - No screenshots in CI.
 
 ## Real-agent tests

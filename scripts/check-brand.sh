@@ -5,6 +5,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+bun scripts/check-brand-source.ts
+
 grep -v '^#' docs/brand.sha256 | sha256sum --check --quiet || {
   echo "::error::A brand file in docs/ (gond-code.svg, gond-code-1024.png, gond.svg, gond-1024.png) changed. They must stay the official logos."
   echo "For an approved new logo, update docs/brand.sha256 in the same commit."
@@ -13,6 +15,11 @@ grep -v '^#' docs/brand.sha256 | sha256sum --check --quiet || {
 
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
+bun x tauri icon docs/gond-code.svg -o "$out/source" -p 1024 >/dev/null 2>&1
+if ! cmp -s docs/gond-code-1024.png "$out/source/1024x1024.png"; then
+  echo "::error::docs/gond-code-1024.png isn't rendered from docs/gond-code.svg. Render with: bunx tauri icon docs/gond-code.svg -o <temp-dir> -p 1024"
+  exit 1
+fi
 bun x tauri icon docs/gond-code-1024.png -o "$out" >/dev/null 2>&1
 
 bad=0
