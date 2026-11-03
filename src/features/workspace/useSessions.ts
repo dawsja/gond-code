@@ -377,9 +377,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
       async ({ cols, rows, cwd }: { cols: number; rows: number; cwd?: string }) => {
         const opened = await callOrRun("pty_open", "pty.open", {
           key: p.id,
-          ...(projects.some((project) => project.id === p.projectId)
-            ? { projectId: p.projectId }
-            : {}),
+          ...(p.projectId ? { projectId: p.projectId } : {}),
           ...(p.shell ? { shell: p.shell } : {}),
           ...(cwd ? { cwd } : {}),
           cols,
@@ -393,7 +391,7 @@ export function useSessions({ projects }: { projects: Project[] }) {
           );
         return opened;
       },
-    [change, projects],
+    [change],
   );
 
   return {

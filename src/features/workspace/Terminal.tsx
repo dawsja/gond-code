@@ -20,7 +20,7 @@ import { setPaneAgent } from "./paneAgent";
 import { fileLinks } from "./fileLinks";
 import { paneFolder, setPaneFolder } from "./paneFolder";
 import { searchLines, type Hit, type Line } from "./scrollbackSearch";
-import { promptFolder } from "./prompt";
+import { promptFolder, promptRows } from "./prompt";
 import {
   asks,
   atInput,
@@ -320,24 +320,7 @@ export function Terminal({
           runCommand("sound.play", { cue: s }).catch(() => undefined);
       }, 1000);
     };
-    const lines = () => {
-      const b = t.buffer.active;
-      const out: string[] = [];
-      for (let y = Math.max(0, b.baseY + t.rows - 14); y < b.baseY + t.rows; y++)
-        out.push(b.getLine(y)?.translateToString(true) ?? "");
-      return out;
-    };
-    // What an agent shows you: the pane's last rows, and the rows up to its cursor, since an
-    // agent drawn inline (Claude Code's questions) sits at the cursor, high in a tall pane.
-    const screen = () => {
-      const b = t.buffer.active;
-      const out = lines();
-      const bottom = Math.max(0, b.baseY + t.rows - 14);
-      const end = Math.min(b.baseY + b.cursorY + 2, bottom);
-      for (let y = Math.max(0, end - 14); y < end; y++)
-        out.push(b.getLine(y)?.translateToString(true) ?? "");
-      return out.join("\n");
-    };
+    const screen = () => promptRows(t).join("\n");
     // Every row on screen, top to bottom.
     const visible = () => {
       const b = t.buffer.active;

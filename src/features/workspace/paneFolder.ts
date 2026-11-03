@@ -9,6 +9,8 @@ const folders = new Map<string, string>();
 const listeners = new Set<() => void>();
 
 export function setPaneFolder(paneId: string, folder: string | undefined) {
+  // A forged prompt must not make folder readers probe an SMB host.
+  if (folder && /^[\\/]{2}/.test(folder)) folder = undefined;
   if (folders.get(paneId) === folder) return;
   if (folder) folders.set(paneId, folder);
   else folders.delete(paneId);

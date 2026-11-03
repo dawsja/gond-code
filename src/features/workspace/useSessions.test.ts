@@ -4,7 +4,7 @@ import { beforeEach, expect, it } from "vitest";
 import type { Pane } from "./layout";
 import { useSessions } from "./useSessions";
 import { setPaneFolder } from "./paneFolder";
-import { mockCall } from "@/lib/mock";
+import { mockCall, mockOn } from "@/lib/mock";
 
 beforeEach(() => localStorage.clear());
 
@@ -68,4 +68,19 @@ it("opens a projectless pane through the mock and guards stale project ids on re
   expect(opened.ptyId).toBeTruthy();
   await mockCall("pty_close", { ptyId: opened.ptyId });
   setPaneFolder(pane.id, undefined);
+});
+
+it("reopens a saved project before the frontend project list has loaded", async () => {
+  const [project] = await mockCall("project_list", {});
+  const pane: Pane = { kind: "pane", id: "startup", projectId: project.id };
+  const { result } = renderHook(() => useSessions({ projects: [] }));
+  const output: { ptyId: string; data: string }[] = [];
+  const stop = await mockOn("pty:data", ({ payload }) => output.push(payload));
+  const opened = await result.current.opener(pane)({ cols: 80, rows: 24 });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(output.find((event) => event.ptyId === opened.ptyId)?.data).toContain(
+    `PS\x1b[0m ${project.path}>`,
+  );
+  stop();
+  await mockCall("pty_close", { ptyId: opened.ptyId });
 });

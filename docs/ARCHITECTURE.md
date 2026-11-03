@@ -46,8 +46,15 @@ runs nothing on an agent's behalf.
 
 ### A pane's folder
 `pty.open` starts in its registered project's folder, else home (or the supplied `cwd`).
+Saved project IDs are sent even before the UI project list loads; Rust resolves them and falls
+back to home for empty or removed IDs, without swallowing other lookup errors.
 For a local shell, `Terminal.tsx` reads the folder its prompt shows, including a prompt near
-the cursor above the bottom of the screen. It keeps that last folder while an agent runs;
+the cursor above the bottom of the screen. The reader preserves buffer order with bottom rows
+last, so older prompts cannot override the live prompt after scrollback. Prompt-derived UNC
+paths (`\\host\share`, including `\\wsl$`) are discarded before folder tracking: terminal
+output is untrusted and must not cause a network probe. The resolver falls back to saved resume
+cwd, registered start folder or home. Rust still validates explicit paths as directories.
+It keeps the last accepted folder while an agent runs;
 it does not ask the agent. WSL and custom prompts may not show a readable folder.
 Open folder resolves the pane's last prompt folder, else its saved resume cwd, else its
 registered start folder, else home. `folder.open` accepts a path, not a project id, and
