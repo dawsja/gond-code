@@ -129,7 +129,7 @@ pub fn run() {
             let path = store::default_db_path().ok_or("no app data directory")?;
             let store = store::Store::open(&path)?;
             app.state::<std::sync::Arc<window::InfoCell>>()
-                .set(window::setup(app.handle()));
+                .set(window::setup(app.handle(), &store));
             // Dev's amber dot on the window's (and so the taskbar's) icon.
             if channel::is_dev() {
                 if let (Some(w), Some(icon)) = (
@@ -154,6 +154,8 @@ pub fn run() {
                 registry: api::registry(),
                 services: api::Services::new(store.clone())?.with_runtime(ptys.clone()),
             };
+            #[cfg(windows)]
+            window::watch_theme(app.handle(), &api.services);
             // Other machines (WSL, SSH): their connections and ssh's questions show in the
             // tree, at `/machines/<id>` and `/askpass/<id>`.
             {

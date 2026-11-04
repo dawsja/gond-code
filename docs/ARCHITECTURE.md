@@ -192,7 +192,7 @@ returns it once and the shell starts in that folder.
 ```
 src/                       React app
   main.tsx                 entry
-  styles/theme.css         tokens (dark only, tints), see docs/THEME.md
+  styles/theme.css         light/dark tokens and tints, see docs/THEME.md
   components/ui/           shadcn-style kit restyled to Gond
   components/brand/        agent and shell brand icons (@lobehub/icons, plus Pi's)
   features/deck/           Deck.tsx: the app shell (sidebar, workspace, settings)
@@ -207,8 +207,12 @@ src/                       React app
                            Machines
   features/shell/          workspace hook, the sidebar's update button
   lib/ipc.ts               the only place that calls invoke/listen
+  lib/theme.ts             System / Light / Dark resolution and tint application
+  lib/useSettings.ts       saved settings/state owner; applies theme, tint and terminal font
+  lib/terminalTheme.ts     shared light/dark xterm palettes; live updates without PTY restart
   lib/restart.ts           saves before Restart to update
   lib/commands.generated.json  the registry with schemas (checked by a test)
+public/theme-init.js       CSP-safe blocking first-paint mirror (before React)
 src-tauri/remote/          gond-remote: the terminal host for WSL and SSH machines (Linux)
 src-tauri/src/             Rust
   main.rs lib.rs           builder, plugins, `gond-code path|purge-data` subcommands
@@ -258,9 +262,27 @@ Linux. Logic lives outside `commands/` so it is tested without Tauri. The UI nev
 - Live state is one versioned JSON tree (`api/state.rs`: projects, installs, terminals, usage,
   speech, github, update, layout, settings). The UI reads it once with
   `state_get` and follows RFC 6902 patches in `state:patch` events. SQLite and the settings
-  store are the source of truth; the tree is rebuilt from them at startup.
+  store are the source of truth; the tree is rebuilt from them at startup. The UI subscribes
+  before fetching its snapshot and buffers patches during hydration/resync, so a theme change
+  cannot fall between the snapshot and listener registration.
 - Terminal output is a raw stream (`pty:data`, `pty:exit`), not part of the tree.
 - `layout.focus` only switches between the workspace and a Settings section.
+
+### Appearance
+`settings.theme` is `system`, `light` or `dark`, default `system`. Rust's typed setting and its
+persisted store are authoritative; the UI writes it through `settings.set` and follows the
+settings state tree. A localStorage mirror is only a first-paint hint, read before React mounts
+to avoid flashing the wrong palette. It must never override the hydrated Rust setting. Missing,
+invalid or inaccessible browser storage falls back to System.
+
+`src/lib/theme.ts` resolves System with `prefers-color-scheme`, keeps `<html>`'s `dark` class and
+`color-scheme` aligned, and applies the independent `data-tint`. OS appearance changes affect
+System only. The native window uses the same saved preference before it is shown and follows
+changes at runtime; `src/lib/ipc.ts` remains the only frontend bridge to Tauri. The shared
+`src/lib/terminalTheme.ts` palettes update existing xterm instances, including hidden sessions,
+without reopening a PTY or clearing its buffer. Explicit ANSI truecolour from programs is not
+rewritten. The mock UI accepts `?theme=light` and `?theme=dark` so the layout harness can test both
+resolved palettes independently of the host OS.
 
 ## 5. Conventions
 - IDs: ULID strings. Times: RFC 3339 UTC strings.

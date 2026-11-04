@@ -226,7 +226,7 @@ export function AddMachineDialog({ onAdded }: { onAdded: (m: Machine) => void })
               {error}
             </p>
           )}
-          <DialogFooter className="gap-2 pt-1">
+          <DialogFooter className="mx-0 gap-2 pt-1">
             <Button
               type="button"
               variant="outline"

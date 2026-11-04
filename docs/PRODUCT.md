@@ -108,7 +108,7 @@ every agent by what it's doing.
 - **Transcription** (optional, speech to text). A local NVIDIA Parakeet model, downloaded when you turn it on
   in Settings. The text is typed into the focused pane for you to send.
 - **Settings.**
-  - **General:** colour, default shell (PowerShell, Command Prompt, Git Bash, WSL; whichever are
+  - **General:** appearance (System, Light, Dark; default System), colour, default shell (PowerShell, Command Prompt, Git Bash, WSL; whichever are
     on the PC), terminal font (JetBrains Mono, Hack or Fira Code Nerd Font; nothing custom), speech
     to text, sounds, keep terminals running, close to tray.
   - **Usage:** each installed agent's plan limits, as the agent reports them for its own sign-in
@@ -123,12 +123,15 @@ every agent by what it's doing.
 ## Principles
 - **Gond adds nothing between you and the agent.** Each agent's own permissions, tools, skills
   and MCP servers apply. Gond passes no permission flags of its own.
-- **A Windows app, never a web app:** Windows' own dark title bar, single instance, remembered
+- **A Windows app, never a web app:** Windows' own title bar matching the resolved appearance, single instance, remembered
   window position, tray icon, native pickers. The browser dev mode is a developer tool and never
   ships.
 - **Local-first.** Agents run on your machines (this PC, WSL, your own SSH machines) with your
   own CLIs and sign-ins. No Gond Code server, no account, no telemetry, and no secret kept.
-- **Dark mode only**, near-black, one tint colour (docs/THEME.md).
+- **System, Light, Dark**, default **System**: follow Windows' appearance unless explicitly
+  overridden. Light uses Gond's linen and paper palette; dark retains the near-black palette.
+  One tint colour works in both. The native caption and terminal palette follow the resolved
+  appearance; changing it does not restart terminals (docs/THEME.md).
 - **No stubs.** No greyed-out "Not available yet" items: a control is hidden until it works.
 
 ## Not in the product

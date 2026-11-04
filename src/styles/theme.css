@@ -1,5 +1,5 @@
 /*
- * Gond Code theme: dark only, near-black, in Gond's fonts,
+ * Gond Code theme: Gond's linen light and near-black dark, in Gond's fonts,
  * radii and tint. shadcn's semantic tokens carry the values, so shadcn components and ours
  * pick them up without hard-coded colours: `primary` is the tint (primary actions),
  * `secondary`/`accent`/`muted` the raised greys, `card`/`popover` the panels.
@@ -9,8 +9,8 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
-/* Always dark: `dark:` variants apply everywhere (html also carries class="dark"). */
-@custom-variant dark (&:where(*));
+/* Dark variants follow the resolved theme on <html>, never the system preference directly. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
@@ -35,6 +35,7 @@
   --color-border-subtle: var(--border-subtle);
   /* Surface steps and edges of Gond's own components. */
   --color-raised: var(--raised);
+  --color-pane-header: var(--pane-header);
   --color-hover: var(--hover);
   --color-edge: var(--edge);
   --color-faint: var(--faint);
@@ -84,6 +85,67 @@
 }
 
 :root {
+  color-scheme: light;
+  --radius: 0.5rem;
+
+  /* Gond's light palette: linen floor, paper panels and carbon/graphite text.
+     https://github.com/dawsja/gond/blob/main/apps/web/app/globals.css */
+  --background: #f5f3ee;
+  --foreground: #1b1a18;
+  --sidebar: #ffffff;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --secondary: #ebe8e1;
+  --secondary-foreground: var(--foreground);
+  --muted: #ebe8e1;
+  --muted-foreground: #524f4a;
+  --accent: #ebe8e1;
+  --accent-foreground: var(--foreground);
+  --border: #d6d2c9;
+  --border-subtle: #ebe8e1;
+  --raised: #ffffff;
+  --pane-header: #ebe8e1;
+  --hover: #ebe8e1;
+  --edge: #c9c5bb;
+  --faint: #6b6863;
+  --input: #c9c5bb;
+  --ring: #1b1a18;
+  --destructive: #c2301a;
+
+  /* Code keeps tinted primary actions in both modes. */
+  --primary: var(--tint-solid);
+  --primary-foreground: #ffffff;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--tint-solid);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ebe8e1;
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  --tone-ok: #1a7d38;
+  --tone-warn: #8a5a00;
+  --tone-bad: #c2301a;
+  --tone-info: #2266c4;
+  --mint: #1a7d38;
+  --amber: #8a5a00;
+  --sky: #2266c4;
+  --magenta: #b8307f;
+  --grape: #8250df;
+  --ember: #c2301a;
+  --ash: #6b6863;
+
+  --tint: #2f6fd6;
+  --tint-solid: #2c62ba;
+  --tint-wash: #d6dbe0;
+  --tint-edge: #a9b8cd;
+  --tint-ink: #29559d;
+  --surface: var(--background);
+}
+
+.dark {
   color-scheme: dark;
   --radius: 0.5rem;
 
@@ -104,6 +166,7 @@
   --border: #1c1c1c;
   --border-subtle: #151515;
   --raised: #141414;
+  --pane-header: #070707;
   --hover: #1a1a1a;
   --edge: #262626;
   --faint: #5a5a5a;
@@ -147,50 +210,113 @@
   --surface: var(--background);
 }
 
-/* Tints (Settings → Appearance), dark shades from Gond: white on --tint-solid clears 4.5:1. */
-[data-tint="blue"] {
+/* Tints (Settings → Appearance), exact light shades from Gond's public globals.
+   White on solid and ink on wash clear 4.5:1 in both modes. */
+[data-swatch="blue"],
+:root:not(.dark)[data-tint="blue"] {
+  --tint: #2f6fd6;
+  --tint-solid: #2c62ba;
+  --tint-wash: #d6dbe0;
+  --tint-edge: #a9b8cd;
+  --tint-ink: #29559d;
+}
+[data-swatch="purple"],
+:root:not(.dark)[data-tint="purple"] {
+  --tint: #7650d8;
+  --tint-solid: #6848bb;
+  --tint-wash: #ded7e0;
+  --tint-edge: #bdafce;
+  --tint-ink: #5b409e;
+}
+[data-swatch="pink"],
+:root:not(.dark)[data-tint="pink"] {
+  --tint: #cf3d85;
+  --tint-solid: #b43875;
+  --tint-wash: #e8d5d7;
+  --tint-edge: #d6aab7;
+  --tint-ink: #993364;
+}
+[data-swatch="red"],
+:root:not(.dark)[data-tint="red"] {
+  --tint: #d03a3a;
+  --tint-solid: #b53535;
+  --tint-wash: #e8d5cf;
+  --tint-edge: #d6a9a2;
+  --tint-ink: #9a3030;
+}
+[data-swatch="orange"],
+:root:not(.dark)[data-tint="orange"] {
+  --tint: #e04e0a;
+  --tint-solid: #c2460c;
+  --tint-wash: #ead7c9;
+  --tint-edge: #dbae94;
+  --tint-ink: #9f3d0f;
+}
+[data-swatch="amber"],
+:root:not(.dark)[data-tint="amber"] {
+  --tint: #d98a08;
+  --tint-solid: #9e670d;
+  --tint-wash: #e9dec9;
+  --tint-edge: #d9bf94;
+  --tint-ink: #83580f;
+}
+[data-swatch="green"],
+:root:not(.dark)[data-tint="green"] {
+  --tint: #189c47;
+  --tint-solid: #19863f;
+  --tint-wash: #d4e0d0;
+  --tint-edge: #a3c4a5;
+  --tint-ink: #196d36;
+}
+
+[data-swatch] {
+  background: var(--tint);
+}
+
+/* Original dark values, deliberately unchanged. */
+:root.dark[data-tint="blue"] {
   --tint: #2f6fd6;
   --tint-solid: #2b61b9;
   --tint-wash: #252f40;
   --tint-edge: #3d5780;
   --tint-ink: #8db0e8;
 }
-[data-tint="purple"] {
+:root.dark[data-tint="purple"] {
   --tint: #7650d8;
   --tint-solid: #6747ba;
   --tint-wash: #302a40;
   --tint-edge: #5a4b81;
   --tint-ink: #b49fea;
 }
-[data-tint="pink"] {
+:root.dark[data-tint="pink"] {
   --tint: #cf3d85;
   --tint-solid: #b33774;
   --tint-wash: #3f2733;
   --tint-edge: #7d4360;
   --tint-ink: #e594bc;
 }
-[data-tint="red"] {
+:root.dark[data-tint="red"] {
   --tint: #d03a3a;
   --tint-solid: #b33434;
   --tint-wash: #3f2727;
   --tint-edge: #7e4242;
   --tint-ink: #e59393;
 }
-[data-tint="orange"] {
+:root.dark[data-tint="orange"] {
   --tint: #e04e0a;
   --tint-solid: #c1450b;
   --tint-wash: #412a1f;
   --tint-edge: #844a2f;
   --tint-ink: #ee9e78;
 }
-[data-tint="amber"] {
+:root.dark[data-tint="amber"] {
   --tint: #d98a08;
   --tint-solid: #9f670b;
   --tint-wash: #40331f;
   --tint-edge: #81622e;
   --tint-ink: #eabf77;
 }
-[data-tint="green"] {
+:root.dark[data-tint="green"] {
   --tint: #189c47;
   --tint-solid: #17853e;
   --tint-wash: #213629;

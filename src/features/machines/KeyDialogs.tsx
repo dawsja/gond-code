@@ -418,7 +418,7 @@ export function CreateKeyDialog() {
                       className={cn(
                         "grid size-4 shrink-0 place-items-center rounded-[5px] border transition-colors",
                         ticked(m.id)
-                          ? "border-tint bg-tint text-white"
+                          ? "border-primary bg-primary text-primary-foreground dark:border-tint dark:bg-tint"
                           : "border-tint-edge bg-transparent",
                       )}
                     >

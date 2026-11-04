@@ -3573,6 +3573,15 @@
           ],
           "type": "string"
         },
+        "Theme": {
+          "description": "App appearance. Unknown names from a newer build fall back to following the OS.",
+          "enum": [
+            "light",
+            "dark",
+            "system"
+          ],
+          "type": "string"
+        },
         "Tint": {
           "enum": [
             "blue",
@@ -3622,6 +3631,10 @@
           "$ref": "#/$defs/TerminalFont",
           "default": "jetbrains-mono",
           "description": "The terminals' font (not the app's)."
+        },
+        "theme": {
+          "$ref": "#/$defs/Theme",
+          "default": "system"
         },
         "tint": {
           "$ref": "#/$defs/Tint"
@@ -3691,6 +3704,17 @@
               ],
               "default": null
             },
+            "theme": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Theme"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
             "tint": {
               "anyOf": [
                 {
@@ -3711,6 +3735,15 @@
             "jetbrains-mono",
             "hack",
             "fira-code"
+          ],
+          "type": "string"
+        },
+        "Theme": {
+          "description": "App appearance. Unknown names from a newer build fall back to following the OS.",
+          "enum": [
+            "light",
+            "dark",
+            "system"
           ],
           "type": "string"
         },
@@ -3749,6 +3782,15 @@
             "jetbrains-mono",
             "hack",
             "fira-code"
+          ],
+          "type": "string"
+        },
+        "Theme": {
+          "description": "App appearance. Unknown names from a newer build fall back to following the OS.",
+          "enum": [
+            "light",
+            "dark",
+            "system"
           ],
           "type": "string"
         },
@@ -3801,6 +3843,10 @@
           "$ref": "#/$defs/TerminalFont",
           "default": "jetbrains-mono",
           "description": "The terminals' font (not the app's)."
+        },
+        "theme": {
+          "$ref": "#/$defs/Theme",
+          "default": "system"
         },
         "tint": {
           "$ref": "#/$defs/Tint"

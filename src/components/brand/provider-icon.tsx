@@ -31,7 +31,7 @@ type Props = {
   id: string | undefined;
   /** For unknown ids: the name the initials come from (defaults to the id). */
   label?: string;
-  /** "auto": the colour logo where it reads on our near-black, else mono in currentColor. */
+  /** "auto": the bundled colour logo when available, else mono in currentColor. */
   variant?: "auto" | "color" | "mono";
   /** Pixel size; defaults to 16 (size-4). */
   size?: number;

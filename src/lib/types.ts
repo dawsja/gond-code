@@ -79,10 +79,13 @@ export type AgentInfo = {
 };
 
 export type Tint = "blue" | "green" | "purple" | "pink" | "amber" | "orange" | "red";
+export type Theme = "system" | "light" | "dark";
 /** The terminals' font: a Nerd Font the app ships. */
 export type TerminalFont = "jetbrains-mono" | "hack" | "fira-code";
 export type Settings = {
   tint: Tint;
+  /** Saved appearance preference. System follows the device live. */
+  theme: Theme;
   /** The window's X hides Gond Code to the tray, agents still working. Default true. */
   closeToTray?: boolean;
   /** Quitting leaves the terminals (and their agents) running, to come back. Default true. */

@@ -1,11 +1,12 @@
 // Layout check: drives the running app's WebView2 (or any Chrome) over the DevTools
-// protocol. For every screen in e2e/layout/screens.json at every size, it sets the viewport,
-// opens the screen and runs e2e/layout/audit.js; it saves no images. It first proves the audit
+// protocol. For every screen in e2e/layout/screens.json in light and dark at every size, it sets
+// the viewport, opens the screen and runs e2e/layout/audit.js. It first proves the audit
 // still catches a deliberately cramped page (e2e/layout/cramped.html).
 //
-// bun scripts/layout-check.ts --port 9222 [--base http://tauri.localhost] [--out layout] [--screens a,b]
-// Writes <out>/results.json and <out>/summary.md; exits 1 on any violation.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// bun scripts/layout-check.ts --port 9222 [--base http://tauri.localhost] [--out layout] [--screens a,b] [--screenshots]
+// Writes <out>/results.json and <out>/summary.md; --screenshots also saves a PNG per render.
+// The mock build must support ?theme=light/dark. Exits 1 on any violation.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const arg = (name: string, fallback?: string) => {
@@ -14,12 +15,15 @@ const arg = (name: string, fallback?: string) => {
 };
 const port = arg("port", "9222");
 const out = arg("out", "layout")!;
+const screenshots = process.argv.includes("--screenshots");
 const root = join(import.meta.dir, "..");
 const audit = readFileSync(join(root, "e2e/layout/audit.js"), "utf8");
 const cramped = readFileSync(join(root, "e2e/layout/cramped.html"), "utf8");
 const config = JSON.parse(readFileSync(join(root, "e2e/layout/screens.json"), "utf8")) as {
   screens: Record<string, string>;
+  prepare?: Record<string, { event?: string; menu?: string; panes?: number }>;
   sizes: [number, number][];
+  themes: ("light" | "dark")[];
 };
 const only = arg("screens")?.split(",");
 const screens = Object.entries(config.screens).filter(([name]) => !only || only.includes(name));
@@ -28,6 +32,9 @@ const maxMarks = Number(arg("max-marks", "1"));
 // The native title bar takes about 32px of the window; the page gets the rest.
 const CAPTION = Number(arg("caption", "32"));
 mkdirSync(out, { recursive: true });
+// Keep generated artifacts out of Git, including for a custom --out, without hiding other files.
+const ignore = join(out, ".gitignore");
+if (!existsSync(ignore)) writeFileSync(ignore, "/results.json\n/summary.md\n/*.png\n/.gitignore\n");
 
 type Violation = { rule: string; where: string; text: string; detail: string };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -115,10 +122,21 @@ const pageState = () =>
   evaluate<Record<string, unknown>>(
     `({ url: location.href, readyState: document.readyState, title: document.title, bodyChars: (document.body && document.body.innerText || "").length, fixture: !!document.getElementById("overflow"), width: innerWidth })`,
   );
-async function open(search: string) {
-  await send("Page.navigate", { url: `${base}/${search}` });
+async function open(search: string, theme: "light" | "dark") {
+  const url = new URL(`/${search}`, base);
+  url.searchParams.set("theme", theme);
+  await send("Page.navigate", { url: url.href });
   await waitFor(`document.readyState === "complete"`, 15_000);
   await sleep(2500); // the mock's calls settle and the layout finishes
+  const matched = await waitFor(
+    `document.documentElement.classList.contains("dark") === ${theme === "dark"}`,
+    5000,
+  );
+  if (!matched) {
+    throw new Error(
+      `Expected ${theme} theme at ${url.href}; does the mock support ?theme=light/dark?`,
+    );
+  }
 }
 
 await send("Page.enable");
@@ -169,18 +187,60 @@ if (missed.length || falseAlarms.length) {
   throw new Error("The layout audit no longer catches the cramped fixture");
 }
 
-// 2. Every screen at every size.
-const results: { screen: string; size: string; violations: Violation[] }[] = [];
-for (const [w, h] of config.sizes) {
-  await size(w, h);
-  for (const [name, search] of screens) {
-    await open(search);
-    const violations = await runAudit();
-    results.push({ screen: name, size: `${w}x${h}`, violations });
-    console.log(
-      `${name} @ ${w}x${h}: ${violations.length ? violations.length + " problems" : "ok"}`,
-    );
-    for (const v of violations) console.log(`  ${v.rule}: ${v.where} "${v.text}" (${v.detail})`);
+// 2. Two passes: every screen at every size in each resolved theme. Same audit and zero bar.
+const results: { screen: string; theme: string; size: string; violations: Violation[] }[] = [];
+for (const theme of config.themes) {
+  for (const [w, h] of config.sizes) {
+    await size(w, h);
+    for (const [name, search] of screens) {
+      await open(search, theme);
+      const prepare = config.prepare?.[name];
+      if (prepare) {
+        if (prepare.panes) {
+          const count = `document.querySelectorAll('[data-entity="pane"]').length`;
+          while ((await evaluate<number>(count)) < prepare.panes) {
+            const before = await evaluate<number>(count);
+            await evaluate(
+              `window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }))`,
+            );
+            if (!(await waitFor(`${count} > ${before}`, 5000))) {
+              throw new Error(`${name}: split did not open a terminal`);
+            }
+          }
+          await sleep(750); // the mock shell's typed output and canvas settle
+        }
+        if (prepare.event) {
+          await evaluate(`window.dispatchEvent(new Event(${JSON.stringify(prepare.event)}))`);
+          if (!(await waitFor(`document.querySelector('[role="dialog"]')`, 5000))) {
+            throw new Error(`${name}: dialog did not open`);
+          }
+        }
+        if (prepare.menu) {
+          await evaluate(`(() => {
+            const trigger = document.querySelector(${JSON.stringify(prepare.menu)});
+            trigger.focus();
+            trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          })()`);
+          if (!(await waitFor(`document.querySelector('[role="menu"]')`, 5000))) {
+            throw new Error(`${name}: menu did not open`);
+          }
+        }
+        await sleep(250); // allow dialog/menu entrance animation to finish before measuring
+      }
+      const violations = await runAudit();
+      results.push({ screen: name, theme, size: `${w}x${h}`, violations });
+      if (screenshots) {
+        const { data } = await send<{ data: string }>("Page.captureScreenshot", { format: "png" });
+        writeFileSync(
+          join(out, `${encodeURIComponent(name)}-${theme}-${w}x${h}.png`),
+          Buffer.from(data, "base64"),
+        );
+      }
+      console.log(
+        `${name} (${theme}) @ ${w}x${h}: ${violations.length ? violations.length + " problems" : "ok"}`,
+      );
+      for (const v of violations) console.log(`  ${v.rule}: ${v.where} "${v.text}" (${v.detail})`);
+    }
   }
 }
 ws.close();
@@ -189,11 +249,11 @@ writeFileSync(join(out, "results.json"), JSON.stringify(results, null, 2));
 const failed = results.filter((r) => r.violations.length);
 const md = [
   failed.length
-    ? `❌ **${failed.reduce((n, r) => n + r.violations.length, 0)} layout problems** on ${failed.length} of ${results.length} screen×size renders.`
-    : `✅ All ${results.length} screen×size renders pass the layout bar.`,
+    ? `❌ **${failed.reduce((n, r) => n + r.violations.length, 0)} layout problems** on ${failed.length} of ${results.length} screen×theme×size renders.`
+    : `✅ All ${results.length} screen×theme×size renders pass the layout bar.`,
   "",
   ...failed.flatMap((r) => [
-    `<details><summary><b>${r.screen}</b> at ${r.size}: ${r.violations.length}</summary>`,
+    `<details><summary><b>${r.screen}</b> (${r.theme}) at ${r.size}: ${r.violations.length}</summary>`,
     "",
     ...r.violations.map(
       (v) => `- \`${v.rule}\` ${v.where}${v.text ? ` “${v.text}”` : ""}: ${v.detail}`,
